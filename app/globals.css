@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* App-chrome polish — makes the installed/standalone version feel native
+   rather than like a browser tab: no rubber-band white flash past the top/
+   bottom edge, no blue tap-highlight flash on buttons/links, no accidental
+   text selection on taps (inputs/labeled text still select normally). */
+html,
+body {
+  overscroll-behavior-y: contain;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a {
+  -webkit-touch-callout: none;
+}
+
+/* Sports ticker (app/(app)/sports-ticker.tsx) — the track renders its
+   content twice back-to-back, and this scrolls it exactly one copy's width
+   (-50%) so the loop has no visible seam. Paused on hover/focus so the text
+   is readable without racing the animation, and skipped entirely for
+   reduced-motion users (shows just the first copy, static). */
+.ticker-track {
+  width: max-content;
+  animation: ticker-scroll 45s linear infinite;
+}
+
+.ticker-track:hover,
+.ticker-track:focus-within {
+  animation-play-state: paused;
+}
+
+@keyframes ticker-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticker-track {
+    animation: none;
+  }
+}
