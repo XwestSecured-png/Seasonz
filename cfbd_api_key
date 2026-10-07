@@ -1,0 +1,5 @@
+# You can install using the pak package using the following code:
+if (!requireNamespace('remotes', quietly = TRUE)){
+  install.packages('remotes', repos = "https://cloud.r-project.org")
+}
+remotes::install_github("sportsdataverse/cfbfastR")
