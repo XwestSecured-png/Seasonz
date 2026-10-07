@@ -1,0 +1,23 @@
+ALTER TABLE "games" ADD COLUMN "spread_home_line" real;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "spread_home_price_american" integer;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "spread_away_price_american" integer;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "spread_book" text;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "opening_spread_home_line" real;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "opening_spread_home_price_american" integer;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "opening_spread_away_price_american" integer;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "opening_spread_book" text;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "spread_ai_edge_pct" real;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "spread_ai_pick_team" text;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "total_line" real;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "total_over_price_american" integer;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "total_under_price_american" integer;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "total_book" text;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "opening_total_line" real;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "opening_total_over_price_american" integer;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "opening_total_under_price_american" integer;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "opening_total_book" text;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "total_ai_edge_pct" real;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "total_ai_pick" text;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "best_market" text;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "best_market_label" text;--> statement-breakpoint
+ALTER TABLE "games" ADD COLUMN "best_market_edge_pct" real;

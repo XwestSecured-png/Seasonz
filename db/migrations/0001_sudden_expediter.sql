@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "team_elo_ratings_team_season_week_idx" ON "team_elo_ratings" USING btree ("team","season","week");

@@ -1,0 +1,1 @@
+ALTER TABLE "games" ADD COLUMN "rest_travel_adj_pct" real;

@@ -1,0 +1,1 @@
+ALTER TABLE "odds_lines" ADD COLUMN "model_win_pct" real;

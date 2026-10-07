@@ -1,0 +1,1 @@
+ALTER TABLE "games" ADD COLUMN "weather_is_forecast" boolean DEFAULT false NOT NULL;

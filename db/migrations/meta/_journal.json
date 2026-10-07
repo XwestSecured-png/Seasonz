@@ -1,0 +1,188 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1790820639968,
+      "tag": "0000_thick_masked_marvel",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790880100877,
+      "tag": "0001_sudden_expediter",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790903832866,
+      "tag": "0002_abnormal_caretaker",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790904290528,
+      "tag": "0003_wet_hairball",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790904706813,
+      "tag": "0004_orange_morg",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790940132348,
+      "tag": "0005_glossy_jack_flag",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790941645889,
+      "tag": "0006_glossy_calypso",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790959874888,
+      "tag": "0007_numerous_yellow_claw",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791010559374,
+      "tag": "0008_huge_omega_flight",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791135324553,
+      "tag": "0009_perpetual_oracle",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791143786122,
+      "tag": "0010_spicy_wolfsbane",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791209030697,
+      "tag": "0011_fair_landau",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791213336175,
+      "tag": "0012_normal_tyger_tiger",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791218724441,
+      "tag": "0013_nosy_ken_ellis",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791220844966,
+      "tag": "0014_flat_zuras",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1791222038883,
+      "tag": "0015_massive_shocker",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791243399100,
+      "tag": "0016_subscription_tiers_and_admin",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791247760253,
+      "tag": "0017_stripe_billing_and_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791338327297,
+      "tag": "0018_multi_sport_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791350892928,
+      "tag": "0019_concerned_robbie_robertson",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791351806744,
+      "tag": "0020_moaning_the_leader",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791379873452,
+      "tag": "0021_shocking_dakota_north",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1791381217106,
+      "tag": "0022_melted_vertigo",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791383543303,
+      "tag": "0023_bent_spyke",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791392011194,
+      "tag": "0024_seasonz_admin_promo_invites_oddskeys",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791392964890,
+      "tag": "0025_seasonz_patch_notes",
+      "breakpoints": true
+    }
+  ]
+}
