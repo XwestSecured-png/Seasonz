@@ -430,11 +430,14 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
   results.push(
     await logStage(`${sport}:playerStats`, async () => {
       const finalGames = await db
-        .select({ id: sportGames.id, espnEventId: sportGames.espnEventId, week: sportGames.week })
+        .select({ id: sportGames.id, espnEventId: sportGames.espnEventId, week: sportGames.week, extra: sportGames.extra })
         .from(sportGames)
         .where(and(eq(sportGames.sport, sport), eq(sportGames.season, year), eq(sportGames.isFinal, true)));
 
       if (finalGames.length === 0) return "No final games yet — nothing to fetch box scores for.";
+      // Games ESPN has no box score for (common in lower college divisions)
+      // are marked once and skipped, so they don't block newer games.
+      const noBox = (g: { extra: unknown }) => !!(g.extra as { noBox?: boolean } | null)?.noBox;
 
       const alreadyHave = new Set(
         (
@@ -462,7 +465,7 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
         ).map((r) => [r.id, r.kickoffAt?.getTime() ?? 0])
       );
       const toFetch = finalGames
-        .filter((g) => !alreadyHave.has(g.id))
+        .filter((g) => !alreadyHave.has(g.id) && !noBox(g))
         .sort((a, b) => (kickoffById.get(b.id) ?? 0) - (kickoffById.get(a.id) ?? 0))
         .slice(0, PER_RUN_CAP);
       if (toFetch.length === 0) return "Every final game already has box scores on file.";
@@ -475,27 +478,38 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
         const g = toFetch[nextIdx++];
         try {
           const lines = await fetchBoxscorePlayers(def, g.espnEventId);
-          if (lines.length === 0) continue;
-          gamesWithStats++;
-          for (const line of lines) {
-            await db
-              .insert(sportPlayerGameStats)
-              .values({
-                sport,
-                gameId: g.id,
-                season: year,
-                week: g.week,
-                team: line.team,
-                player: line.player,
-                position: line.position,
-                stats: line.stats,
-              })
-              .onConflictDoUpdate({
-                target: [sportPlayerGameStats.sport, sportPlayerGameStats.gameId, sportPlayerGameStats.player],
-                set: { position: line.position, stats: line.stats, updatedAt: new Date() },
-              });
-            playerRows++;
+          if (lines.length === 0) {
+            if ((kickoffById.get(g.id) ?? 0) < Date.now() - 2 * 86_400_000) {
+              await db
+                .update(sportGames)
+                .set({ extra: { ...((g.extra as object) ?? {}), noBox: true } })
+                .where(eq(sportGames.id, g.id));
+            }
+            continue;
           }
+          gamesWithStats++;
+          // One insert per game (a box score can be 80+ players).
+          const seen = new Set<string>();
+          const values = lines
+            .filter((l) => (seen.has(l.player) ? false : (seen.add(l.player), true)))
+            .map((line) => ({
+              sport,
+              gameId: g.id,
+              season: year,
+              week: g.week,
+              team: line.team,
+              player: line.player,
+              position: line.position,
+              stats: line.stats,
+            }));
+          await db
+            .insert(sportPlayerGameStats)
+            .values(values)
+            .onConflictDoUpdate({
+              target: [sportPlayerGameStats.sport, sportPlayerGameStats.gameId, sportPlayerGameStats.player],
+              set: { position: sql`excluded.position`, stats: sql`excluded.stats`, updatedAt: new Date() },
+            });
+          playerRows += values.length;
         } catch {
           // One game's box score failing (not posted yet, malformed
           // response) shouldn't take down the rest of this stage.
