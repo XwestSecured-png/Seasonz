@@ -75,3 +75,19 @@ export function formatEt(t: Date | null | undefined): string {
     }) + " ET"
   );
 }
+
+/**
+ * This week's games, or — when none are left this week (season not
+ * started yet, All-Star break) — the 7 days starting at the next game.
+ */
+export function thisWeekOrNext<T extends { kickoffAt: Date | null }>(games: T[], now = new Date()): T[] {
+  const w = etWeekWindow(now);
+  const inWeek = games.filter((g) => inWindow(g.kickoffAt, w));
+  if (inWeek.length > 0) return inWeek;
+  const future = games
+    .filter((g) => g.kickoffAt && g.kickoffAt.getTime() > now.getTime())
+    .sort((a, b) => a.kickoffAt!.getTime() - b.kickoffAt!.getTime());
+  if (future.length === 0) return [];
+  const start = future[0].kickoffAt!.getTime();
+  return future.filter((g) => g.kickoffAt!.getTime() < start + 7 * 86_400_000);
+}

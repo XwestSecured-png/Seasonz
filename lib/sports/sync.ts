@@ -26,6 +26,7 @@ import {
 import { replaySportElo, type SportEloGame } from "./sport-elo";
 import { formBefore, nbaWinProb, lostScoring, applyInjuries, type FormRow } from "./nba-model";
 import { fetchGameOddsForSport } from "./game-odds";
+import { makeTeamResolver } from "./team-match";
 import { SPORTS, type SportKey } from "./types";
 import {
   fetchTeams,
@@ -770,7 +771,9 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
         // getTeamByFullName) — an unmatched name just drops that event
         // rather than risk a wrong match.
         const teamRows = await db.select().from(sportTeams).where(eq(sportTeams.sport, sport));
-        const nameToAbbr = new Map(teamRows.map((t) => [t.name.trim().toLowerCase(), t.abbr]));
+        const resolve = makeTeamResolver(teamRows);
+        const playingThisWeek = new Set(thisWeekGames.flatMap((g) => [g.homeTeam, g.awayTeam]));
+        const nameToAbbr = { get: (n: string) => resolve(n, playingThisWeek) };
 
         const events = await fetchUpcomingEventsForSport(sport);
         const thisWeekEvents = events.filter((e) => {
