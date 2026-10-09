@@ -6,6 +6,7 @@ import { sportGames } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { getGameInsights } from "@/lib/sports/insights";
 import { getModelBuilds, type BuildSportFilter } from "@/lib/auto-builds";
+import { fetchUpcomingEventsForSport } from "@/lib/sports/odds";
 import { SPORTS, type SportKey } from "@/lib/sports/types";
 import { currentSeasonYear } from "@/lib/sports/espn";
 import { etWeekWindow, inWindow } from "@/lib/week-window";
@@ -15,6 +16,11 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   if (!process.env.CRON_SECRET || req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  const eventsFor = req.nextUrl.searchParams.get("events");
+  if (eventsFor) {
+    const ev = await fetchUpcomingEventsForSport(eventsFor as SportKey);
+    return NextResponse.json({ n: ev.length, sample: ev.slice(0, 8).map((e) => [e.away_team, e.home_team, e.commence_time]) });
   }
   const buildsFor = req.nextUrl.searchParams.get("builds");
   if (buildsFor) {
