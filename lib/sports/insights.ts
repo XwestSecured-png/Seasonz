@@ -3,7 +3,7 @@
 // scores, injury report and officiating crews, plus FanDuel and BetMGM
 // lines. No columnist or expert opinion is used anywhere.
 import { db } from "@/db";
-import { sportGames, sportInjuryReports, sportTeamGameStats } from "@/db/schema";
+import { sportGames, sportInjuryReports, sportPlayerGameStats, sportTeamGameStats } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import type { SportKey } from "./types";
 import { currentSeasonYear } from "./espn";
@@ -77,6 +77,32 @@ export async function getGameInsights(sport: SportKey, upcoming: GameRow[]): Pro
     .select()
     .from(sportInjuryReports)
     .where(and(eq(sportInjuryReports.sport, sport), eq(sportInjuryReports.season, season)));
+
+  // Points per game (this season and last) for everyone on the injury report.
+  const injuredNames = Array.from(new Set(injuries.map((r) => r.player)));
+  const ppgByPlayer = new Map<string, number>();
+  if (injuredNames.length) {
+    const lines = await db
+      .select({ player: sportPlayerGameStats.player, stats: sportPlayerGameStats.stats })
+      .from(sportPlayerGameStats)
+      .where(
+        and(
+          eq(sportPlayerGameStats.sport, sport),
+          inArray(sportPlayerGameStats.season, [season - 1, season]),
+          inArray(sportPlayerGameStats.player, injuredNames)
+        )
+      );
+    const acc = new Map<string, { pts: number; n: number }>();
+    for (const l of lines) {
+      const pts = Number((l.stats as Record<string, string>)?.PTS);
+      if (!Number.isFinite(pts)) continue;
+      const a = acc.get(l.player) ?? { pts: 0, n: 0 };
+      a.pts += pts;
+      a.n++;
+      acc.set(l.player, a);
+    }
+    for (const [p, a] of acc) if (a.n >= 3) ppgByPlayer.set(p, a.pts / a.n);
+  }
 
   const gameById = new Map(history.map((g) => [g.id, g]));
   const statsByTeam = new Map<string, typeof stats>();
@@ -243,11 +269,9 @@ export async function getGameInsights(sport: SportKey, upcoming: GameRow[]): Pro
       }));
 
     // Injuries & suspensions
-    const ppgOf = new Map<string, number>();
-    for (const o of [...(m?.homeOut ?? []), ...(m?.awayOut ?? [])]) ppgOf.set(o.player, o.ppg);
     const inj = injuries
       .filter((r) => r.team === g.homeTeam || r.team === g.awayTeam)
-      .map((r) => ({ team: r.team, player: r.player, status: r.status, ppg: ppgOf.get(r.player) ?? null }))
+      .map((r) => ({ team: r.team, player: r.player, status: r.status, ppg: ppgByPlayer.get(r.player) ?? null }))
       .sort((a, b) => (b.ppg ?? 0) - (a.ppg ?? 0));
 
     // Officials
@@ -274,11 +298,15 @@ export async function getGameInsights(sport: SportKey, upcoming: GameRow[]): Pro
     const sched = (team: string, rest: number | null) => {
       const list = [...finalsFor(team, season - 1), ...finalsFor(team, season)];
       const t = g.kickoffAt?.getTime() ?? Date.now();
-      const last7 = list.filter((x) => (x.kickoffAt?.getTime() ?? 0) > t - 7 * 86_400_000).length;
+      const last7 = list.filter((x) => {
+        const k = x.kickoffAt?.getTime() ?? 0;
+        return k > t - 7 * 86_400_000 && k < t;
+      }).length;
       let stretch = 0;
       const where = g.homeTeam === team ? "home" : "road";
-      for (let i = list.length - 1; i >= 0; i--) {
-        const wasHome = list[i].homeTeam === team;
+      const before = list.filter((x) => (x.kickoffAt?.getTime() ?? 0) < t);
+      for (let i = before.length - 1; i >= 0; i--) {
+        const wasHome = before[i].homeTeam === team;
         if ((where === "home") === wasHome) stretch++;
         else break;
       }

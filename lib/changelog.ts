@@ -33,6 +33,40 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.3.0",
+    date: "2026-10-09",
+    title: "NBA deep dive and one week at a time",
+    summary:
+      "Model Tracker now shows only this week's games for every sport, and every pick has a Why panel. The NBA model adds recent form, paint scoring and injuries, with FanDuel and BetMGM lines.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Model Tracker: this week only",
+        whatChanged:
+          "Each sport's tracker shows this week's games (Monday to Sunday, Eastern time) with the dates on top, and only this week's results. Times are shown in Eastern time.",
+        whatItMeans: "No more old or far-off games mixed in. Your season record still counts every week.",
+        href: "/model-tracker",
+      },
+      {
+        kind: "new",
+        title: "Why the model picked it, on every game",
+        whatChanged:
+          "Tap Why under any game to see what drove the pick, a side-by-side of both teams, home and road records, the last meetings with final scores, trends, injuries and suspensions, the officiating crew and how they call games, the schedule (rest, back-to-backs) and FanDuel and BetMGM lines.",
+        whatItMeans:
+          "You can check every number behind a pick before you bet it. All data comes from ESPN and the sportsbooks, not expert opinion.",
+      },
+      {
+        kind: "improved",
+        title: "Sharper NBA picks",
+        whatChanged:
+          "The NBA model now adds each team's last 20 games of scoring margin and points in the paint, plus who is out injured or suspended. We tested rebounds, turnovers, fouls, offensive fouls, threes, mid-range, head-to-head and referee crews too, and only kept what made picks better.",
+        whatItMeans:
+          "Tested on the full 2025-26 season it hadn't seen: picked 69.3% of winners, up from 68.5%, with better-calibrated chances. Everything else still shows in the Why panel.",
+        href: "/sports/nba",
+      },
+    ],
+  },
+  {
     version: "1.2.0",
     date: "2026-10-09",
     title: "Model Builds and sharper picks in every sport",
