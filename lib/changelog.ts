@@ -33,6 +33,39 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.4.0",
+    date: "2026-10-09",
+    title: "Parlays for every sport, 2 to 8 legs",
+    summary: "Parlays can switch between all sports or any one sport, auto parlays come in every size from 2 to 8 legs, and Player Props fill in for every sport.",
+    changes: [
+      {
+        kind: "new",
+        title: "Pick a sport on Parlays",
+        whatChanged:
+          "Parlays has buttons for All sports, NFL, NBA, WNBA, NHL, MLB, NCAAF and NCAAB. Auto parlays and the builder's games and props switch to that sport.",
+        whatItMeans: "Build a parlay from one sport or mix them, with that sport's real lines in the dropdowns.",
+        href: "/parlays",
+      },
+      {
+        kind: "improved",
+        title: "Auto parlays from 2 to 8 legs",
+        whatChanged:
+          "Auto parlays now come in every size from 2 to 8 legs, from game picks and from player props, for today or this week. Tap any leg to see why it was picked.",
+        whatItMeans:
+          "Pick the size you want. On a light slate the bigger ones are filled with the model's next-best sides, so check the chance shown before betting.",
+        href: "/parlays",
+      },
+      {
+        kind: "fixed",
+        title: "Player Props for every sport",
+        whatChanged:
+          "Props for NBA, NHL, MLB and the rest now fill in like NFL. Early in a season, a player's projection uses last season's games until he has 3 this season, and newer box scores load first.",
+        whatItMeans: "You'll see real projections against FanDuel and other book lines instead of an empty page.",
+        href: "/props",
+      },
+    ],
+  },
+  {
     version: "1.3.0",
     date: "2026-10-09",
     title: "NBA deep dive and one week at a time",

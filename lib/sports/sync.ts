@@ -449,13 +449,29 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
         ).map((r) => r.gameId)
       );
 
-      const PER_RUN_CAP = 40;
-      const toFetch = finalGames.filter((g) => !alreadyHave.has(g.id)).slice(0, PER_RUN_CAP);
+      // Newest games first: props are projected from each player's most
+      // recent games, so those matter most. Older games fill in over later runs.
+      const PER_RUN_CAP = 300;
+      const kickoffById = new Map(
+        (
+          await db
+            .select({ id: sportGames.id, kickoffAt: sportGames.kickoffAt })
+            .from(sportGames)
+            .where(and(eq(sportGames.sport, sport), eq(sportGames.season, year), eq(sportGames.isFinal, true)))
+        ).map((r) => [r.id, r.kickoffAt?.getTime() ?? 0])
+      );
+      const toFetch = finalGames
+        .filter((g) => !alreadyHave.has(g.id))
+        .sort((a, b) => (kickoffById.get(b.id) ?? 0) - (kickoffById.get(a.id) ?? 0))
+        .slice(0, PER_RUN_CAP);
       if (toFetch.length === 0) return "Every final game already has box scores on file.";
 
       let gamesWithStats = 0;
       let playerRows = 0;
-      for (const g of toFetch) {
+      let nextIdx = 0;
+      await Promise.all(Array.from({ length: 8 }, async () => {
+      while (nextIdx < toFetch.length) {
+        const g = toFetch[nextIdx++];
         try {
           const lines = await fetchBoxscorePlayers(def, g.espnEventId);
           if (lines.length === 0) continue;
@@ -485,6 +501,7 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
           continue;
         }
       }
+      }));
 
       const remaining = finalGames.length - alreadyHave.size - toFetch.length;
       return (
@@ -773,19 +790,52 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
         );
         const allProps = propsByEvent.flat();
 
-        const statRows = (
-          await db
-            .select({
-              player: sportPlayerGameStats.player,
-              team: sportPlayerGameStats.team,
-              week: sportPlayerGameStats.week,
-              stats: sportPlayerGameStats.stats,
-            })
-            .from(sportPlayerGameStats)
-            .where(and(eq(sportPlayerGameStats.sport, sport), eq(sportPlayerGameStats.season, year)))
-        ).map((r) => ({ ...r, stats: r.stats as Record<string, string> }));
+        // This season's games, plus last season's for any player with fewer
+        // than 3 games so far (start of a season), so opening-week props
+        // still get a real projection. Last season's games sort before this
+        // season's (negative week numbers) and never count toward opponent
+        // adjustments.
+        const rawStatRows = await db
+          .select({
+            player: sportPlayerGameStats.player,
+            team: sportPlayerGameStats.team,
+            week: sportPlayerGameStats.week,
+            season: sportPlayerGameStats.season,
+            stats: sportPlayerGameStats.stats,
+            kickoffAt: sportGames.kickoffAt,
+          })
+          .from(sportPlayerGameStats)
+          .innerJoin(sportGames, eq(sportGames.id, sportPlayerGameStats.gameId))
+          .where(and(eq(sportPlayerGameStats.sport, sport), inArray(sportPlayerGameStats.season, [year - 1, year])));
+        const currentCount = new Map<string, number>();
+        for (const r of rawStatRows) if (r.season === year) currentCount.set(r.player, (currentCount.get(r.player) ?? 0) + 1);
+        const prior = rawStatRows
+          .filter((r) => r.season === year - 1 && (currentCount.get(r.player) ?? 0) < 3)
+          .sort((a, b) => (a.kickoffAt?.getTime() ?? 0) - (b.kickoffAt?.getTime() ?? 0));
+        const statRows = [
+          ...prior.map((r, i) => ({ player: r.player, team: r.team, week: i - prior.length - 1000, stats: r.stats as Record<string, string> })),
+          ...rawStatRows
+            .filter((r) => r.season === year)
+            .map((r) => ({ player: r.player, team: r.team, week: r.week, stats: r.stats as Record<string, string> })),
+        ];
 
         const averages = computeSportSeasonAverages(sport, statRows, schedule, week);
+        // A player whose last team (from box scores) isn't in the game his
+        // line was posted for has changed teams; drop him rather than show
+        // him on the wrong team.
+        const eventTeamsByPlayer = new Map<string, Set<string>>();
+        thisWeekEvents.forEach((e, i) => {
+          const teams = new Set(
+            [nameToAbbr.get(e.home_team.trim().toLowerCase()), nameToAbbr.get(e.away_team.trim().toLowerCase())].filter(
+              (x): x is string => !!x
+            )
+          );
+          for (const pr of propsByEvent[i]) eventTeamsByPlayer.set(pr.player, teams);
+        });
+        for (const [key, avg] of averages) {
+          const teams = eventTeamsByPlayer.get(avg.player);
+          if (teams && !teams.has(avg.team)) averages.delete(key);
+        }
 
         // Same OUT/DOUBTFUL-style availability gate as NFL (lib/sync.ts),
         // against whatever this sport's injury reports actually say — see

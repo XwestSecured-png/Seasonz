@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { sportGames } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { getGameInsights } from "@/lib/sports/insights";
+import { getModelBuilds, type BuildSportFilter } from "@/lib/auto-builds";
 import { SPORTS, type SportKey } from "@/lib/sports/types";
 import { currentSeasonYear } from "@/lib/sports/espn";
 import { etWeekWindow, inWindow } from "@/lib/week-window";
@@ -14,6 +15,25 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   if (!process.env.CRON_SECRET || req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  const buildsFor = req.nextUrl.searchParams.get("builds");
+  if (buildsFor) {
+    try {
+      const out: Record<string, unknown> = {};
+      for (const w of ["today", "week"] as const) {
+        const b = await getModelBuilds(w, buildsFor as BuildSportFilter);
+        out[w] = {
+          gamePool: b.gameLegPool,
+          propPool: b.propLegPool,
+          parlaySizes: b.parlays.map((x) => x.size),
+          propSizes: b.props.map((x) => x.size),
+          sample: b.parlays.at(-1)?.legs.map((l) => `${l.sport} ${l.label} ${Math.round(l.prob * 100)}%`),
+        };
+      }
+      return NextResponse.json(out);
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+    }
   }
   const sport = (req.nextUrl.searchParams.get("sport") ?? "nba") as SportKey;
   if (!(sport in SPORTS)) return NextResponse.json({ error: "bad sport" }, { status: 400 });

@@ -27,14 +27,22 @@ import { etWeekWindow, inWindow } from "./week-window";
 import { americanToDecimalOdds as americanToDecimal } from "./stake-sizing";
 
 export const BUILD_SIZES = [2, 3, 4, 5, 6, 7, 8] as const;
+// Preferred band: confident but not so short the price adds nothing.
 const MIN_GAME_PROB = 0.6;
 const MAX_GAME_PROB = 0.9; // -900 and shorter adds risk but almost no payout
 const MIN_PROP_PROB = 0.55;
 const MAX_PROP_PROB = 0.9;
+// Wider band used only to fill out bigger parlays (up to 8 legs) on a light
+// slate: still the model's own side, still better than a coin flip.
+const FILL_MIN_PROB = 0.52;
+const FILL_MAX_PROB = 0.96;
+const inBand = (p: number, lo: number, hi: number) => p >= lo && p <= hi;
 const OTHER_SPORTS: SportKey[] = ["nba", "wnba", "nhl", "mlb", "ncaaf", "ncaab"];
 
 export interface BuildLeg {
   id: string;
+  sportKey: "nfl" | SportKey;
+  preferred: boolean; // inside the preferred confidence band
   sport: string; // "NFL", "NBA", ...
   kind: "game" | "prop";
   label: string; // "KC to win", "Josh Allen anytime TD"
@@ -109,7 +117,8 @@ function summarize(legs: BuildLeg[], combinedProb: number, kind: "game" | "prop"
 }
 
 function makeBuilds(pool: BuildLeg[], kind: "game" | "prop", window: "today" | "week"): Build[] {
-  const sorted = [...pool].sort((a, b) => b.prob - a.prob);
+  // Preferred-band legs first (strongest first), then fill-in legs.
+  const sorted = [...pool].sort((a, b) => Number(b.preferred) - Number(a.preferred) || b.prob - a.prob);
   const picked: BuildLeg[] = [];
   const used = new Set<string>();
   for (const leg of sorted) {
@@ -191,7 +200,8 @@ async function nflGameLegs(window: "today" | "week"): Promise<BuildLeg[]> {
     const pHome = g.homeWinPctPre!;
     const homeFav = pHome >= 0.5;
     const prob = homeFav ? pHome : 1 - pHome;
-    if (prob < MIN_GAME_PROB || prob > MAX_GAME_PROB) continue;
+    if (!inBand(prob, FILL_MIN_PROB, FILL_MAX_PROB)) continue;
+    const preferred = inBand(prob, MIN_GAME_PROB, MAX_GAME_PROB);
     const team = homeFav ? g.homeTeam : g.awayTeam;
     const opp = homeFav ? g.awayTeam : g.homeTeam;
     const sign = homeFav ? 1 : -1;
@@ -236,6 +246,8 @@ async function nflGameLegs(window: "today" | "week"): Promise<BuildLeg[]> {
 
     legs.push({
       id: `nfl-${g.id}`,
+      sportKey: "nfl",
+      preferred,
       sport: "NFL",
       kind: "game",
       label: `${team} to win`,
@@ -286,7 +298,8 @@ async function otherSportGameLegs(window: "today" | "week"): Promise<BuildLeg[]>
       const pHome = g.homeWinPctPre!;
       const homeFav = pHome >= 0.5;
       const prob = homeFav ? pHome : 1 - pHome;
-      if (prob < MIN_GAME_PROB || prob > MAX_GAME_PROB) continue;
+      if (!inBand(prob, FILL_MIN_PROB, FILL_MAX_PROB)) continue;
+    const preferred = inBand(prob, MIN_GAME_PROB, MAX_GAME_PROB);
       const team = homeFav ? g.homeTeam : g.awayTeam;
       const opp = homeFav ? g.awayTeam : g.homeTeam;
       const book = homeFav ? g.moneylineHomeOdds : g.moneylineAwayOdds;
@@ -333,6 +346,8 @@ async function otherSportGameLegs(window: "today" | "week"): Promise<BuildLeg[]>
       reasons.push(`Model chance to win: ${pctStr(prob)}.`);
       legs.push({
         id: `${sport}-${g.id}`,
+        sportKey: sport,
+        preferred,
         sport: def.label === "College Football" ? "NCAAF" : def.label === "College Basketball" ? "NCAAB" : def.label,
         kind: "game",
         label: `${team} to win`,
@@ -381,7 +396,8 @@ async function propLegs(window: "today" | "week"): Promise<BuildLeg[]> {
       if (window === "today" && !(g.kickoffAt && etDate(g.kickoffAt) === today)) continue;
       const isModelOnly = r.source === "MODEL" || r.priceAmerican === null;
       const prob = r.modelWinPct ?? (isModelOnly ? r.edgePct : null);
-      if (prob === null || prob < MIN_PROP_PROB || prob > MAX_PROP_PROB) continue;
+      if (prob === null || !inBand(prob, FILL_MIN_PROB, FILL_MAX_PROB)) continue;
+      const preferred = inBand(prob, MIN_PROP_PROB, MAX_PROP_PROB);
       const opp = g.homeTeam === r.team ? g.awayTeam : g.homeTeam;
       const reasons: string[] = [];
       const statLabel =
@@ -412,6 +428,8 @@ async function propLegs(window: "today" | "week"): Promise<BuildLeg[]> {
             : `${r.player} ${r.side} ${r.line} ${r.statType}`;
       legs.push({
         id: `nflprop-${r.id}`,
+        sportKey: "nfl",
+        preferred,
         sport: "NFL",
         kind: "prop",
         label,
@@ -454,7 +472,8 @@ async function propLegs(window: "today" | "week"): Promise<BuildLeg[]> {
       if (g.kickoffAt && g.kickoffAt.getTime() <= Date.now()) continue;
       if (window === "today" && !(g.kickoffAt && etDate(g.kickoffAt) === today)) continue;
       const prob = r.modelWinPct;
-      if (prob < MIN_PROP_PROB || prob > MAX_PROP_PROB) continue;
+      if (!inBand(prob, FILL_MIN_PROB, FILL_MAX_PROB)) continue;
+      const preferred = inBand(prob, MIN_PROP_PROB, MAX_PROP_PROB);
       const reasons: string[] = [];
       if (r.projection !== null) {
         reasons.push(`Projection: ${r.projection.toFixed(1)} vs a line of ${r.line} (${signed(r.projection - r.line)}).`);
@@ -466,7 +485,9 @@ async function propLegs(window: "today" | "week"): Promise<BuildLeg[]> {
       reasons.push(`Model chance this hits: ${pctStr(prob)}.`);
       legs.push({
         id: `${sport}prop-${r.id}`,
-        sport: SPORTS[sport].label,
+        sportKey: sport,
+        preferred,
+        sport: sport === "ncaaf" ? "NCAAF" : sport === "ncaab" ? "NCAAB" : SPORTS[sport].label,
         kind: "prop",
         label: `${r.player} ${r.side} ${r.line} ${r.statType}`,
         matchup: `${g.awayTeam} @ ${g.homeTeam}`,
@@ -483,9 +504,17 @@ async function propLegs(window: "today" | "week"): Promise<BuildLeg[]> {
 }
 
 /** Today's or this week's best builds, 2 to 8 legs, for game picks and for player props. */
-export async function getModelBuilds(window: "today" | "week"): Promise<BuildSet> {
-  const [nfl, others, props] = await Promise.all([nflGameLegs(window), otherSportGameLegs(window), propLegs(window)]);
-  const gamePool = [...nfl, ...others];
+export type BuildSportFilter = "all" | "nfl" | SportKey;
+
+export async function getModelBuilds(window: "today" | "week", filter: BuildSportFilter = "all"): Promise<BuildSet> {
+  const [nfl, others, allProps] = await Promise.all([
+    filter === "all" || filter === "nfl" ? nflGameLegs(window) : Promise.resolve([]),
+    filter === "nfl" ? Promise.resolve([]) : otherSportGameLegs(window),
+    propLegs(window),
+  ]);
+  const keep = (l: BuildLeg) => filter === "all" || l.sportKey === filter;
+  const gamePool = [...nfl, ...others].filter(keep);
+  const props = allProps.filter(keep);
   return {
     window,
     parlays: makeBuilds(gamePool, "game", window),

@@ -8,7 +8,8 @@ import {
   sportPropLinesRaw,
   userPropPicks,
 } from "@/db/schema";
-import { and, asc, desc, eq, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, max, sql } from "drizzle-orm";
+import { etWeekWindow, inWindow } from "@/lib/week-window";
 import { PropsExplorer } from "./props-explorer";
 import { SportPropsExplorer } from "./sport-props-explorer";
 import { OtherSportProps, type UpcomingGameOption, type ExistingPropPick } from "./other-sport-props";
@@ -170,29 +171,31 @@ async function OtherSportPropsSection({ sport, userId }: { sport: SportKey; user
   const def = SPORTS[sport];
   const season = currentSeasonYear(sport);
 
-  const [latestUpcomingWeek] = await db
-    .select({ week: max(sportGames.week) })
+  // This week's games (Mon–Sun ET); if none are left this week (season
+  // not started, break), the next 7 days from the next scheduled game.
+  const allUpcoming = await db
+    .select({
+      id: sportGames.id,
+      homeTeam: sportGames.homeTeam,
+      awayTeam: sportGames.awayTeam,
+      kickoffAt: sportGames.kickoffAt,
+    })
     .from(sportGames)
-    .where(and(eq(sportGames.sport, sport), eq(sportGames.season, season), eq(sportGames.isFinal, false)));
-
-  const upcoming = latestUpcomingWeek?.week
-    ? await db
-        .select({
-          id: sportGames.id,
-          homeTeam: sportGames.homeTeam,
-          awayTeam: sportGames.awayTeam,
-          kickoffAt: sportGames.kickoffAt,
-        })
-        .from(sportGames)
-        .where(
-          and(
-            eq(sportGames.sport, sport),
-            eq(sportGames.season, season),
-            eq(sportGames.week, latestUpcomingWeek.week)
-          )
-        )
-        .orderBy(asc(sportGames.kickoffAt))
-    : [];
+    .where(
+      and(
+        eq(sportGames.sport, sport),
+        eq(sportGames.season, season),
+        eq(sportGames.isFinal, false),
+        gt(sportGames.kickoffAt, new Date(Date.now() - 6 * 3600_000))
+      )
+    )
+    .orderBy(asc(sportGames.kickoffAt));
+  const wk = etWeekWindow();
+  let upcoming = allUpcoming.filter((g) => inWindow(g.kickoffAt, wk));
+  if (upcoming.length === 0 && allUpcoming[0]?.kickoffAt) {
+    const start = allUpcoming[0].kickoffAt.getTime();
+    upcoming = allUpcoming.filter((g) => (g.kickoffAt?.getTime() ?? 0) < start + 7 * 86_400_000);
+  }
 
   const games: UpcomingGameOption[] = upcoming.map((g) => ({
     id: g.id,

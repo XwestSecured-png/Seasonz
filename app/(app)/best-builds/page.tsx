@@ -37,8 +37,9 @@ export default async function BestBuildsPage() {
           it as an estimate.
         </p>
         <p>
-          Near-certain picks and props (over 90%) are left out. Books price them so short they add risk without adding
-          payout. When no sportsbook price is synced yet, the payout uses the model&rsquo;s fair price and is labelled{" "}
+          Legs come first from picks the model gives 55&ndash;90% (60&ndash;90% for game picks). On a light slate, bigger
+          parlays are filled out with the model&rsquo;s next-best sides (still better than a coin flip), so every size
+          from 2 to 8 can be built when there are enough games. When no sportsbook price is synced yet, the payout uses the model&rsquo;s fair price and is labelled{" "}
           <em>fair</em>. Check your book&rsquo;s real price before betting.
         </p>
         <p>Bigger parlays pay more but hit far less often. Every leg has to win.</p>

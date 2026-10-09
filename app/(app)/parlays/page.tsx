@@ -1,10 +1,14 @@
 import { db } from "@/db";
-import { games, oddsLines, parlayPicks, propLinesRaw } from "@/db/schema";
-import { and, desc, eq, max } from "drizzle-orm";
+import { games, oddsLines, parlayPicks, propLinesRaw, sportGames, sportPropLinesRaw } from "@/db/schema";
+import { and, asc, desc, eq, gt, max } from "drizzle-orm";
+import { getModelBuilds, type BuildSportFilter } from "@/lib/auto-builds";
+import { BuildsView } from "../best-builds/builds-view";
+import { SPORTS, type SportKey } from "@/lib/sports/types";
+import { currentSeasonYear } from "@/lib/sports/espn";
+import { etWeekWindow, inWindow } from "@/lib/week-window";
+import type { LegPickerGame, LegPickerProp } from "./leg-picker";
 import { ParlayBuilder } from "./parlay-builder";
 import { ParlayCard } from "./parlay-card";
-import { PayoutCalc } from "./payout-calc";
-import { PushBetButton } from "../push-bet-button";
 import { PageInfo } from "../page-info";
 import { PARLAY_RULE } from "@/lib/bet-explainer";
 import Link from "next/link";
@@ -30,8 +34,72 @@ function currentNflSeason(): number {
   return now.getMonth() >= 1 ? now.getFullYear() : now.getFullYear() - 1;
 }
 
-function formatPrice(price: number): string {
-  return price > 0 ? `+${price}` : `${price}`;
+const SPORT_TABS: { key: BuildSportFilter; label: string }[] = [
+  { key: "all", label: "All sports" },
+  { key: "nfl", label: "NFL" },
+  ...(Object.values(SPORTS).map((d) => ({
+    key: d.key,
+    label: d.key === "ncaaf" ? "NCAAF" : d.key === "ncaab" ? "NCAAB" : d.label,
+  })) as { key: SportKey; label: string }[]),
+];
+
+/** A non-NFL sport's games this week (or the next 7 days if none are left) and its synced prop lines, for the builder's dropdowns. */
+async function sportBuilderData(sport: SportKey): Promise<{ games: LegPickerGame[]; props: LegPickerProp[] }> {
+  const season = currentSeasonYear(sport);
+  const upcoming = await db
+    .select()
+    .from(sportGames)
+    .where(
+      and(
+        eq(sportGames.sport, sport),
+        eq(sportGames.season, season),
+        eq(sportGames.isFinal, false),
+        gt(sportGames.kickoffAt, new Date(Date.now() - 6 * 3600_000))
+      )
+    )
+    .orderBy(asc(sportGames.kickoffAt));
+  const wk = etWeekWindow();
+  let list = upcoming.filter((g) => inWindow(g.kickoffAt, wk));
+  if (list.length === 0 && upcoming[0]?.kickoffAt) {
+    const start = upcoming[0].kickoffAt.getTime();
+    list = upcoming.filter((g) => (g.kickoffAt?.getTime() ?? 0) < start + 7 * 86_400_000);
+  }
+  const [latest] = await db
+    .select({ week: max(sportPropLinesRaw.week) })
+    .from(sportPropLinesRaw)
+    .where(and(eq(sportPropLinesRaw.sport, sport), eq(sportPropLinesRaw.season, season)));
+  const props =
+    latest?.week != null
+      ? await db
+          .select({
+            player: sportPropLinesRaw.player,
+            team: sportPropLinesRaw.team,
+            statType: sportPropLinesRaw.statType,
+            line: sportPropLinesRaw.line,
+            side: sportPropLinesRaw.side,
+            book: sportPropLinesRaw.book,
+            priceAmerican: sportPropLinesRaw.priceAmerican,
+          })
+          .from(sportPropLinesRaw)
+          .where(and(eq(sportPropLinesRaw.sport, sport), eq(sportPropLinesRaw.season, season), eq(sportPropLinesRaw.week, latest.week)))
+      : [];
+  return {
+    games: list.map((g) => ({
+      id: g.id,
+      week: g.week,
+      homeTeam: g.homeTeam,
+      awayTeam: g.awayTeam,
+      moneylineHomeOdds: g.moneylineHomeOdds,
+      moneylineAwayOdds: g.moneylineAwayOdds,
+      spreadHomeLine: g.spreadHomeLine,
+      spreadHomePriceAmerican: g.spreadHomePriceAmerican,
+      spreadAwayPriceAmerican: g.spreadAwayPriceAmerican,
+      totalLine: g.totalLine,
+      totalOverPriceAmerican: g.totalOverPriceAmerican,
+      totalUnderPriceAmerican: g.totalUnderPriceAmerican,
+    })),
+    props,
+  };
 }
 
 interface AutoLeg {
@@ -44,7 +112,10 @@ interface AutoLeg {
   priceAmerican: number;
 }
 
-export default async function ParlaysPage() {
+export default async function ParlaysPage({ searchParams }: { searchParams: Promise<{ sport?: string }> }) {
+  const { sport: sportParam } = await searchParams;
+  const filter: BuildSportFilter =
+    sportParam === "nfl" || (sportParam && sportParam in SPORTS) ? (sportParam as BuildSportFilter) : "all";
   const season = currentNflSeason();
   const user = await getCurrentUser();
   const favTeam = await getFavoriteTeam();
@@ -57,20 +128,7 @@ export default async function ParlaysPage() {
     .where(eq(oddsLines.season, season));
   const week = latest?.week ?? null;
 
-  const autoParlays =
-    week !== null
-      ? await db
-          .select()
-          .from(parlayPicks)
-          .where(
-            and(
-              eq(parlayPicks.season, season),
-              eq(parlayPicks.week, week),
-              eq(parlayPicks.kind, "auto")
-            )
-          )
-          .orderBy(desc(parlayPicks.combinedWinPct))
-      : [];
+  const [buildsToday, buildsWeek] = await Promise.all([getModelBuilds("today", filter), getModelBuilds("week", filter)]);
 
   const myParlays = user
     ? await db
@@ -125,7 +183,15 @@ export default async function ParlaysPage() {
   // MLB, college football, college basketball) — a quick-add list in the
   // builder below, priced with the model's own fair odds since none of
   // these sports have a real sportsbook line synced yet.
-  const otherSportsPicks = await otherSportsPickCandidates();
+  const isOtherSport = filter !== "all" && filter !== "nfl";
+  const sportData = isOtherSport ? await sportBuilderData(filter as SportKey) : null;
+  const otherSportsPicks =
+    filter === "nfl"
+      ? []
+      : (await otherSportsPickCandidates()).filter((p) => filter === "all" || p.sportKey === filter);
+  const builderGames = sportData ? sportData.games : weekGames;
+  const builderProps = sportData ? sportData.props : weekPropOptions;
+  const tabLabel = SPORT_TABS.find((t) => t.key === filter)?.label ?? "All sports";
 
   return (
     <div className="space-y-8">
@@ -138,11 +204,11 @@ export default async function ParlaysPage() {
         </div>
         <PageInfo>
           <p>
-            <strong>Auto Parlays</strong> are built by the app from this week&rsquo;s best player
-            prop picks, combined into 2, 3, or 4-leg bets (one player per leg, never the same
-            player twice). &ldquo;Combined win%&rdquo; is the chance all legs hit together.
-            &ldquo;Weakest leg&rdquo; is the one most likely to lose the bet. These are just for
-            reference — not tied to your account.
+            Use the sport buttons to switch between <strong>All sports</strong> or any one sport.{" "}
+            <strong>Auto Parlays</strong> are built by the model for today or this week, in every size from 2
+            to 8 legs, from game picks and from player props, one leg per game (one prop per team).
+            &ldquo;Model chance all hit&rdquo; is the chance every leg wins. These are for reference,
+            not tied to your account.
           </p>
           <p>
             <strong>Your Parlays</strong> are ones you build yourself, from any bet you want.
@@ -188,76 +254,34 @@ export default async function ParlaysPage() {
         </PageInfo>
       </div>
 
-      <div>
-        <h2 className="text-sm font-semibold text-neutral-300 mb-2">
-          Auto Parlays ({autoParlays.length})
-        </h2>
+      <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Sport">
+        {SPORT_TABS.map((t) => (
+          <Link
+            key={t.key}
+            href={t.key === "all" ? "/parlays" : `/parlays?sport=${t.key}`}
+            role="tab"
+            aria-selected={filter === t.key}
+            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+              filter === t.key ? "bg-orange-600 text-white" : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
+            }`}
+          >
+            {t.label}
+          </Link>
+        ))}
+      </div>
+
+      <div className="space-y-3">
+        <h2 className="text-sm font-semibold text-neutral-300">Auto Parlays · {tabLabel}</h2>
         <SectionNote>
-          Built by the app from this week&rsquo;s best player props. Just for reference — not
-          graded, not tied to your account.
+          The model&rsquo;s best 2- to 8-leg parlays for {filter === "all" ? "every sport" : tabLabel}, from game picks and
+          from player props. Tap any leg to see why it was picked.
         </SectionNote>
-        {autoParlays.length === 0 ? (
-          <p className="text-sm text-neutral-500">
-            Not enough edge-worthy picks this week to build a parlay.
-          </p>
-        ) : (
-          <div className="grid gap-3 md:grid-cols-3">
-            {autoParlays.map((p) => {
-              const legs = (p.legs as AutoLeg[]) ?? [];
-              const badgeColor =
-                p.confidence === "High"
-                  ? "bg-emerald-500/20 text-emerald-300"
-                  : p.confidence === "Moderate"
-                    ? "bg-amber-500/20 text-amber-300"
-                    : "bg-neutral-700/50 text-neutral-300";
-              return (
-                <div key={p.id} className="rounded-md border border-neutral-800 p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">{p.size}-leg parlay</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${badgeColor}`}>
-                      {p.confidence}
-                    </span>
-                  </div>
-                  <ul className="text-xs text-neutral-400 space-y-1">
-                    {legs.map((leg, i) => {
-                      const isFavTeam = leg.team === favTeam?.code;
-                      return (
-                        <li
-                          key={i}
-                          style={isFavTeam ? { color: favTeam!.primary } : undefined}
-                          className={isFavTeam ? "font-medium" : undefined}
-                        >
-                          {leg.player} ({leg.team}) — {leg.side} {leg.line} {leg.statType}{" "}
-                          <span className={isFavTeam ? "" : "text-neutral-500"}>
-                            {formatPrice(leg.priceAmerican)} @ {leg.book}
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  <div className="text-xs text-neutral-500 pt-1 border-t border-neutral-800 space-y-1.5">
-                    <div>
-                      Combined win%: {((p.combinedWinPct ?? 0) * 100).toFixed(1)}% · Weakest leg:{" "}
-                      {((p.weakestLegWinPct ?? 0) * 100).toFixed(1)}%
-                    </div>
-                    <PayoutCalc legs={legs} compact />
-                    <PushBetButton
-                      legs={legs.map((leg) => ({
-                        label: `${leg.player} (${leg.team}) — ${leg.side} ${leg.line} ${leg.statType}`,
-                        priceAmerican: leg.priceAmerican,
-                      }))}
-                      title={`${p.size}-leg Auto Parlay`}
-                      week={week ?? undefined}
-                      sportsbookPrefs={sportsbookPrefs}
-                      allowedCategories={platformCategories}
-                      compact
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <BuildsView
+          today={buildsToday}
+          week={buildsWeek}
+          sportsbookPrefs={sportsbookPrefs}
+          allowedCategories={platformCategories}
+        />
       </div>
 
       <div className="space-y-3">
@@ -266,7 +290,12 @@ export default async function ParlaysPage() {
           Add any bet you want below. After the games finish, come back and mark each leg Won,
           Lost, or Push. Only you can see these.
         </SectionNote>
-        <ParlayBuilder games={weekGames} propOptions={weekPropOptions} otherSportsPicks={otherSportsPicks} />
+        <ParlayBuilder
+          key={filter}
+          games={builderGames}
+          propOptions={builderProps}
+          otherSportsPicks={otherSportsPicks}
+        />
         {myParlays.length === 0 ? (
           <p className="text-sm text-neutral-500">
             No parlays yet — build one above to start tracking it.
