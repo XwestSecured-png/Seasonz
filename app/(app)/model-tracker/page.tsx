@@ -424,7 +424,7 @@ export default async function ModelTrackerPage() {
         </SectionNote>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {otherAccuracy.map((s) => (
-            <Link
+            <Link prefetch={false}
               key={s.sportKey}
               href={`/sports/${s.sportKey}`}
               className="rounded-md border border-neutral-800 px-4 py-3 hover:bg-neutral-900/50 transition-colors"

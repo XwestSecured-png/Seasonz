@@ -210,7 +210,7 @@ export function PlatformSelect({
           })}
           {anyLocked && (
             <li className="mt-1 border-t border-neutral-800 px-3 pt-1.5">
-              <Link
+              <Link prefetch={false}
                 href="/upgrade"
                 onClick={() => setOpen(false)}
                 className="block py-1 text-xs text-blue-400 hover:text-blue-300"
@@ -380,7 +380,7 @@ export function PlatformMultiSelect({
           })}
           <li className="mt-1 flex items-center justify-between gap-2 border-t border-neutral-800 px-3 pt-1.5">
             {anyLocked ? (
-              <Link
+              <Link prefetch={false}
                 href="/upgrade"
                 onClick={() => setOpen(false)}
                 className="block py-1 text-xs text-blue-400 hover:text-blue-300"

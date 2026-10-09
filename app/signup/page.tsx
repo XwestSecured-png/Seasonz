@@ -70,7 +70,7 @@ export default async function SignupPage({
         </form>
         <p className="text-sm text-neutral-500 mt-4 text-center">
           Already have an account?{" "}
-          <Link href="/login" className="text-blue-400 hover:text-blue-300">
+          <Link prefetch={false} href="/login" className="text-blue-400 hover:text-blue-300">
             Log in
           </Link>
         </p>

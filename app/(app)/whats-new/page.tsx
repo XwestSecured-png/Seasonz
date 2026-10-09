@@ -65,7 +65,7 @@ export default async function WhatsNewPage() {
                   {c.whatItMeans}
                 </p>
                 {c.href && (
-                  <Link href={c.href} className="mt-1.5 inline-block text-xs text-emerald-400 underline underline-offset-2 hover:text-emerald-300">
+                  <Link prefetch={false} href={c.href} className="mt-1.5 inline-block text-xs text-emerald-400 underline underline-offset-2 hover:text-emerald-300">
                     Take me there →
                   </Link>
                 )}

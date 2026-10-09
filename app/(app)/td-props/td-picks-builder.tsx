@@ -186,7 +186,7 @@ export function TdPicksBuilder({
           {MAX_SLOTS < 5 && (
             <>
               {" · "}
-              <Link href="/upgrade" className="text-blue-400 hover:text-blue-300 underline">
+              <Link prefetch={false} href="/upgrade" className="text-blue-400 hover:text-blue-300 underline">
                 Upgrade
               </Link>{" "}
               for 5

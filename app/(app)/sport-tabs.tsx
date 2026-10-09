@@ -18,7 +18,7 @@ export function SportTabs({ active }: { active: string }) {
       {TABS.map((t) => {
         const on = t.key === active;
         return (
-          <Link
+          <Link prefetch={false}
             key={t.key}
             href={t.href}
             aria-current={on ? "page" : undefined}

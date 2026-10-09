@@ -96,7 +96,7 @@ export function WelcomeTour() {
       </p>
       <div className="grid gap-2 sm:grid-cols-2">
         {STOPS.map((s) => (
-          <Link
+          <Link prefetch={false}
             key={s.href}
             href={s.href}
             className="rounded-md border border-neutral-800 bg-neutral-900/60 px-3 py-2 transition-colors hover:bg-neutral-900"

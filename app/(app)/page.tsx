@@ -234,7 +234,7 @@ export default async function DashboardPage() {
 
       <WelcomeTour />
 
-      <Link
+      <Link prefetch={false}
         href="/best-builds"
         className="flex items-center justify-between gap-3 rounded-lg border border-orange-900/60 bg-gradient-to-r from-orange-950/50 to-neutral-900/40 px-4 py-3 hover:border-orange-700"
       >
@@ -373,7 +373,7 @@ export default async function DashboardPage() {
                 </div>
               );
               return row.href ? (
-                <Link key={row.key} href={row.href} className="block hover:bg-neutral-900/50">
+                <Link prefetch={false} key={row.key} href={row.href} className="block hover:bg-neutral-900/50">
                   {rowContent}
                 </Link>
               ) : (
@@ -414,7 +414,7 @@ export default async function DashboardPage() {
                   </li>
                 ))}
               </ul>
-              <Link
+              <Link prefetch={false}
                 href="/parlays"
                 className="inline-block text-sm text-blue-400 hover:text-blue-300 font-medium"
               >
@@ -455,7 +455,7 @@ export default async function DashboardPage() {
                   </li>
                 ))}
               </ul>
-              <Link
+              <Link prefetch={false}
                 href="/parlays"
                 className="inline-block text-sm text-blue-400 hover:text-blue-300 font-medium"
               >

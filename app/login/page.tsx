@@ -48,7 +48,7 @@ export default async function LoginPage({
         </form>
         <p className="text-sm text-neutral-500 mt-4 text-center">
           New here?{" "}
-          <Link href="/signup" className="text-blue-400 hover:text-blue-300">
+          <Link prefetch={false} href="/signup" className="text-blue-400 hover:text-blue-300">
             Create an account
           </Link>
         </p>

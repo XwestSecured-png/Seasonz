@@ -23,4 +23,52 @@ if (process.env.NODE_ENV !== "production") {
   globalThis.__seasonzDbClient = client;
 }
 
+// The pooler occasionally fails to reach the database for a moment
+// ("Failed to connect to database: timeout"). Retry those connection-level
+// failures twice before giving up, so a blip doesn't break a whole page.
+// Only connection errors are retried, never query errors.
+const isConnectionError = (e: unknown) => {
+  const err = e as { code?: string; message?: string } | null;
+  return (
+    !!err &&
+    (["08000", "08001", "08003", "08004", "08006", "57P01", "ECONNRESET", "ETIMEDOUT", "CONNECT_TIMEOUT"].includes(
+      String(err.code)
+    ) ||
+      /failed to connect|connection (terminated|reset)|timeout/i.test(String(err.message)))
+  );
+};
+async function withRetry<T>(run: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await run();
+    } catch (e) {
+      if (attempt >= 2 || !isConnectionError(e)) throw e;
+      await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
+    }
+  }
+}
+type Unsafe = typeof client.unsafe;
+if (!(client as unknown as { __retrying?: boolean }).__retrying) {
+  const original: Unsafe = client.unsafe.bind(client);
+  const patched = ((query: string, params?: unknown[], options?: unknown) => {
+    const first = original(query, params as never, options as never);
+    // postgres-js queries are lazy, so a fresh one can be built per attempt.
+    return new Proxy(first, {
+      get(target, prop) {
+        if (prop === "then") {
+          return (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) =>
+            withRetry(() => original(query, params as never, options as never) as unknown as Promise<unknown>).then(res, rej);
+        }
+        if (prop === "values") {
+          return () => withRetry(() => original(query, params as never, options as never).values() as unknown as Promise<unknown>);
+        }
+        const v = Reflect.get(target, prop);
+        return typeof v === "function" ? v.bind(target) : v;
+      },
+    });
+  }) as unknown as Unsafe;
+  client.unsafe = patched;
+  (client as unknown as { __retrying?: boolean }).__retrying = true;
+}
+
 export const db = drizzle(client, { schema });

@@ -121,7 +121,7 @@ async function NflProps() {
           Under wins at 64 or fewer. Whole-number lines push if the player lands exactly on the number.
         </p>
         <p>The team result doesn&rsquo;t matter. If the player doesn&rsquo;t play, most books void the bet and refund it.</p>
-        <Link href="/learn#props" className="text-emerald-400 underline underline-offset-2 hover:text-emerald-300">
+        <Link prefetch={false} href="/learn#props" className="text-emerald-400 underline underline-offset-2 hover:text-emerald-300">
           Learn every bet type →
         </Link>
       </PageInfo>
@@ -364,7 +364,7 @@ export default async function PropsPage({
         <h1 className="text-lg font-semibold">Player Props</h1>
         <div className="flex gap-1.5 flex-wrap">
           {TABS.map((t) => (
-            <Link
+            <Link prefetch={false}
               key={t.key}
               href={t.key === "nfl" ? "/props" : `/props?sport=${t.key}`}
               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${

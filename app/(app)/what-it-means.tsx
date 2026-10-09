@@ -34,7 +34,7 @@ export function WhatItMeans({
         {e.alternate && <Row label="Alt line" tone="text-sky-400" text={e.alternate} />}
         {e.payout && <Row label="Payout" tone="text-neutral-400" text={e.payout} />}
         {e.odds && <Row label="The odds" tone="text-neutral-400" text={e.odds} />}
-        <Link href="/learn" className="inline-block pt-1 text-xs text-emerald-400 underline underline-offset-2 hover:text-emerald-300">
+        <Link prefetch={false} href="/learn" className="inline-block pt-1 text-xs text-emerald-400 underline underline-offset-2 hover:text-emerald-300">
           Learn how every bet type works →
         </Link>
       </div>

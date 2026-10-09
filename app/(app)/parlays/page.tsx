@@ -248,7 +248,7 @@ export default async function ParlaysPage({ searchParams }: { searchParams: Prom
             Each extra leg multiplies the payout and divides your chances. Two -110 legs pay about +264
             and hit about 1 in 4 times if each is a coin flip; three pay about +596 and hit about 1 in 8.
           </p>
-          <Link href="/learn#parlays" className="text-emerald-400 underline underline-offset-2 hover:text-emerald-300">
+          <Link prefetch={false} href="/learn#parlays" className="text-emerald-400 underline underline-offset-2 hover:text-emerald-300">
             Learn every bet type →
           </Link>
         </PageInfo>
@@ -256,7 +256,7 @@ export default async function ParlaysPage({ searchParams }: { searchParams: Prom
 
       <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Sport">
         {SPORT_TABS.map((t) => (
-          <Link
+          <Link prefetch={false}
             key={t.key}
             href={t.key === "all" ? "/parlays" : `/parlays?sport=${t.key}`}
             role="tab"

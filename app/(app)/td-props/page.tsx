@@ -108,7 +108,7 @@ export default async function TdPropsPage() {
           <p>
             <strong>Model&rsquo;s Top 5</strong> is the app&rsquo;s own pick of the week&rsquo;s
             five likeliest touchdown scorers, combined into a single what-if payout (Free shows
-            the top 3 — <Link href="/upgrade" className="text-blue-400 hover:text-blue-300 underline">
+            the top 3 — <Link prefetch={false} href="/upgrade" className="text-blue-400 hover:text-blue-300 underline">
               upgrade
             </Link>{" "}
             for all 5). <strong>Your TD Picks</strong> lets you build the same kind of combo
@@ -172,7 +172,7 @@ export default async function TdPropsPage() {
             {topN < 5 && (
               <p className="text-xs text-neutral-500">
                 Free shows the top {topN} of 5.{" "}
-                <Link href="/upgrade" className="text-blue-400 hover:text-blue-300 underline">
+                <Link prefetch={false} href="/upgrade" className="text-blue-400 hover:text-blue-300 underline">
                   Upgrade
                 </Link>{" "}
                 to see all 5.

@@ -18,7 +18,7 @@ export function NextStep({
       <p className="text-sm text-neutral-400 max-w-xl">
         <span className="text-neutral-200 font-medium">Next: {label}.</span> {reason}
       </p>
-      <Link
+      <Link prefetch={false}
         href={href}
         className="text-sm text-blue-400 hover:text-blue-300 font-medium whitespace-nowrap shrink-0"
       >

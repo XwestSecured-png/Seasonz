@@ -197,7 +197,7 @@ export function PushBetButton({
         <p className="text-xs text-neutral-500">
           <LockIcon className="mr-1 inline h-3 w-3" />
           {locked.map((b) => SPORTSBOOKS[b].label).join(", ")} needs Pro — skipped on push.{" "}
-          <Link href="/upgrade" className="text-blue-400 hover:text-blue-300 underline">
+          <Link prefetch={false} href="/upgrade" className="text-blue-400 hover:text-blue-300 underline">
             Upgrade
           </Link>{" "}
           to include {locked.length === 1 ? "it" : "them"}.

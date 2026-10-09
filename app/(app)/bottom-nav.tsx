@@ -127,7 +127,7 @@ export function BottomNav({
             const active = pathname === l.href;
             const locked = l.pro && !canAnalytics;
             return (
-              <Link
+              <Link prefetch={false}
                 key={l.label}
                 href={l.href}
                 onClick={() => setMoreOpen(false)}
@@ -142,7 +142,7 @@ export function BottomNav({
               </Link>
             );
           })}
-          <Link
+          <Link prefetch={false}
             href="/upgrade"
             onClick={() => setMoreOpen(false)}
             className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-blue-400 hover:bg-neutral-900/70"
@@ -151,7 +151,7 @@ export function BottomNav({
             Upgrade — you&rsquo;re on {TIER_LABELS[tier]}
           </Link>
           {isAdmin && (
-            <Link
+            <Link prefetch={false}
               href="/admin"
               onClick={() => setMoreOpen(false)}
               className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-neutral-300 hover:bg-neutral-900/70"
@@ -192,7 +192,7 @@ export function BottomNav({
           {PRIMARY.map((l) => {
             const active = pathname === l.href;
             return (
-              <Link
+              <Link prefetch={false}
                 key={l.label}
                 href={l.href}
                 className="flex flex-col items-center justify-center gap-0.5 py-2.5 text-[11px] font-medium"

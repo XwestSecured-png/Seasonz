@@ -10,7 +10,7 @@ export function UpgradeGate({ feature }: { feature: string }) {
         <span className="font-medium text-neutral-200">{feature}</span> is a Pro feature. Upgrade
         to unlock it, plus the full TD Picks builder and every push platform.
       </p>
-      <Link
+      <Link prefetch={false}
         href="/upgrade"
         className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-500"
       >

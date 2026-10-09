@@ -34,7 +34,7 @@ export function NavLinks({ accent }: { accent?: string }) {
       {LINKS.map((link) => {
         const active = pathname === link.href;
         return (
-          <Link
+          <Link prefetch={false}
             key={link.label}
             href={link.href}
             style={active ? { backgroundColor: accent } : undefined}

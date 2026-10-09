@@ -509,7 +509,24 @@ async function propLegs(window: "today" | "week"): Promise<BuildLeg[]> {
 /** Today's or this week's best builds, 2 to 8 legs, for game picks and for player props. */
 export type BuildSportFilter = "all" | "nfl" | SportKey;
 
-export async function getModelBuilds(window: "today" | "week", filter: BuildSportFilter = "all"): Promise<BuildSet> {
+// The builds are the same for everyone, and building them runs dozens of
+// queries, so each server instance keeps a result for 2 minutes (and shares
+// one in-flight build between simultaneous requests). Keeps the database
+// pooler from running out of connections when several people load Parlays.
+const BUILD_TTL_MS = 120_000;
+const buildCache = new Map<string, { at: number; value: Promise<BuildSet> }>();
+
+export function getModelBuilds(window: "today" | "week", filter: BuildSportFilter = "all"): Promise<BuildSet> {
+  const key = `${window}|${filter}`;
+  const hit = buildCache.get(key);
+  if (hit && Date.now() - hit.at < BUILD_TTL_MS) return hit.value;
+  const value = computeModelBuilds(window, filter);
+  buildCache.set(key, { at: Date.now(), value });
+  value.catch(() => buildCache.delete(key));
+  return value;
+}
+
+async function computeModelBuilds(window: "today" | "week", filter: BuildSportFilter): Promise<BuildSet> {
   const [nfl, others, allProps] = await Promise.all([
     filter === "all" || filter === "nfl" ? nflGameLegs(window) : Promise.resolve([]),
     filter === "nfl" ? Promise.resolve([]) : otherSportGameLegs(window),

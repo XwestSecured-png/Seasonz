@@ -20,7 +20,7 @@ export function UpdateBanner({ version, title }: { version: string; title: strin
       </span>
       <span className="flex-1 text-neutral-200">
         Seasonz {version}: {title}.{" "}
-        <Link
+        <Link prefetch={false}
           href="/whats-new"
           onClick={() => void markSeen()}
           className="font-medium text-emerald-300 underline underline-offset-2 hover:text-emerald-200"

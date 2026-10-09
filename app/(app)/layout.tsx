@@ -62,7 +62,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="min-h-screen text-neutral-100" style={wrapperStyle}>
       <header className="sticky top-0 z-30 border-b border-neutral-800/80 bg-neutral-950/70 px-4 sm:px-6 py-3 flex items-center justify-between gap-4 flex-wrap backdrop-blur supports-[backdrop-filter]:bg-neutral-950/50">
         <div className="flex items-center gap-6 flex-wrap">
-          <Link href="/" aria-label="Seasonz home" className="whitespace-nowrap">
+          <Link prefetch={false} href="/" aria-label="Seasonz home" className="whitespace-nowrap">
             <SeasonzLogo />
           </Link>
           {/* On mobile this nav is replaced by the fixed bottom tab bar
@@ -77,7 +77,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {user && (
             <span className="text-sm text-neutral-500">
               {user.username}
-              <Link
+              <Link prefetch={false}
                 href="/upgrade"
                 className="ml-1.5 rounded-full border border-neutral-700 px-1.5 py-0.5 text-[10px] font-medium text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
               >
@@ -86,7 +86,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </span>
           )}
           {user?.isAdmin && (
-            <Link
+            <Link prefetch={false}
               href="/admin"
               className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
             >
