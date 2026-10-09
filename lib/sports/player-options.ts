@@ -30,8 +30,7 @@ export const STAT_CHOICES: Record<SportKey, [string, string][]> = {
   nhl: [
     ["G", "Goals"],
     ["A", "Assists"],
-    ["SOG", "Shots on goal"],
-    ["S", "Shots"],
+    ["S", "Shots on goal"],
     ["BS", "Blocked shots"],
     ["HT", "Hits"],
     ["PIM", "Penalty minutes"],
@@ -72,7 +71,8 @@ const BOOK_TO_KEY: Record<string, { key: string; role?: Role }> = {
   Steals: { key: "STL" },
   Blocks: { key: "BLK" },
   Goals: { key: "G" },
-  "Shots on Goal": { key: "SOG" },
+  // ESPN's NHL box score puts shots on goal under "S" (its "SOG" column is always 0).
+  "Shots on Goal": { key: "S" },
   Saves: { key: "SV" },
   Hits: { key: "H", role: "batter" },
   "Home Runs": { key: "HR", role: "batter" },
@@ -113,7 +113,7 @@ const ROLE_CHOICES: Record<string, [string, string][]> = {
     ["GA", "Goals against"],
   ],
   skater: [
-    ["SOG", "Shots on goal"],
+    ["S", "Shots on goal"],
     ["G", "Goals"],
     ["A", "Assists"],
     ["BS", "Blocked shots"],
