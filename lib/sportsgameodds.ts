@@ -1,3 +1,5 @@
+// Vercel won't rename "Sensitive" env vars, so the lowercase names the
+// keys were first saved under are accepted as fallbacks.
 // SportsGameOdds (https://sportsgameodds.com) — a second, optional odds
 // provider. It's used only as a FALLBACK: when lib/odds.ts's primary
 // provider (The Odds API) isn't configured, or fails (most commonly because
@@ -59,7 +61,7 @@ function bookDisplayName(bookmakerId: string): string {
 }
 
 function getSgoKey(): string | undefined {
-  return process.env.SPORTSGAMEODDS_API_KEY?.trim() || undefined;
+  return (process.env.SPORTSGAMEODDS_API_KEY || process.env.sportsgame_odds_api_key)?.trim() || undefined;
 }
 
 /** Whether a SportsGameOdds API key is configured at all. */

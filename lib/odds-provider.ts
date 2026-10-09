@@ -86,13 +86,13 @@ export function getKeyPool(): PoolKey[] {
     seen.add(key);
     pool.push({ keyId: hashKey(key), label, provider, kind, key });
   };
-  splitList(process.env.ODDS_API_KEYS_FREE).forEach((k, i) =>
+  splitList(process.env.ODDS_API_KEYS_FREE || process.env.odds_papi_api_key || process.env.odds_api_key).forEach((k, i) =>
     add("theoddsapi", "free", k, `Free ${i + 1} (The Odds API)`)
   );
   splitList(process.env.PROPLINE_API_KEYS_FREE).forEach((k, i) =>
     add("propline", "free", k, `Free ${i + 1} (PropLine)`)
   );
-  const paid = process.env.PROPLINE_API_KEY?.trim();
+  const paid = (process.env.PROPLINE_API_KEY || process.env.propline_api_key)?.trim();
   if (paid) add("propline", "paid", paid, "Paid (PropLine)");
   return pool;
 }
