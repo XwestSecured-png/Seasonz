@@ -525,6 +525,14 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
               .where(eq(sportTeamGameStats.sport, sport))
           ).map((r) => r.gameId)
         );
+        const havePlayers = new Set(
+          (
+            await db
+              .selectDistinct({ gameId: sportPlayerGameStats.gameId })
+              .from(sportPlayerGameStats)
+              .where(and(eq(sportPlayerGameStats.sport, sport), eq(sportPlayerGameStats.season, year - 1)))
+          ).map((r) => r.gameId)
+        );
         const soon = Date.now() + 36 * 3600_000;
         const needCrew = rows.filter(
           (g) =>
@@ -536,9 +544,15 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
         );
         // Newest first, so the current season fills in before last season.
         const needStats = rows
-          .filter((g) => g.isFinal && !have.has(g.id) && g.homeScore !== null && g.awayScore !== null)
+          .filter(
+            (g) =>
+              g.isFinal &&
+              g.homeScore !== null &&
+              g.awayScore !== null &&
+              (!have.has(g.id) || (g.season === year - 1 && !havePlayers.has(g.id)))
+          )
           .sort((a, b) => (b.kickoffAt?.getTime() ?? 0) - (a.kickoffAt?.getTime() ?? 0));
-        const PER_RUN_CAP = 600;
+        const PER_RUN_CAP = 450;
         const jobs = [...needCrew, ...needStats.slice(0, PER_RUN_CAP)];
         let statGames = 0;
         let crews = 0;
@@ -591,6 +605,18 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
                       target: [sportTeamGameStats.sport, sportTeamGameStats.gameId, sportTeamGameStats.team],
                       set: { ...v, updatedAt: new Date() },
                     });
+                }
+                // Last season's player lines too (this season's come from the
+                // playerStats stage), so an injured star's scoring is known
+                // before he has played a game this season.
+                if (g.season === year - 1) {
+                  const lines = await fetchBoxscorePlayers(def, g.espnEventId);
+                  for (const line of lines) {
+                    await db
+                      .insert(sportPlayerGameStats)
+                      .values({ sport, gameId: g.id, season: g.season, week: 0, team: line.team, player: line.player, position: line.position, stats: line.stats })
+                      .onConflictDoNothing();
+                  }
                 }
                 statGames++;
               } catch {
