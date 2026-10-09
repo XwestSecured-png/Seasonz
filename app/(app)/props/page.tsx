@@ -19,7 +19,7 @@ import { getFavoriteTeam } from "@/lib/favorite-team";
 import { getCurrentUser } from "@/lib/current-user";
 import { SPORTS, type SportKey } from "@/lib/sports/types";
 import { currentSeasonYear } from "@/lib/sports/espn";
-import { PROP_STAT_HINTS } from "@/lib/sports/prop-stat-hints";
+import { getPlayerOptions } from "@/lib/sports/player-options";
 
 export const dynamic = "force-dynamic";
 
@@ -197,6 +197,11 @@ async function OtherSportPropsSection({ sport, userId }: { sport: SportKey; user
     upcoming = allUpcoming.filter((g) => (g.kickoffAt?.getTime() ?? 0) < start + 7 * 86_400_000);
   }
 
+  const playerOptions = await getPlayerOptions(
+    sport,
+    Array.from(new Set(upcoming.flatMap((g) => [g.homeTeam, g.awayTeam])))
+  );
+
   const games: UpcomingGameOption[] = upcoming.map((g) => ({
     id: g.id,
     homeTeam: g.homeTeam,
@@ -338,7 +343,7 @@ async function OtherSportPropsSection({ sport, userId }: { sport: SportKey; user
       </div>
 
       <div className="border-t border-neutral-800 pt-5">
-        <OtherSportProps sport={sport} games={games} picks={picks} statHints={PROP_STAT_HINTS[sport]} />
+        <OtherSportProps sport={sport} games={games} picks={picks} playerOptions={playerOptions} />
       </div>
     </div>
   );
