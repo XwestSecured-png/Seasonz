@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
   SPORTSBOOKS,
@@ -11,6 +12,54 @@ import {
 } from "@/lib/sportsbooks";
 import { PlatformIcon } from "./platform-icon";
 import { LockIcon } from "./icons";
+
+
+/**
+ * Places a dropdown in a fixed layer on top of the page (rendered into
+ * document.body), lined up under its button but kept fully on screen: it
+ * shifts left if it would run off the right edge, opens upward when there
+ * isn't room below (e.g. inside the bottom "More" sheet), and its height is
+ * capped to the space available — so the list is never cut off.
+ */
+function useFloatingMenu(open: boolean, anchorRef: RefObject<HTMLElement | null>, width: number) {
+  const [style, setStyle] = useState<CSSProperties | null>(null);
+  useLayoutEffect(() => {
+    if (!open) {
+      setStyle(null);
+      return;
+    }
+    function place() {
+      const el = anchorRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const margin = 8;
+      const w = Math.min(width, vw - margin * 2);
+      const left = Math.max(margin, Math.min(r.left, vw - w - margin));
+      const below = vh - r.bottom - margin;
+      const above = r.top - margin;
+      const openUp = below < 240 && above > below;
+      const maxHeight = Math.max(160, Math.min(420, (openUp ? above : below) - 4));
+      setStyle({
+        position: "fixed",
+        left,
+        width: w,
+        maxHeight,
+        ...(openUp ? { bottom: vh - r.top + 4 } : { top: r.bottom + 4 }),
+        zIndex: 1000,
+      });
+    }
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, anchorRef, width]);
+  return style;
+}
 
 /**
  * A `<select>`-like control for choosing a betting platform — built custom
@@ -45,11 +94,15 @@ export function PlatformSelect({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
     if (!open) return;
     function onDocClick(e: MouseEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (rootRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
@@ -62,6 +115,7 @@ export function PlatformSelect({
     };
   }, [open]);
 
+  const menuStyle = useFloatingMenu(open, buttonRef, 240);
   const current = value ? SPORTSBOOKS[value] : null;
   const isAllowed = (category: SportsbookCategory) =>
     !allowedCategories || allowedCategories.includes(category);
@@ -70,6 +124,7 @@ export function PlatformSelect({
   return (
     <div ref={rootRef} className="relative inline-block">
       <button
+        ref={buttonRef}
         type="button"
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
@@ -88,10 +143,12 @@ export function PlatformSelect({
           ▾
         </span>
       </button>
-      {open && (
+      {open && menuStyle && createPortal(
         <ul
+          ref={menuRef}
           role="listbox"
-          className="absolute left-0 z-50 mt-1 max-h-72 w-56 overflow-y-auto rounded-md border border-neutral-700 bg-neutral-900 py-1 shadow-xl"
+          style={menuStyle}
+          className="overflow-y-auto overscroll-contain rounded-md border border-neutral-700 bg-neutral-900 py-1 shadow-2xl"
         >
           <li>
             <button
@@ -162,7 +219,8 @@ export function PlatformSelect({
               </Link>
             </li>
           )}
-        </ul>
+        </ul>,
+        document.body
       )}
     </div>
   );
@@ -192,11 +250,15 @@ export function PlatformMultiSelect({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
     if (!open) return;
     function onDocClick(e: MouseEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (rootRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
@@ -213,6 +275,8 @@ export function PlatformMultiSelect({
     !allowedCategories || allowedCategories.includes(category);
   const anyLocked = SPORTSBOOK_CATEGORIES.some((c) => !isAllowed(c));
 
+  const menuStyle = useFloatingMenu(open, buttonRef, 256);
+
   function toggle(key: Sportsbook) {
     onChange(value.includes(key) ? value.filter((k) => k !== key) : [...value, key]);
   }
@@ -227,6 +291,7 @@ export function PlatformMultiSelect({
   return (
     <div ref={rootRef} className="relative inline-block">
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="listbox"
@@ -244,11 +309,13 @@ export function PlatformMultiSelect({
           ▾
         </span>
       </button>
-      {open && (
+      {open && menuStyle && createPortal(
         <ul
+          ref={menuRef}
           role="listbox"
           aria-multiselectable="true"
-          className="absolute left-0 z-50 mt-1 max-h-72 w-60 overflow-y-auto rounded-md border border-neutral-700 bg-neutral-900 py-1 shadow-xl"
+          style={menuStyle}
+          className="overflow-y-auto overscroll-contain rounded-md border border-neutral-700 bg-neutral-900 py-1 shadow-2xl"
         >
           {SPORTSBOOK_CATEGORIES.map((category) => {
             const allowed = isAllowed(category);
@@ -331,7 +398,8 @@ export function PlatformMultiSelect({
               Done
             </button>
           </li>
-        </ul>
+        </ul>,
+        document.body
       )}
     </div>
   );

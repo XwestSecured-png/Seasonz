@@ -33,6 +33,77 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.2.0",
+    date: "2026-10-09",
+    title: "Model Builds and sharper picks in every sport",
+    summary:
+      "The model now builds its own parlays and player-prop parlays every day and every week, the other sports' predictions were rebuilt and tested on past seasons, and Model Tracker shows one week at a time with a tab for every sport.",
+    changes: [
+      {
+        kind: "new",
+        title: "Model Builds: best parlays and player props, 2 to 8 legs",
+        whatChanged:
+          "A new Model Builds page shows today's and this week's best parlay and best player-prop parlay in every size from 2 to 8 legs. Tap any leg to see why the model picked it.",
+        whatItMeans:
+          "You get the model's strongest picks already stacked, with the chance that all of them hit and the payout. Each leg is from a different game, and picks above 90% are left out because they add risk without adding payout.",
+        href: "/best-builds",
+      },
+      {
+        kind: "improved",
+        title: "Better predictions for NBA, WNBA, NHL, MLB and college",
+        whatChanged:
+          "Each sport now has its own settings, tested on the last 3 to 4 seasons. Ratings carry over from last season instead of resetting, neutral-site games get no home edge, and back-to-backs and short rest count against a team.",
+        whatItMeans:
+          "On the most recent full season, the model picked more winners: college football 67.8% to 72.9%, MLB 53.9% to 55.8%, NBA 66.6% to 67.9%, WNBA 67.0% to 67.8%, college basketball 72.2% to 72.9%. NHL picks are better calibrated. Early-season picks improve the most.",
+      },
+      {
+        kind: "fixed",
+        title: "MLB and NBA now use the full season",
+        whatChanged:
+          "The model was only reading the current phase of the season (just MLB's playoffs, just NBA preseason). It now reads the regular season and playoffs, and preseason games are no longer counted.",
+        whatItMeans: "MLB playoff and NBA predictions are based on the whole season, not a handful of games.",
+      },
+      {
+        kind: "improved",
+        title: "Model Tracker: one week at a time, a tab for every sport",
+        whatChanged:
+          "Model Tracker shows only this week's games and results, and has tabs for NFL, NBA, WNBA, NHL, MLB, NCAAF and NCAAB, each with Make your own pick vs the model.",
+        whatItMeans: "Less scrolling through old weeks, and you can pick against the model in every sport.",
+        href: "/model-tracker",
+      },
+      {
+        kind: "fixed",
+        title: "Platform menu no longer cut off",
+        whatChanged: "The betting-platform menu opens above other content and flips upward near the bottom of the screen.",
+        whatItMeans: "You can see and choose every platform on a phone.",
+      },
+      {
+        kind: "improved",
+        title: "Animated Seasonz logo and background",
+        whatChanged: "The logo and fire background now flicker and glow. If your phone is set to reduce motion, they stay still.",
+        whatItMeans: "Just a new look.",
+      },
+      {
+        kind: "new",
+        title: "Scheduled syncs twice a day",
+        whatChanged:
+          "Data syncs automatically at 12am ET, and again at 2pm ET if nobody has synced since 10am. The Sync button is now for legacy admins only.",
+        whatItMeans: "Odds, injuries and picks stay fresh without anyone pressing a button.",
+        href: "/admin",
+        audience: "admin",
+      },
+      {
+        kind: "new",
+        title: "Role picker and invite-code sheets",
+        whatChanged:
+          "Legacy admins can set anyone to User, Admin or Legacy admin. Each admin has their own sheet of invite codes per platform, can paste a whole list at once, and the app rotates through your own sheet first. Legacy admins can see and download every admin's sheet.",
+        whatItMeans: "Hand out codes from your own list and see how many sign-ups each one brought in.",
+        href: "/admin",
+        audience: "admin",
+      },
+    ],
+  },
+  {
     version: "1.1.0",
     date: "2026-10-09",
     title: "Smarter NFL model and a new look",

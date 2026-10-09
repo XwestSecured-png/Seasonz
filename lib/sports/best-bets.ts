@@ -46,8 +46,12 @@ async function activeWeekUpcoming(sportKey: SportKey) {
     .from(sportGames)
     .where(and(eq(sportGames.sport, sportKey), eq(sportGames.season, season), eq(sportGames.isFinal, false)));
 
-  if (upcoming.length === 0) return [];
-  const activeWeek = Math.min(...upcoming.map((g) => g.week));
+  // Ignore games that started 12h+ ago but never went final (postponed or
+  // canceled) — they'd otherwise pin the "active week" to an old week.
+  const cutoff = Date.now() - 12 * 3600 * 1000;
+  const live = upcoming.filter((g) => !g.kickoffAt || g.kickoffAt.getTime() > cutoff);
+  if (live.length === 0) return [];
+  const activeWeek = Math.min(...live.map((g) => g.week));
   return upcoming.filter((g) => g.week === activeWeek && g.homeWinPctPre !== null);
 }
 

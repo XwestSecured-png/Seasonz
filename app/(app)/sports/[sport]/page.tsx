@@ -1,10 +1,11 @@
 import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { sportEloRatings, sportGames, sportTeamMetrics, sportUserPicks, users } from "@/db/schema";
-import { and, desc, eq, max } from "drizzle-orm";
+import { and, desc, eq, max, min, sql } from "drizzle-orm";
 import { PageInfo } from "../../page-info";
 import { SectionNote } from "../../section-note";
 import { SyncButton } from "../../sync-button";
+import { SportTabs } from "../../sport-tabs";
 import { SportPickToggle } from "./sport-pick-toggle";
 import { getCurrentUser } from "@/lib/current-user";
 import { isPickLocked, PICK_LOCK_MINUTES_BEFORE_KICKOFF } from "@/lib/time";
@@ -108,10 +109,20 @@ export default async function SportPage({ params }: { params: Promise<{ sport: s
     ).map((m) => [m.team, m])
   );
 
+  // The CURRENT week = the soonest week that still has unplayed games.
+  // Games that started more than 12 hours ago but never went final
+  // (postponed/canceled) are ignored, or they'd pin the page to an old week.
   const [latestGameWeek] = await db
-    .select({ week: max(sportGames.week) })
+    .select({ week: min(sportGames.week) })
     .from(sportGames)
-    .where(and(eq(sportGames.sport, sport), eq(sportGames.season, season), eq(sportGames.isFinal, false)));
+    .where(
+      and(
+        eq(sportGames.sport, sport),
+        eq(sportGames.season, season),
+        eq(sportGames.isFinal, false),
+        sql`(${sportGames.kickoffAt} is null or ${sportGames.kickoffAt} > now() - interval '12 hours')`
+      )
+    );
 
   const upcoming = latestGameWeek?.week
     ? await db
@@ -177,6 +188,17 @@ export default async function SportPage({ params }: { params: Promise<{ sport: s
     return { ...g, result, userResult, myPick };
   });
 
+  // Only this week's results are listed (season totals above still count
+  // every graded game). If nothing this week is final yet, show last week.
+  const currentWeek = latestGameWeek?.week ?? null;
+  const shownWeek =
+    currentWeek !== null && gradedRows.some((g) => g.week === currentWeek)
+      ? currentWeek
+      : gradedRows.length > 0
+        ? Math.max(...gradedRows.map((g) => g.week))
+        : null;
+  const weekGradedRows = gradedRows.filter((g) => g.week === shownWeek);
+
   const aiAccuracyPct = aiGraded > 0 ? ((aiCorrect / aiGraded) * 100).toFixed(1) : null;
   const userAccuracyPct = userGraded > 0 ? ((userCorrect / userGraded) * 100).toFixed(1) : null;
 
@@ -217,6 +239,7 @@ export default async function SportPage({ params }: { params: Promise<{ sport: s
 
   return (
     <div className="space-y-8">
+      <SportTabs active={sport} />
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
@@ -226,7 +249,9 @@ export default async function SportPage({ params }: { params: Promise<{ sport: s
               picks against the model, graded, with a leaderboard against everyone else&rsquo;s.
             </p>
           </div>
-          <SyncButton season={season} sports={sport} nfl={false} label={`Sync ${def.label}`} />
+          {user?.isLegacyAdmin && (
+            <SyncButton season={season} sports={sport} nfl={false} label={`Sync ${def.label}`} />
+          )}
         </div>
         <PageInfo>
           <p>
@@ -422,12 +447,14 @@ export default async function SportPage({ params }: { params: Promise<{ sport: s
       </div>
 
       <div className="space-y-3">
-        <h2 className="text-sm font-semibold text-neutral-300">Graded</h2>
+        <h2 className="text-sm font-semibold text-neutral-300">
+          {shownWeek !== null ? `Week ${shownWeek} — Results` : "Results"}
+        </h2>
         <SectionNote>
-          Only final {def.label} games show up here, graded against what the model said before
-          each one&rsquo;s start time.
+          This week&rsquo;s final {def.label} games, graded against what the model said before each
+          one&rsquo;s start time. Your season record above counts every week.
         </SectionNote>
-        {gradedRows.length === 0 ? (
+        {weekGradedRows.length === 0 ? (
           <p className="text-sm text-neutral-500">No graded games yet.</p>
         ) : (
           <div className="overflow-x-auto rounded-md border border-neutral-800">
@@ -444,7 +471,7 @@ export default async function SportPage({ params }: { params: Promise<{ sport: s
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-800">
-                {gradedRows.map((g) => (
+                {weekGradedRows.map((g) => (
                   <tr key={g.id}>
                     <Td>{g.week}</Td>
                     <Td>

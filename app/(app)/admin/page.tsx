@@ -26,8 +26,8 @@ export default async function AdminPage() {
   const shown = Object.fromEntries(
     await Promise.all(
       PLATFORMS.map(async (p) => {
-        const c = await nextCodeForPlatform(p);
-        return [p, c ? { code: c.code, uses: c.uses } : null] as const;
+        const c = await nextCodeForPlatform(p, user.id);
+        return [p, c ? { code: c.code, uses: c.uses, fromOwnSheet: c.fromOwnSheet } : null] as const;
       })
     )
   ) as Record<Platform, ShownCode | null>;

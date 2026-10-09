@@ -13,6 +13,7 @@ import { confidenceScore, confidenceTier, CONFIDENCE_TIER_CLASS } from "@/lib/co
 import { isPickLocked, PICK_LOCK_MINUTES_BEFORE_KICKOFF } from "@/lib/time";
 import { otherSportsAccuracy } from "@/lib/sports/accuracy";
 import Link from "next/link";
+import { SportTabs } from "../sport-tabs";
 
 export const dynamic = "force-dynamic";
 
@@ -285,6 +286,17 @@ export default async function ModelTrackerPage() {
     return { ...g, result, userResult, myPick };
   });
 
+  // Only this week's results are listed (the season accuracy above still
+  // counts every graded game). Before any of this week's games are final,
+  // show last week's results instead of an empty table.
+  const shownWeek =
+    activeWeek !== null && gradedRows.some((g) => g.week === activeWeek)
+      ? activeWeek
+      : gradedRows.length > 0
+        ? Math.max(...gradedRows.map((g) => g.week))
+        : null;
+  const weekGradedRows = gradedRows.filter((g) => g.week === shownWeek);
+
   const aiAccuracyPct = aiGraded > 0 ? ((aiCorrect / aiGraded) * 100).toFixed(1) : null;
   const userAccuracyPct = userGraded > 0 ? ((userCorrect / userGraded) * 100).toFixed(1) : null;
 
@@ -329,6 +341,7 @@ export default async function ModelTrackerPage() {
 
   return (
     <div className="space-y-8">
+      <SportTabs active="nfl" />
       <div className="space-y-3">
         <div>
           <h1 className="text-lg font-semibold">Model Tracker</h1>
@@ -581,9 +594,12 @@ export default async function ModelTrackerPage() {
       </div>
 
       <div>
-        <h2 className="text-sm font-semibold text-neutral-300 mb-2">Graded</h2>
+        <h2 className="text-sm font-semibold text-neutral-300 mb-2">
+          {shownWeek !== null ? `Week ${shownWeek} — Results` : "Results"}
+        </h2>
         <SectionNote>
-          Only final games show up here, graded against what the model said before kickoff.
+          This week&rsquo;s final games, graded against what the model said before kickoff. Your
+          season record above counts every week.
           Hover &ldquo;Factors&rdquo; on any row to see what went into that prediction.
         </SectionNote>
         <div className="overflow-x-auto rounded-md border border-neutral-800">
@@ -602,7 +618,7 @@ export default async function ModelTrackerPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-800">
-              {gradedRows.map((g) => (
+              {weekGradedRows.map((g) => (
                 <tr
                   key={g.id}
                   style={favoriteHighlightStyle(

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const LINKS = [
   { href: "/", label: "Dashboard" },
+  { href: "/best-builds", label: "Model Builds" },
   { href: "/factor-performance", label: "Factor Performance" },
   { href: "/injury-impact", label: "Injury Impact" },
   { href: "/model-tracker", label: "Model Tracker" },
@@ -13,6 +14,7 @@ const LINKS = [
   { href: "/parlays", label: "Parlays" },
   { href: "/bet-tracker", label: "Bet Tracker" },
   { href: "/elo-ratings", label: "Elo Ratings" },
+  { href: "/model-tracker", label: "NFL" },
   { href: "/sports/nba", label: "NBA" },
   { href: "/sports/wnba", label: "WNBA" },
   { href: "/sports/nhl", label: "NHL" },
@@ -33,7 +35,7 @@ export function NavLinks({ accent }: { accent?: string }) {
         const active = pathname === link.href;
         return (
           <Link
-            key={link.href}
+            key={link.label}
             href={link.href}
             style={active ? { backgroundColor: accent } : undefined}
             className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${

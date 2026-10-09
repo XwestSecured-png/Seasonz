@@ -1,3 +1,4 @@
+import { SeasonzLogo } from "../seasonz-logo";
 import Link from "next/link";
 
 export default async function LoginPage({
@@ -10,8 +11,8 @@ export default async function LoginPage({
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm rounded-xl border border-neutral-800 bg-neutral-950/70 backdrop-blur-sm p-6 shadow-2xl">
-        <h1 className="text-xl font-semibold text-neutral-100 mb-1">
-          Seasonz
+        <h1 className="mb-2">
+          <SeasonzLogo size="lg" />
         </h1>
         <p className="text-sm text-neutral-400 mb-6">
           Private — log in with your username and password.

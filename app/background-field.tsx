@@ -12,6 +12,12 @@ const EMBERS = [
   { x: 1190, d: 12.5, delay: 2, r: 2.1 },
   { x: 1360, d: 10.5, delay: 5.5, r: 1.9 },
   { x: 1480, d: 14, delay: 8, r: 1.5 },
+  { x: 260, d: 11, delay: 9, r: 1.4 },
+  { x: 610, d: 8.5, delay: 2.5, r: 2 },
+  { x: 940, d: 12, delay: 10, r: 1.6 },
+  { x: 1280, d: 9, delay: 6.5, r: 2.3 },
+  { x: 1560, d: 10, delay: 3.5, r: 1.8 },
+  { x: 90, d: 13.5, delay: 5, r: 2 },
 ];
 
 export function BackgroundField() {
@@ -45,7 +51,7 @@ export function BackgroundField() {
       </defs>
 
       <rect width="1600" height="900" fill="url(#szn-base)" />
-      <rect width="1600" height="900" fill="url(#szn-heat)" />
+      <rect width="1600" height="900" fill="url(#szn-heat)" className="szn-heat-pulse" />
 
       {/* Rising embers */}
       <g filter="url(#szn-ember-blur)">
@@ -75,14 +81,18 @@ export function BackgroundField() {
       preserveAspectRatio="xMidYMid meet"
     >
       <defs>
-        <linearGradient id="szn-flame" x1="0" y1="1" x2="0" y2="0">
+        <linearGradient id="szn-flame" x1="0" y1="1" x2="0" y2="0" spreadMethod="reflect">
+          <animate attributeName="y1" values="1;0.4;1" dur="3.5s" repeatCount="indefinite" />
+          <animate attributeName="y2" values="0;-0.6;0" dur="3.5s" repeatCount="indefinite" />
           <stop offset="0%" stopColor="#ff2a00" />
           <stop offset="40%" stopColor="#ff7a00" />
           <stop offset="75%" stopColor="#ffc400" />
           <stop offset="100%" stopColor="#fff3b0" />
         </linearGradient>
         <filter id="szn-burn" x="-10%" y="-40%" width="120%" height="180%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.012 0.045" numOctaves="2" seed="7" result="noise" />
+          <feTurbulence type="fractalNoise" baseFrequency="0.012 0.045" numOctaves="2" seed="7" result="noise">
+            <animate attributeName="baseFrequency" values="0.012 0.045;0.014 0.06;0.012 0.045" dur="2.4s" repeatCount="indefinite" />
+          </feTurbulence>
           <feDisplacementMap in="SourceGraphic" in2="noise" scale="14" xChannelSelector="R" yChannelSelector="G" />
         </filter>
         <filter id="szn-glow-blur" x="-20%" y="-60%" width="140%" height="220%">

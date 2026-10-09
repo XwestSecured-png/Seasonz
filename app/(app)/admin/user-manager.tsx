@@ -20,6 +20,8 @@ interface AdminUserRow {
   identityStatus: string;
 }
 
+type Role = "user" | "admin" | "legacy";
+
 async function patchUser(userId: number, patch: Record<string, unknown>) {
   const res = await fetch("/api/admin/users", {
     method: "PATCH",
@@ -93,12 +95,17 @@ export function UserManager({
     void withRow(row.id, () => patchUser(row.id, { tier }));
   }
 
-  function toggleAdmin(row: AdminUserRow) {
-    void withRow(row.id, () => patchUser(row.id, { isAdmin: !row.isAdmin }));
-  }
 
-  function toggleLegacy(row: AdminUserRow) {
-    void withRow(row.id, () => patchUser(row.id, { isLegacyAdmin: !row.isLegacyAdmin }));
+  function changeRole(row: AdminUserRow, role: Role) {
+    const patch =
+      role === "legacy"
+        ? { isLegacyAdmin: true }
+        : role === "admin"
+          ? row.isLegacyAdmin
+            ? { isLegacyAdmin: false }
+            : { isAdmin: true }
+          : { isAdmin: false };
+    void withRow(row.id, () => patchUser(row.id, patch));
   }
 
   function toggleBanned(row: AdminUserRow) {
@@ -166,7 +173,7 @@ export function UserManager({
               <th className="px-3 py-2 font-medium">Tier</th>
               <th className="px-3 py-2 font-medium">Status</th>
               <th className="px-3 py-2 font-medium">Identity</th>
-              <th className="px-3 py-2 font-medium">Admin</th>
+              <th className="px-3 py-2 font-medium">Role</th>
               <th className="px-3 py-2 font-medium">Actions</th>
             </tr>
           </thead>
@@ -240,35 +247,35 @@ export function UserManager({
                     )}
                   </td>
                   <td className="px-3 py-2">
-                    <div className="flex flex-col items-start gap-1">
-                      {row.isLegacyAdmin ? (
-                        <span className="rounded-full bg-emerald-950 px-2 py-0.5 text-[10px] text-emerald-300">Legacy admin</span>
-                      ) : row.isAdmin ? (
-                        <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-[10px] text-neutral-300">Admin</span>
-                      ) : null}
-                      <button
-                        type="button"
-                        disabled={busy || isSelf || locked}
-                        onClick={() => toggleAdmin(row)}
-                        className="text-xs text-neutral-400 underline underline-offset-2 hover:text-neutral-200 disabled:opacity-40 disabled:no-underline"
+                    <select
+                      aria-label={`Role for ${row.username}`}
+                      value={row.isLegacyAdmin ? "legacy" : row.isAdmin ? "admin" : "user"}
+                      disabled={busy || isSelf || locked}
+                      onChange={(e) => changeRole(row, e.target.value as Role)}
+                      className={`rounded-md border px-2 py-1 text-xs disabled:opacity-50 ${
+                        row.isLegacyAdmin
+                          ? "border-emerald-800 bg-emerald-950/60 text-emerald-200"
+                          : row.isAdmin
+                            ? "border-neutral-600 bg-neutral-900 text-neutral-200"
+                            : "border-neutral-700 bg-neutral-950 text-neutral-300"
+                      }`}
+                    >
+                      <option value="user">User</option>
+                      <option value="admin" disabled={row.isLegacyAdmin && !currentIsLegacy}>
+                        Admin
+                      </option>
+                      <option
+                        value="legacy"
+                        disabled={
+                          !currentIsLegacy ||
+                          row.isBanned ||
+                          (!row.isLegacyAdmin && !!legacy && legacy.count >= legacy.max)
+                        }
                       >
-                        {row.isAdmin ? "Remove admin" : "Make admin"}
-                      </button>
-                      {currentIsLegacy && (
-                        <button
-                          type="button"
-                          disabled={
-                            busy ||
-                            row.isBanned ||
-                            (!row.isLegacyAdmin && !!legacy && legacy.count >= legacy.max)
-                          }
-                          onClick={() => toggleLegacy(row)}
-                          className="text-xs text-emerald-400 underline underline-offset-2 hover:text-emerald-300 disabled:opacity-40 disabled:no-underline"
-                        >
-                          {row.isLegacyAdmin ? "Remove legacy" : "Make legacy"}
-                        </button>
-                      )}
-                    </div>
+                        Legacy admin
+                      </option>
+                    </select>
+                    {isSelf && <div className="mt-1 text-[10px] text-neutral-600">Can&rsquo;t change your own role</div>}
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex flex-wrap gap-2.5 text-xs">

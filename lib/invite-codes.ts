@@ -53,21 +53,49 @@ export function normalizeCode(code: string): string {
  * Picks the next code to display for `platform` — the active code shown
  * longest ago (never-shown first) — and marks it shown, in one atomic
  * statement so two admins loading at once don't get the same code.
+ *
+ * Each admin has their own "sheet" (the codes they submitted). When
+ * `adminId` is given, the rotation draws from that admin's sheet first and
+ * only falls back to everyone's codes if their sheet has none for this
+ * platform.
  */
-export async function nextCodeForPlatform(platform: Platform): Promise<{ id: number; code: string; uses: number } | null> {
-  const rows = await db.execute<{ id: number; code: string; uses: number }>(sql`
-    UPDATE invite_codes SET last_shown_at = now()
-    WHERE id = (
-      SELECT id FROM invite_codes
-      WHERE platform = ${platform} AND is_active = true
-      ORDER BY last_shown_at ASC NULLS FIRST, id ASC
-      LIMIT 1
-      FOR UPDATE SKIP LOCKED
+export async function nextCodeForPlatform(
+  platform: Platform,
+  adminId?: number
+): Promise<{ id: number; code: string; uses: number; fromOwnSheet: boolean } | null> {
+  const pick = async (ownerOnly: boolean) => {
+    const rows = await db.execute<{ id: number; code: string; uses: number }>(sql`
+      UPDATE invite_codes SET last_shown_at = now()
+      WHERE id = (
+        SELECT id FROM invite_codes
+        WHERE platform = ${platform} AND is_active = true
+          ${ownerOnly && adminId !== undefined ? sql`AND created_by_id = ${adminId}` : sql``}
+        ORDER BY last_shown_at ASC NULLS FIRST, id ASC
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING id, code, uses
+    `);
+    return (rows as unknown as { id: number; code: string; uses: number }[])[0] ?? null;
+  };
+  if (adminId !== undefined) {
+    const own = await pick(true);
+    if (own) return { ...own, fromOwnSheet: true };
+  }
+  const any = await pick(false);
+  return any ? { ...any, fromOwnSheet: false } : null;
+}
+
+/** Splits pasted text into codes: one per line, or separated by commas/spaces. */
+export function parseCodeList(text: string): string[] {
+  return Array.from(
+    new Set(
+      text
+        .split(/[\s,;]+/)
+        .map((c) => normalizeCode(c))
+        .filter((c) => /^[A-Z0-9-]{6,32}$/.test(c))
     )
-    RETURNING id, code, uses
-  `);
-  const row = (rows as unknown as { id: number; code: string; uses: number }[])[0];
-  return row ?? null;
+  );
 }
 
 /** Looks up an active invite code. Returns null if it doesn't exist or is turned off. */

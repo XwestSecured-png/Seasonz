@@ -11,6 +11,9 @@ import { db } from "@/db";
 import {
   sportTeams,
   sportGames,
+  sportFactorSnapshots,
+  sportUserPicks,
+  userPropPicks,
   sportEloRatings,
   sportTeamMetrics,
   sportPlayerGameStats,
@@ -19,7 +22,7 @@ import {
   sportPropLinesRaw,
   syncRuns,
 } from "@/db/schema";
-import { replayElo, type EloInputGame } from "../elo";
+import { replaySportElo, type SportEloGame } from "./sport-elo";
 import { SPORTS, type SportKey } from "./types";
 import {
   fetchTeams,
@@ -33,15 +36,46 @@ import { fetchUpcomingEventsForSport, fetchEventPlayerPropsForSport } from "./od
 import { computeSportSeasonAverages, buildSportPropPicks, type SportScheduleGame } from "./props-model";
 import { americanToImpliedProb } from "../props-model";
 import { hasOddsApiKey } from "../odds-provider";
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, notInArray, sql } from "drizzle-orm";
 
-// EloInputGame plus the DB row id, carried through replayElo generically so
-// the write-back loop below can match each result straight back to its row
-// — ESPN's espnEventId gives every sport a real stable id, unlike NFL's
-// games.csv rows (which is why lib/sync.ts needs a separate (season, week,
-// home, away) lookup instead).
-interface EloInputGameWithId extends EloInputGame {
+// SportEloGame plus the DB row id, so each Elo result maps straight back to
+// its row for the write-back.
+interface EloInputGameWithId extends SportEloGame {
   __id: number;
+}
+
+/** Upserts a season's games; returns the ESPN event ids that were written. */
+async function upsertSportGames(games: Awaited<ReturnType<typeof fetchFullSeasonSchedule>>) {
+  for (const g of games) {
+    await db
+      .insert(sportGames)
+      .values({
+        sport: g.sport,
+        espnEventId: g.espnEventId,
+        season: g.season,
+        week: g.week,
+        gameDate: g.gameDate,
+        kickoffAt: g.kickoffAt,
+        homeTeam: g.homeTeam,
+        awayTeam: g.awayTeam,
+        homeScore: g.homeScore,
+        awayScore: g.awayScore,
+        isFinal: g.isFinal,
+        neutralSite: g.neutralSite,
+      })
+      .onConflictDoUpdate({
+        target: [sportGames.sport, sportGames.espnEventId],
+        set: {
+          week: g.week,
+          gameDate: g.gameDate,
+          kickoffAt: g.kickoffAt,
+          homeScore: g.homeScore,
+          awayScore: g.awayScore,
+          isFinal: g.isFinal,
+          neutralSite: g.neutralSite,
+        },
+      });
+  }
 }
 
 export interface SportSyncStageResult {
@@ -122,39 +156,58 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
       );
       if (games.length === 0) return `0 games found for ${def.label} ${year} — nothing to sync yet.`;
 
-      for (const g of games) {
-        await db
-          .insert(sportGames)
-          .values({
-            sport: g.sport,
-            espnEventId: g.espnEventId,
-            season: g.season,
-            week: g.week,
-            gameDate: g.gameDate,
-            kickoffAt: g.kickoffAt,
-            homeTeam: g.homeTeam,
-            awayTeam: g.awayTeam,
-            homeScore: g.homeScore,
-            awayScore: g.awayScore,
-            isFinal: g.isFinal,
-            neutralSite: g.neutralSite,
-          })
-          .onConflictDoUpdate({
-            target: [sportGames.sport, sportGames.espnEventId],
-            set: {
-              week: g.week,
-              gameDate: g.gameDate,
-              kickoffAt: g.kickoffAt,
-              homeScore: g.homeScore,
-              awayScore: g.awayScore,
-              isFinal: g.isFinal,
-              neutralSite: g.neutralSite,
-            },
-          });
+      await upsertSportGames(games);
+
+      // Drop rows ESPN no longer lists for this season (preseason games the
+      // old fetch picked up, or games removed from the schedule). Rows a
+      // user has picked are kept; derived rows are cleared first.
+      let removed = 0;
+      if (games.length >= 20) {
+        const keep = games.map((g) => g.espnEventId);
+        const stale = await db
+          .select({ id: sportGames.id })
+          .from(sportGames)
+          .where(
+            and(
+              eq(sportGames.sport, sport),
+              eq(sportGames.season, year),
+              notInArray(sportGames.espnEventId, keep),
+              sql`not exists (select 1 from ${sportUserPicks} where ${sportUserPicks.gameId} = ${sportGames.id})`,
+              sql`not exists (select 1 from ${userPropPicks} where ${userPropPicks.gameId} = ${sportGames.id})`
+            )
+          );
+        const ids = stale.map((r) => r.id);
+        if (ids.length > 0) {
+          await db.delete(sportFactorSnapshots).where(inArray(sportFactorSnapshots.gameId, ids));
+          await db.delete(sportPlayerGameStats).where(inArray(sportPlayerGameStats.gameId, ids));
+          await db.delete(sportGames).where(inArray(sportGames.id, ids));
+          removed = ids.length;
+        }
+      }
+
+      // Last season's results, once, so ratings carry over into this season
+      // instead of every team restarting at average.
+      let priorNote = "";
+      const [prior] = await db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(sportGames)
+        .where(and(eq(sportGames.sport, sport), eq(sportGames.season, year - 1), eq(sportGames.isFinal, true)));
+      if ((prior?.n ?? 0) < 20) {
+        const priorGames = (
+          await fetchFullSeasonSchedule(
+            def,
+            teamRows
+              .filter((t) => t.espnTeamId !== null)
+              .map((t) => ({ ...t, sport, espnTeamId: t.espnTeamId as string })),
+            year - 1
+          )
+        ).filter((g) => g.isFinal);
+        await upsertSportGames(priorGames);
+        priorNote = ` Loaded ${priorGames.length} game(s) from ${year - 1} for rating carryover.`;
       }
 
       gameCount = games.length;
-      return `${games.length} game(s) synced for ${def.label} ${year}.`;
+      return `${games.length} game(s) synced for ${def.label} ${year}.${removed ? ` Removed ${removed} stale row(s).` : ""}${priorNote}`;
     })
   );
 
@@ -162,33 +215,47 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
 
   results.push(
     await logStage(`${sport}:elo`, async () => {
-      const gameRows = await db
+      // Last season + this season, so ratings carry over (regressed toward
+      // average) instead of resetting. Only this season's rows are written.
+      const allRows = await db
         .select()
         .from(sportGames)
-        .where(and(eq(sportGames.sport, sport), eq(sportGames.season, year)));
+        .where(and(eq(sportGames.sport, sport), inArray(sportGames.season, [year - 1, year])));
+      const gameRows = allRows.filter((g) => g.season === year);
 
-      const { results: eloResults, finalRatings } = replayElo<EloInputGameWithId>(
-        gameRows.map((g) => ({
+      const { results: allResults, finalRatings } = replaySportElo<EloInputGameWithId>(
+        sport,
+        allRows.map((g) => ({
           season: g.season,
           week: g.week,
+          kickoffAt: g.kickoffAt,
           homeTeam: g.homeTeam,
           awayTeam: g.awayTeam,
           homeScore: g.homeScore,
           awayScore: g.awayScore,
           isFinal: g.isFinal,
+          neutralSite: g.neutralSite,
           __id: g.id,
         }))
       );
+      const eloResults = allResults.filter((r) => r.game.season === year);
 
-      for (const r of eloResults) {
-        await db
-          .update(sportGames)
-          .set({
-            eloHomePre: r.homeRatingPre,
-            eloAwayPre: r.awayRatingPre,
-            homeWinPctPre: r.homeWinProbPre,
-          })
-          .where(eq(sportGames.id, r.game.__id));
+      // Batched write-back (one statement per 500 games instead of one each).
+      for (let i = 0; i < eloResults.length; i += 500) {
+        const chunk = eloResults.slice(i, i + 500);
+        const values = sql.join(
+          chunk.map(
+            (r) =>
+              sql`(${r.game.__id}::int, ${r.homeRatingPre}::float8, ${r.awayRatingPre}::float8, ${r.homeWinProbPre}::float8, ${r.restDaysHome}::int, ${r.restDaysAway}::int)`
+          ),
+          sql`, `
+        );
+        await db.execute(sql`
+          update ${sportGames} as g set
+            elo_home_pre = v.eh, elo_away_pre = v.ea, home_win_pct_pre = v.p,
+            rest_days_home = v.rh, rest_days_away = v.ra
+          from (values ${values}) as v(id, eh, ea, p, rh, ra)
+          where g.id = v.id`);
       }
 
       for (const [team, state] of finalRatings) {

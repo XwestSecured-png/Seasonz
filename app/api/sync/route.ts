@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { runFullSync } from "@/lib/sync";
 import { runSportSync, runAllSportsSync } from "@/lib/sports/sync";
 import type { SportKey } from "@/lib/sports/types";
-import { COOKIE_NAME, verifySessionToken } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/current-user";
 
 const ALL_SPORTS: SportKey[] = ["nba", "wnba", "nhl", "mlb", "ncaaf", "ncaab"];
 
@@ -25,19 +25,20 @@ function currentNflSeason(): number {
  * This route handles its own auth rather than middleware's cookie check,
  * because two very different callers hit it: Vercel Cron (bearer token,
  * no cookie) and a logged-in user clicking "Sync now" on the dashboard
- * (session cookie, no bearer token). Either is accepted.
+ * (session cookie, no bearer token, must be a legacy admin).
  */
-function isAuthorized(req: NextRequest): boolean {
+async function isAuthorized(req: NextRequest): Promise<boolean> {
   const authHeader = req.headers.get("authorization");
   if (process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`) {
     return true;
   }
-  const token = req.cookies.get(COOKIE_NAME)?.value;
-  return verifySessionToken(token) !== null;
+  // Manual syncs are legacy-admin only.
+  const user = await getCurrentUser();
+  return !!user?.isLegacyAdmin;
 }
 
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) {
+  if (!(await isAuthorized(req))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

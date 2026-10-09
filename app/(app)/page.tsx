@@ -227,13 +227,25 @@ export default async function DashboardPage() {
             Seasonz picks, odds, and model ratings for this week.
           </p>
         </div>
-        {/* sports="all" so one click pulls NFL and every other sport in a
-            single request (app/api/sync/route.ts runs them in one POST) —
-            per-sport pages still have their own single-sport button. */}
-        <SyncButton season={season} sports="all" />
+        {/* Manual sync is legacy-admin only; everyone else gets the
+            scheduled 12am / 2pm syncs. */}
+        {user?.isLegacyAdmin && <SyncButton season={season} sports="all" />}
       </div>
 
       <WelcomeTour />
+
+      <Link
+        href="/best-builds"
+        className="flex items-center justify-between gap-3 rounded-lg border border-orange-900/60 bg-gradient-to-r from-orange-950/50 to-neutral-900/40 px-4 py-3 hover:border-orange-700"
+      >
+        <span>
+          <span className="block text-sm font-semibold text-orange-200">Model Builds</span>
+          <span className="block text-xs text-neutral-400">
+            Today&rsquo;s and this week&rsquo;s best parlays and player props, 2 to 8 legs, with the why behind every pick.
+          </span>
+        </span>
+        <span className="text-orange-300">→</span>
+      </Link>
 
       <PageInfo>
         <p>

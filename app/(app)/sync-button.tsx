@@ -18,24 +18,42 @@ export function SyncButton({
 }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<string | null>(null);
   const router = useRouter();
 
+  // Each sport runs as its own request so a full "sync everything" never
+  // hits the 5-minute serverless limit in one call.
+  const ALL = ["nba", "wnba", "nhl", "mlb", "ncaaf", "ncaab"];
   const onClick = () => {
     setError(null);
     startTransition(async () => {
-      try {
-        const params = new URLSearchParams({ season: String(season) });
-        if (sports) params.set("sports", sports);
-        if (!nfl) params.set("nfl", "false");
-        const res = await fetch(`/api/sync?${params.toString()}`, { method: "POST" });
-        if (!res.ok && res.status !== 207) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error || `Sync failed (${res.status})`);
-        }
-        router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+      const jobs: { label: string; params: URLSearchParams }[] = [];
+      if (nfl) {
+        jobs.push({ label: "NFL", params: new URLSearchParams({ season: String(season) }) });
       }
+      const sportList = sports === "all" ? ALL : sports ? sports.split(",") : [];
+      for (const sp of sportList) {
+        jobs.push({
+          label: sp.toUpperCase(),
+          params: new URLSearchParams({ nfl: "false", sports: sp }),
+        });
+      }
+      const failed: string[] = [];
+      for (let i = 0; i < jobs.length; i++) {
+        setProgress(`${jobs[i].label} (${i + 1}/${jobs.length})`);
+        try {
+          const res = await fetch(`/api/sync?${jobs[i].params.toString()}`, { method: "POST" });
+          if (!res.ok && res.status !== 207) {
+            const body = await res.json().catch(() => ({}));
+            failed.push(`${jobs[i].label}: ${body.error || res.status}`);
+          }
+        } catch (e) {
+          failed.push(`${jobs[i].label}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      setProgress(null);
+      if (failed.length) setError(`Sync failed for ${failed.join(", ")}`);
+      router.refresh();
     });
   };
 
@@ -47,7 +65,7 @@ export function SyncButton({
         style={{ backgroundColor: "var(--team-accent, #2563eb)" }}
         className="rounded-md hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity px-3 py-1.5 text-sm font-medium text-white"
       >
-        {isPending ? "Syncing…" : label ?? "Sync now"}
+        {isPending ? `Syncing${progress ? ` ${progress}` : "…"}` : label ?? "Sync now"}
       </button>
       {error && <span className="text-sm text-red-400">{error}</span>}
     </div>

@@ -99,9 +99,16 @@ export async function fetchTeams(def: SportDef): Promise<GenericTeam[]> {
 export async function fetchTeamSchedule(
   def: SportDef,
   espnTeamId: string,
-  season: number
+  season: number,
+  seasonType?: 2 | 3
 ): Promise<GenericGame[]> {
-  const url = `${ESPN_BASE}/${def.espnSport}/${def.espnLeague}/teams/${espnTeamId}/schedule?season=${season}`;
+  // seasontype 2 = regular season, 3 = postseason. Without it ESPN returns
+  // only the CURRENT phase (e.g. just the playoffs in October for MLB, or
+  // just preseason for the NBA), which left the model rating teams off a
+  // handful of games.
+  const url = `${ESPN_BASE}/${def.espnSport}/${def.espnLeague}/teams/${espnTeamId}/schedule?season=${season}${
+    seasonType ? `&seasontype=${seasonType}` : ""
+  }`;
   const data = await fetchJson(url);
   const events: unknown[] = Array.isArray(data?.events) ? data.events : [];
   const out: GenericGame[] = [];
@@ -258,23 +265,27 @@ export async function fetchFullSeasonSchedule(
 ): Promise<GenericGame[]> {
   const byEventId = new Map<string, GenericGame>();
 
-  // Sequential, not Promise.all — ESPN's undocumented API has no published
-  // rate limit, and this sandbox can't test what it tolerates. A full
-  // season sync (30-ish teams) at one request at a time still finishes well
-  // within a serverless function's timeout.
-  for (const team of teams) {
-    try {
-      const games = await fetchTeamSchedule(def, team.espnTeamId, season);
-      for (const g of games) {
-        if (!byEventId.has(g.espnEventId)) byEventId.set(g.espnEventId, g);
+  // Regular season + postseason for every team, a few requests at a time
+  // (gentle on ESPN, but fast enough for 130+ college teams).
+  const jobs = teams.flatMap((team) => ([2, 3] as const).map((st) => ({ team, st })));
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: 4 }, async () => {
+      while (next < jobs.length) {
+        const { team, st } = jobs[next++];
+        try {
+          const games = await fetchTeamSchedule(def, team.espnTeamId, season, st);
+          for (const g of games) {
+            if (!byEventId.has(g.espnEventId)) byEventId.set(g.espnEventId, g);
+          }
+        } catch {
+          // One team's schedule failing (bad id, transient error) shouldn't
+          // take down the whole sync — its games still show up via whichever
+          // opponent's schedule fetch succeeds.
+        }
       }
-    } catch {
-      // One team's schedule failing (bad id, transient error) shouldn't
-      // take down the whole sync — its games still show up via whichever
-      // opponent's schedule fetch succeeds.
-      continue;
-    }
-  }
+    })
+  );
 
   const merged = Array.from(byEventId.values()).sort((a, b) => {
     const at = a.kickoffAt?.getTime() ?? 0;

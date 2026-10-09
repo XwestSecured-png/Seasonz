@@ -102,3 +102,40 @@ a {
 @media (prefers-reduced-motion: reduce) {
   .szn-fire-flicker, .szn-fire-glow, .szn-ember { animation: none; }
 }
+
+/* Animated SEASONZ wordmark (app/seasonz-logo.tsx) */
+.szn-logo-text {
+  background-image: linear-gradient(0deg, #ff2a00 0%, #ff7a00 30%, #ffc400 55%, #fff3b0 70%, #ff7a00 85%, #ff2a00 100%);
+  background-size: 100% 300%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 6px rgba(255, 106, 0, 0.55));
+  animation: szn-logo-burn 3s linear infinite;
+}
+.szn-logo-flame {
+  transform-origin: 50% 100%;
+  filter: drop-shadow(0 0 4px rgba(255, 120, 0, 0.8));
+  animation: szn-logo-flicker 1.4s ease-in-out infinite;
+}
+@keyframes szn-logo-burn {
+  from { background-position: 0% 100%; }
+  to { background-position: 0% 0%; }
+}
+@keyframes szn-logo-flicker {
+  0%, 100% { transform: scale(1, 1) rotate(0deg); opacity: 1; }
+  25% { transform: scale(0.94, 1.08) rotate(-3deg); opacity: 0.9; }
+  50% { transform: scale(1.04, 0.95) rotate(2deg); opacity: 1; }
+  75% { transform: scale(0.97, 1.05) rotate(-1deg); opacity: 0.85; }
+}
+/* Background: flame colours rise through the outline, heat shimmer moves */
+.szn-heat-pulse {
+  animation: szn-heat 6s ease-in-out infinite;
+}
+@keyframes szn-heat {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .szn-logo-text, .szn-logo-flame, .szn-heat-pulse { animation: none; }
+}

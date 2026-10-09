@@ -16,6 +16,7 @@ import { FeedbackWidget } from "./feedback-widget";
 import { ShieldStarIcon } from "./icons";
 import { SportsTicker } from "./sports-ticker";
 import { UpdateBanner } from "./update-banner";
+import { SeasonzLogo } from "../seasonz-logo";
 import { LATEST_RELEASE, hasUnseenUpdate } from "@/lib/changelog";
 
 const FAV_TEAM_COOKIE = "nfl_fav_team";
@@ -61,14 +62,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="min-h-screen text-neutral-100" style={wrapperStyle}>
       <header className="sticky top-0 z-30 border-b border-neutral-800/80 bg-neutral-950/70 px-4 sm:px-6 py-3 flex items-center justify-between gap-4 flex-wrap backdrop-blur supports-[backdrop-filter]:bg-neutral-950/50">
         <div className="flex items-center gap-6 flex-wrap">
-          <span className="font-semibold text-sm sm:text-base whitespace-nowrap flex items-center gap-2">
-            <span
-              className="inline-block h-2.5 w-2.5 rounded-full"
-              style={{ backgroundColor: accent }}
-              aria-hidden
-            />
-            Seasonz
-          </span>
+          <Link href="/" aria-label="Seasonz home" className="whitespace-nowrap">
+            <SeasonzLogo />
+          </Link>
           {/* On mobile this nav is replaced by the fixed bottom tab bar
               below, which is the primary way around the app there. */}
           <div className="hidden sm:block">

@@ -48,11 +48,13 @@ const PRIMARY = [
 // Free users (the page itself still enforces the gate; this is just so a
 // Free user doesn't tap in blind).
 const MORE_LINKS = [
+  { href: "/best-builds", label: "Model Builds", Icon: TicketIcon, pro: false },
   { href: "/bet-tracker", label: "Bet Tracker", Icon: DollarIcon, pro: false },
   { href: "/td-props", label: "TD Props", Icon: FootballIcon, pro: false },
   { href: "/factor-performance", label: "Factor Performance", Icon: ChartIcon, pro: true },
   { href: "/injury-impact", label: "Injury Impact", Icon: ShieldIcon, pro: true },
   { href: "/elo-ratings", label: "Elo Ratings", Icon: StarIcon, pro: true },
+  { href: "/model-tracker", label: "NFL", Icon: FootballIcon, pro: false },
   { href: "/sports/nba", label: "NBA", Icon: StarIcon, pro: false },
   { href: "/sports/wnba", label: "WNBA", Icon: StarIcon, pro: false },
   { href: "/sports/nhl", label: "NHL", Icon: StarIcon, pro: false },
@@ -126,7 +128,7 @@ export function BottomNav({
             const locked = l.pro && !canAnalytics;
             return (
               <Link
-                key={l.href}
+                key={l.label}
                 href={l.href}
                 onClick={() => setMoreOpen(false)}
                 style={active ? { color: accent } : undefined}
@@ -191,7 +193,7 @@ export function BottomNav({
             const active = pathname === l.href;
             return (
               <Link
-                key={l.href}
+                key={l.label}
                 href={l.href}
                 className="flex flex-col items-center justify-center gap-0.5 py-2.5 text-[11px] font-medium"
                 style={{ color: active ? accent : "#737373" }}
