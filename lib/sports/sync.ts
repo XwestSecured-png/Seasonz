@@ -473,6 +473,7 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
       let gamesWithStats = 0;
       let playerRows = 0;
       let nextIdx = 0;
+      const failures: string[] = [];
       await Promise.all(Array.from({ length: 8 }, async () => {
       while (nextIdx < toFetch.length) {
         const g = toFetch[nextIdx++];
@@ -510,9 +511,18 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
               set: { position: sql`excluded.position`, stats: sql`excluded.stats`, updatedAt: new Date() },
             });
           playerRows += values.length;
-        } catch {
-          // One game's box score failing (not posted yet, malformed
-          // response) shouldn't take down the rest of this stage.
+        } catch (err) {
+          // One game's box score failing shouldn't stop the rest. A 404
+          // (ESPN has no summary for this game) is permanent: mark it.
+          if (err instanceof Error && /failed: 404/.test(err.message) && (kickoffById.get(g.id) ?? 0) < Date.now() - 2 * 86_400_000) {
+            await db
+              .update(sportGames)
+              .set({ extra: { ...((g.extra as object) ?? {}), noBox: true } })
+              .where(eq(sportGames.id, g.id))
+              .catch(() => {});
+          } else {
+            failures.push(err instanceof Error ? err.message.slice(0, 60) : "error");
+          }
           continue;
         }
       }
@@ -521,6 +531,7 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
       const remaining = finalGames.length - alreadyHave.size - toFetch.length;
       return (
         `Box scores fetched for ${gamesWithStats}/${toFetch.length} game(s) (${playerRows} player row(s))` +
+        (failures.length ? ` [${failures.length} failed, e.g. ${failures[0]}]` : "") +
         (remaining > 0 ? `; ${remaining} more final game(s) queued for next run.` : ".")
       );
     })
