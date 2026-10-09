@@ -63,6 +63,22 @@ export const RELEASES: Release[] = [
         whatItMeans: "You'll see real projections against FanDuel and other book lines instead of an empty page.",
         href: "/props",
       },
+      {
+        kind: "new",
+        title: "Build your own prop from menus",
+        whatChanged:
+          "Make your own pick on Player Props now uses menus: game, team, player, then stat. Each player shows only the stats they actually record, with their recent average, and the line fills in from the sportsbook (or just above their average when no book line is posted).",
+        whatItMeans: "No typing names or stat codes, and every pick grades correctly against the box score.",
+        href: "/props",
+      },
+      {
+        kind: "new",
+        title: "Legacy admins use Seasonz free",
+        whatChanged: "Legacy admins always get full Super Pro access, can't be sent to checkout, and aren't counted in Est. MRR.",
+        whatItMeans: "No legacy admin is ever charged.",
+        href: "/admin",
+        audience: "admin",
+      },
     ],
   },
   {

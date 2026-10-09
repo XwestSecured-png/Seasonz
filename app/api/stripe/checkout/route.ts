@@ -20,6 +20,9 @@ import { isTier } from "@/lib/tiers";
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  if (user.isLegacyAdmin) {
+    return NextResponse.json({ error: "Legacy admins have full access for free. There's nothing to pay for." }, { status: 400 });
+  }
 
   const body = (await req.json().catch(() => null)) as { tier?: string } | null;
   const tier = body?.tier;

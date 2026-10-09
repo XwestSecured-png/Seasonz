@@ -61,6 +61,12 @@ export default async function UpgradePage() {
         </PageInfo>
       </div>
 
+      {user?.isLegacyAdmin ? (
+        <div className="rounded-md border border-emerald-900 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-200">
+          You&rsquo;re a legacy admin, so you have full {TIER_LABELS.super_pro} access for free. You&rsquo;ll never be
+          charged for Seasonz.
+        </div>
+      ) : (
       <div className="grid gap-4 md:grid-cols-3">
         <PlanCard
           name="Free"
@@ -105,8 +111,9 @@ export default async function UpgradePage() {
           }
         />
       </div>
+      )}
 
-      <PromoRedeemCard activePromo={activePromo} />
+      {!user?.isLegacyAdmin && <PromoRedeemCard activePromo={activePromo} />}
 
       <IdentityVerifyCard initialStatus={user?.identityStatus ?? "unverified"} />
     </div>

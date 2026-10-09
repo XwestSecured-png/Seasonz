@@ -106,11 +106,13 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   // one of the known tiers — never let a bad value silently grant paid features.
   const baseTier: Tier = isTier(user.tier) ? user.tier : "free";
   const flags = await maybeBootstrapAdmin(user.id, user.username, user.isAdmin, user.isLegacyAdmin);
+  // Legacy admins get the full app (Super Pro) at no charge.
+  const isLegacy = flags.isAdmin && flags.isLegacyAdmin;
   return {
     id: user.id,
     username: user.username,
     bankrollUsd: user.bankrollUsd,
-    tier: effectiveTier(baseTier, user.promoTier, user.promoExpiresAt),
+    tier: isLegacy ? "super_pro" : effectiveTier(baseTier, user.promoTier, user.promoExpiresAt),
     baseTier,
     promoTier: user.promoTier && isTier(user.promoTier) ? user.promoTier : null,
     promoExpiresAt: user.promoExpiresAt,

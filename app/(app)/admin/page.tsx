@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { gte, sql } from "drizzle-orm";
+import { eq, gte, sql } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/current-user";
 import { getAppLimits } from "@/lib/app-settings";
 import { TIER_ORDER, TIER_LABELS, type Tier } from "@/lib/tiers";
@@ -51,7 +51,14 @@ export default async function AdminPage() {
     .from(users)
     .where(gte(users.createdAt, sevenDaysAgo));
 
-  const mrr = tierCounts.pro * limits.proPriceUsd + tierCounts.super_pro * limits.superProPriceUsd;
+  // Legacy admins use the app free, so they don't count toward revenue.
+  const paidRows = await db
+    .select({ tier: users.tier, count: sql<number>`count(*)::int` })
+    .from(users)
+    .where(eq(users.isLegacyAdmin, false))
+    .groupBy(users.tier);
+  const paid = (t: Tier) => paidRows.find((r) => r.tier === t)?.count ?? 0;
+  const mrr = paid("pro") * limits.proPriceUsd + paid("super_pro") * limits.superProPriceUsd;
 
   return (
     <div className="space-y-8">
@@ -90,7 +97,7 @@ export default async function AdminPage() {
           ))}
         </div>
         <p className="text-xs text-neutral-600">
-          Est. MRR is paid-tier headcount × the displayed price below — a directional estimate,
+          Est. MRR is paid-tier headcount (legacy admins excluded, they use the app free) × the displayed price below — a directional estimate,
           not a Stripe revenue report (it doesn&rsquo;t account for proration, failed
           payments, or admin-comped accounts).
         </p>
