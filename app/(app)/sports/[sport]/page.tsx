@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { sportEloRatings, sportGames, sportTeamMetrics, sportUserPicks, users } from "@/db/schema";
-import { and, desc, eq, max, min, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, max, min, sql } from "drizzle-orm";
 import { PageInfo } from "../../page-info";
 import { SectionNote } from "../../section-note";
 import { SyncButton } from "../../sync-button";
@@ -11,6 +11,9 @@ import { getCurrentUser } from "@/lib/current-user";
 import { isPickLocked, PICK_LOCK_MINUTES_BEFORE_KICKOFF } from "@/lib/time";
 import { SPORTS, type SportKey } from "@/lib/sports/types";
 import { currentSeasonYear } from "@/lib/sports/espn";
+import { etWeekWindow, inWindow, formatEt } from "@/lib/week-window";
+import { getGameInsights } from "@/lib/sports/insights";
+import { GameInsight } from "./game-insight";
 
 export const dynamic = "force-dynamic";
 
@@ -109,33 +112,60 @@ export default async function SportPage({ params }: { params: Promise<{ sport: s
     ).map((m) => [m.team, m])
   );
 
-  // The CURRENT week = the soonest week that still has unplayed games.
-  // Games that started more than 12 hours ago but never went final
-  // (postponed/canceled) are ignored, or they'd pin the page to an old week.
-  const [latestGameWeek] = await db
-    .select({ week: min(sportGames.week) })
-    .from(sportGames)
-    .where(
-      and(
-        eq(sportGames.sport, sport),
-        eq(sportGames.season, season),
-        eq(sportGames.isFinal, false),
-        sql`(${sportGames.kickoffAt} is null or ${sportGames.kickoffAt} > now() - interval '12 hours')`
-      )
-    );
+  // Model Tracker shows ONE week only, so nobody confuses this week's games
+  // with old or far-off ones. College football has real numbered weeks;
+  // every other sport uses this calendar week (Mon–Sun, Eastern time).
+  const window = etWeekWindow();
+  const calendarWeeks = !def.hasRealWeeks;
+  const liveCutoff = sql`(${sportGames.kickoffAt} is null or ${sportGames.kickoffAt} > now() - interval '12 hours')`;
 
-  const upcoming = latestGameWeek?.week
-    ? await db
-        .select()
+  const [latestGameWeek] = calendarWeeks
+    ? [{ week: null as number | null }]
+    : await db
+        .select({ week: min(sportGames.week) })
         .from(sportGames)
-        .where(
-          and(
-            eq(sportGames.sport, sport),
-            eq(sportGames.season, season),
-            eq(sportGames.week, latestGameWeek.week)
+        .where(and(eq(sportGames.sport, sport), eq(sportGames.season, season), eq(sportGames.isFinal, false), liveCutoff));
+
+  const upcoming = calendarWeeks
+    ? (
+        await db
+          .select()
+          .from(sportGames)
+          .where(and(eq(sportGames.sport, sport), eq(sportGames.season, season), eq(sportGames.isFinal, false), liveCutoff))
+          .orderBy(asc(sportGames.kickoffAt))
+      ).filter((g) => inWindow(g.kickoffAt, window))
+    : latestGameWeek?.week
+      ? await db
+          .select()
+          .from(sportGames)
+          .where(
+            and(
+              eq(sportGames.sport, sport),
+              eq(sportGames.season, season),
+              eq(sportGames.week, latestGameWeek.week),
+              eq(sportGames.isFinal, false)
+            )
           )
-        )
-    : [];
+          .orderBy(asc(sportGames.kickoffAt))
+      : [];
+
+  // When nothing is scheduled this week (offseason, All-Star break, or the
+  // season hasn't started), say when the next game is instead of guessing.
+  const [nextGame] =
+    upcoming.length === 0
+      ? await db
+          .select({ kickoffAt: sportGames.kickoffAt })
+          .from(sportGames)
+          .where(and(eq(sportGames.sport, sport), eq(sportGames.isFinal, false), gt(sportGames.kickoffAt, new Date())))
+          .orderBy(asc(sportGames.kickoffAt))
+          .limit(1)
+      : [];
+  const weekTitle = calendarWeeks
+    ? `This week · ${window.label}`
+    : latestGameWeek?.week
+      ? `Week ${latestGameWeek.week}`
+      : "This week";
+  const insights = await getGameInsights(sport, upcoming);
 
   // --- "Make your own pick vs the model", generalized from the NFL Model
   // Tracker (games/userPicks/users) onto this sport's own tables
@@ -189,15 +219,10 @@ export default async function SportPage({ params }: { params: Promise<{ sport: s
   });
 
   // Only this week's results are listed (season totals above still count
-  // every graded game). If nothing this week is final yet, show last week.
-  const currentWeek = latestGameWeek?.week ?? null;
-  const shownWeek =
-    currentWeek !== null && gradedRows.some((g) => g.week === currentWeek)
-      ? currentWeek
-      : gradedRows.length > 0
-        ? Math.max(...gradedRows.map((g) => g.week))
-        : null;
-  const weekGradedRows = gradedRows.filter((g) => g.week === shownWeek);
+  // every graded game).
+  const weekGradedRows = gradedRows
+    .filter((g) => (calendarWeeks ? inWindow(g.kickoffAt, window) : g.week === latestGameWeek?.week))
+    .sort((x, y) => (x.kickoffAt?.getTime() ?? 0) - (y.kickoffAt?.getTime() ?? 0));
 
   const aiAccuracyPct = aiGraded > 0 ? ((aiCorrect / aiGraded) * 100).toFixed(1) : null;
   const userAccuracyPct = userGraded > 0 ? ((userCorrect / userGraded) * 100).toFixed(1) : null;
@@ -255,32 +280,23 @@ export default async function SportPage({ params }: { params: Promise<{ sport: s
         </div>
         <PageInfo>
           <p>
-            {def.label} runs on the same Elo rating engine as the NFL model (538-style: win and
-            gain points, more against a stronger opponent; lose and drop points, more against a
-            weaker one), fed by ESPN&rsquo;s own schedule and score data instead of nflverse.
+            Only <strong>this week&rsquo;s</strong> games (Monday to Sunday, Eastern time) are shown, so
+            nothing old or far off gets mixed in. Your season record still counts every week.
           </p>
           <p>
-            <strong>AI</strong> is the model&rsquo;s own pick — whichever team it gave over 50% to
-            win — graded automatically once a game is final. <strong>You</strong> is your own
-            record from the picks you make using the team buttons under &ldquo;Your Pick&rdquo; in
-            Upcoming Games. Each person has their own picks for {def.label}, separate from your
-            picks in any other sport. The <strong>Leaderboard</strong> shows everyone&rsquo;s{" "}
-            {def.label} record side by side. Picks lock {PICK_LOCK_MINUTES_BEFORE_KICKOFF} minutes
-            before a game&rsquo;s real start time, same as NFL.
+            Each pick starts from a power rating tuned for {def.label} on past seasons, with home court,
+            rest and back-to-backs built in, and last season&rsquo;s ratings carried over.
+            {sport === "nba"
+              ? " For the NBA it then adds each team's recent form (scoring margin and points in the paint over the last 20 games) and who is out injured or suspended."
+              : ""}{" "}
+            Tap <strong>Why</strong> on any game to see every number behind the pick: team stats, home and road
+            records, last meetings with final scores, trends, injuries and suspensions, the officiating crew and
+            how they call games, the schedule, and FanDuel and BetMGM lines.
           </p>
           <p>
-            <strong>PF/G, PA/G, Diff, and Streak</strong> are real scoring metrics — points
-            scored and allowed per game, average point differential, and the current
-            win/loss streak — computed directly from this season&rsquo;s synced final scores,
-            same as a league standings page would show.
-          </p>
-          <p>
-            This is the foundation layer only, shared across every new sport added this way —
-            NFL-specific extras like weather, referee tendencies, the six team-factor
-            adjustments, and injury-impact modeling are sport-specific by nature and are being
-            built out one sport at a time on top of this, not generated generically. Treat the
-            win probabilities here as Elo-only for now, a step less refined than the NFL
-            page&rsquo;s numbers until that catches up.
+            <strong>AI</strong> is the model&rsquo;s pick (the team it gives over 50%), graded once the game is
+            final. <strong>You</strong> is your record from the picks you make below. Picks lock{" "}
+            {PICK_LOCK_MINUTES_BEFORE_KICKOFF} minutes before start time.
           </p>
         </PageInfo>
       </div>
@@ -307,7 +323,116 @@ export default async function SportPage({ params }: { params: Promise<{ sport: s
       </div>
 
       <div className="space-y-3">
-        <h2 className="text-sm font-semibold text-neutral-300">Elo Ratings</h2>
+        <h2 className="text-sm font-semibold text-neutral-300">
+          {weekTitle} — Open for Picks
+        </h2>
+        <SectionNote>
+          Click a team under &ldquo;Your Pick&rdquo; to make your call for {def.label}. Each
+          game&rsquo;s pick locks {PICK_LOCK_MINUTES_BEFORE_KICKOFF} minutes before its real start
+          time.
+        </SectionNote>
+        {upcoming.length === 0 ? (
+          <p className="text-sm text-neutral-500">
+            No {def.label} games left this week.
+            {nextGame?.kickoffAt ? ` Next game: ${formatEt(nextGame.kickoffAt)}.` : ""}
+          </p>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {upcoming.map((g) => (
+              <div key={g.id} className="rounded-md border border-neutral-800 p-3 text-sm space-y-1.5">
+                <div className="font-medium">
+                  {g.awayTeam} @ {g.homeTeam}
+                </div>
+                <div className="text-neutral-500 text-xs">
+                  {formatEt(g.kickoffAt)}
+                </div>
+                <div className="text-neutral-400 text-xs">
+                  Model:{" "}
+                  {g.homeWinPctPre === null
+                    ? "no pick yet"
+                    : g.homeWinPctPre >= 0.5
+                      ? `${g.homeTeam} ${pct(g.homeWinPctPre)} to win`
+                      : `${g.awayTeam} ${pct(1 - g.homeWinPctPre)} to win`}
+                </div>
+                {insights.get(g.id) && <GameInsight insight={insights.get(g.id)!} />}
+                <div className="pt-1">
+                  <div className="text-[10px] uppercase tracking-wide text-neutral-500 mb-1">
+                    Your Pick
+                  </div>
+                  <SportPickToggle
+                    sport={sport}
+                    gameId={g.id}
+                    homeTeam={g.homeTeam}
+                    awayTeam={g.awayTeam}
+                    currentPick={myPickByGame.get(g.id) ?? null}
+                    locked={isPickLocked(g.kickoffAt)}
+                  />
+                  {lockLabel(g.kickoffAt, isPickLocked(g.kickoffAt)) && (
+                    <div className="text-[10px] text-neutral-500 mt-0.5">
+                      {lockLabel(g.kickoffAt, isPickLocked(g.kickoffAt))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-3">
+        <h2 className="text-sm font-semibold text-neutral-300">
+          {weekTitle} — Results
+        </h2>
+        <SectionNote>
+          This week&rsquo;s final {def.label} games, graded against what the model said before each
+          one&rsquo;s start time. Your season record above counts every week.
+        </SectionNote>
+        {weekGradedRows.length === 0 ? (
+          <p className="text-sm text-neutral-500">No final games yet this week.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-md border border-neutral-800">
+            <table className="w-full text-sm">
+              <thead className="bg-neutral-900 text-neutral-400 text-left">
+                <tr>
+                  <Th>Date</Th>
+                  <Th>Matchup</Th>
+                  <Th>Score</Th>
+                  <Th>Pre-game Home Win %</Th>
+                  <Th>AI Result</Th>
+                  <Th>Your Pick</Th>
+                  <Th>Your Result</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-800">
+                {weekGradedRows.map((g) => (
+                  <tr key={g.id}>
+                    <Td className="text-neutral-400">
+                      {g.kickoffAt ? g.kickoffAt.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/New_York" }) : "—"}
+                    </Td>
+                    <Td>
+                      {g.awayTeam} @ {g.homeTeam}
+                    </Td>
+                    <Td>
+                      {g.awayScore}–{g.homeScore}
+                    </Td>
+                    <Td>{g.homeWinPctPre !== null ? `${(g.homeWinPctPre * 100).toFixed(1)}%` : "—"}</Td>
+                    <Td>
+                      <ResultBadge result={g.result} />
+                    </Td>
+                    <Td className="text-neutral-400">{g.myPick ?? "—"}</Td>
+                    <Td>
+                      <ResultBadge result={g.userResult} />
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-3">
+        <h2 className="text-sm font-semibold text-neutral-300">Power ratings</h2>
         <SectionNote>Highest to lowest, through the latest synced results.</SectionNote>
         {eloRows.length === 0 ? (
           <p className="text-sm text-neutral-500">
@@ -398,103 +523,6 @@ export default async function SportPage({ params }: { params: Promise<{ sport: s
         </div>
       )}
 
-      <div className="space-y-3">
-        <h2 className="text-sm font-semibold text-neutral-300">
-          {latestGameWeek?.week ? `Week ${latestGameWeek.week} — Open for Picks` : "Upcoming Games"}
-        </h2>
-        <SectionNote>
-          Click a team under &ldquo;Your Pick&rdquo; to make your call for {def.label}. Each
-          game&rsquo;s pick locks {PICK_LOCK_MINUTES_BEFORE_KICKOFF} minutes before its real start
-          time.
-        </SectionNote>
-        {upcoming.length === 0 ? (
-          <p className="text-sm text-neutral-500">No upcoming games synced yet for this week.</p>
-        ) : (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {upcoming.map((g) => (
-              <div key={g.id} className="rounded-md border border-neutral-800 p-3 text-sm space-y-1.5">
-                <div className="font-medium">
-                  {g.awayTeam} @ {g.homeTeam}
-                </div>
-                <div className="text-neutral-500 text-xs">
-                  {g.kickoffAt ? new Date(g.kickoffAt).toLocaleString() : "Time TBD"}
-                </div>
-                <div className="text-neutral-400 text-xs">
-                  Model: {g.homeTeam} {pct(g.homeWinPctPre)} to win
-                </div>
-                <div className="pt-1">
-                  <div className="text-[10px] uppercase tracking-wide text-neutral-500 mb-1">
-                    Your Pick
-                  </div>
-                  <SportPickToggle
-                    sport={sport}
-                    gameId={g.id}
-                    homeTeam={g.homeTeam}
-                    awayTeam={g.awayTeam}
-                    currentPick={myPickByGame.get(g.id) ?? null}
-                    locked={isPickLocked(g.kickoffAt)}
-                  />
-                  {lockLabel(g.kickoffAt, isPickLocked(g.kickoffAt)) && (
-                    <div className="text-[10px] text-neutral-500 mt-0.5">
-                      {lockLabel(g.kickoffAt, isPickLocked(g.kickoffAt))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-3">
-        <h2 className="text-sm font-semibold text-neutral-300">
-          {shownWeek !== null ? `Week ${shownWeek} — Results` : "Results"}
-        </h2>
-        <SectionNote>
-          This week&rsquo;s final {def.label} games, graded against what the model said before each
-          one&rsquo;s start time. Your season record above counts every week.
-        </SectionNote>
-        {weekGradedRows.length === 0 ? (
-          <p className="text-sm text-neutral-500">No graded games yet.</p>
-        ) : (
-          <div className="overflow-x-auto rounded-md border border-neutral-800">
-            <table className="w-full text-sm">
-              <thead className="bg-neutral-900 text-neutral-400 text-left">
-                <tr>
-                  <Th>Wk</Th>
-                  <Th>Matchup</Th>
-                  <Th>Score</Th>
-                  <Th>Pre-game Home Win %</Th>
-                  <Th>AI Result</Th>
-                  <Th>Your Pick</Th>
-                  <Th>Your Result</Th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-800">
-                {weekGradedRows.map((g) => (
-                  <tr key={g.id}>
-                    <Td>{g.week}</Td>
-                    <Td>
-                      {g.awayTeam} @ {g.homeTeam}
-                    </Td>
-                    <Td>
-                      {g.awayScore}–{g.homeScore}
-                    </Td>
-                    <Td>{g.homeWinPctPre !== null ? `${(g.homeWinPctPre * 100).toFixed(1)}%` : "—"}</Td>
-                    <Td>
-                      <ResultBadge result={g.result} />
-                    </Td>
-                    <Td className="text-neutral-400">{g.myPick ?? "—"}</Td>
-                    <Td>
-                      <ResultBadge result={g.userResult} />
-                    </Td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
     </div>
   );
 }

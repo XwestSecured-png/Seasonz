@@ -23,6 +23,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { SPORTS, type SportKey } from "./sports/types";
 import { currentSeasonYear } from "./sports/espn";
 import { probToFairAmerican } from "./fair-odds";
+import { etWeekWindow, inWindow } from "./week-window";
 import { americanToDecimalOdds as americanToDecimal } from "./stake-sizing";
 
 export const BUILD_SIZES = [2, 3, 4, 5, 6, 7, 8] as const;
@@ -268,7 +269,7 @@ async function otherSportGameLegs(window: "today" | "week"): Promise<BuildLeg[]>
     const slate = upcoming.filter(
       (g) =>
         g.homeWinPctPre !== null &&
-        (window === "week" ? g.week === week : g.kickoffAt && etDate(g.kickoffAt) === today) &&
+        (window === "week" ? (def.hasRealWeeks ? g.week === week : inWindow(g.kickoffAt, etWeekWindow())) : g.kickoffAt && etDate(g.kickoffAt) === today) &&
         (!g.kickoffAt || g.kickoffAt.getTime() > Date.now())
     );
     if (slate.length === 0) continue;
@@ -435,7 +436,7 @@ async function propLegs(window: "today" | "week"): Promise<BuildLeg[]> {
     if (upcomingS.length === 0) continue;
     const week = activeWeekOf(upcomingS);
     if (week === null) continue;
-    const weekGames = upcomingS.filter((g) => g.week === week);
+    const weekGames = upcomingS.filter((g) => (SPORTS[sport].hasRealWeeks ? g.week === week : inWindow(g.kickoffAt, etWeekWindow())));
     const gameByTeam = new Map<string, (typeof weekGames)[number]>();
     for (const g of weekGames) {
       gameByTeam.set(g.homeTeam, g);

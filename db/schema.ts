@@ -839,6 +839,45 @@ export const sportPlayerGameStats = pgTable(
   })
 );
 
+// One row per team per final game: the team box score (ESPN game summary)
+// plus offensive fouls counted from the play-by-play. Feeds NBA team
+// profiles, matchup factors and the "why" explanations on each pick.
+export const sportTeamGameStats = pgTable(
+  "sport_team_game_stats",
+  {
+    id: serial("id").primaryKey(),
+    sport: text("sport").notNull(),
+    gameId: integer("game_id")
+      .notNull()
+      .references(() => sportGames.id),
+    season: integer("season").notNull(),
+    team: text("team").notNull(),
+    opponent: text("opponent").notNull(),
+    isHome: boolean("is_home").notNull(),
+    pts: integer("pts").notNull(),
+    oppPts: integer("opp_pts").notNull(),
+    fgm: integer("fgm").notNull(),
+    fga: integer("fga").notNull(),
+    fg3m: integer("fg3m").notNull(),
+    fg3a: integer("fg3a").notNull(),
+    ftm: integer("ftm").notNull(),
+    fta: integer("fta").notNull(),
+    oreb: integer("oreb").notNull(),
+    dreb: integer("dreb").notNull(),
+    tov: integer("tov").notNull(),
+    fouls: integer("fouls").notNull(),
+    offFouls: integer("off_fouls").notNull(),
+    paintPts: integer("paint_pts").notNull(),
+    // Two-point makes from outside the paint: (FGM - 3PM) - paint points / 2
+    midMade: real("mid_made").notNull(),
+    fastBreakPts: integer("fast_break_pts").notNull(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    sportGameTeamIdx: uniqueIndex("sport_team_game_stats_sport_game_team_idx").on(t.sport, t.gameId, t.team),
+  })
+);
+
 // ---------------------------------------------------------------------------
 // Real player-prop lines for every sport BESIDES NFL — the "later piece of
 // work" sportPlayerGameStats's own comment above refers to, now built (see

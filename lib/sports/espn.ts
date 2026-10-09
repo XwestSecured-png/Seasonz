@@ -384,3 +384,80 @@ export async function fetchInjuries(def: SportDef): Promise<GenericInjury[]> {
   }
   return out;
 }
+
+export interface TeamBoxLine {
+  team: string; // abbreviation, uppercased
+  fgm: number;
+  fga: number;
+  fg3m: number;
+  fg3a: number;
+  ftm: number;
+  fta: number;
+  oreb: number;
+  dreb: number;
+  tov: number;
+  fouls: number;
+  offFouls: number; // counted from the play-by-play ("Offensive Foul" / "Offensive Charge")
+  paintPts: number;
+  midMade: number; // (FGM - 3PM) - paint points / 2
+  fastBreakPts: number;
+}
+
+/**
+ * Team box score, officiating crew and offensive-foul counts for one final
+ * game, from ESPN's game summary (the same endpoint fetchBoxscorePlayers
+ * uses). Basketball shape; other sports return whatever stats ESPN names
+ * the same way and zeros for the rest.
+ */
+export async function fetchGameSummaryTeams(
+  def: SportDef,
+  espnEventId: string
+): Promise<{ teams: TeamBoxLine[]; officials: string[] }> {
+  const url = `${ESPN_BASE}/${def.espnSport}/${def.espnLeague}/summary?event=${espnEventId}`;
+  const data = await fetchJson(url);
+  const pair = (v: unknown) => String(v ?? "0-0").split("-").map((x) => Number(x) || 0);
+  const n = (v: unknown) => Number(v) || 0;
+  const idToAbbr = new Map<string, string>();
+  const teams: TeamBoxLine[] = [];
+  for (const t of (Array.isArray(data?.boxscore?.teams) ? data.boxscore.teams : []) as any[]) {
+    const abbr = t?.team?.abbreviation ? String(t.team.abbreviation).toUpperCase() : null;
+    if (!abbr) continue;
+    if (t?.team?.id) idToAbbr.set(String(t.team.id), abbr);
+    const s: Record<string, string> = {};
+    for (const x of (Array.isArray(t?.statistics) ? t.statistics : []) as any[]) {
+      if (x?.name) s[String(x.name)] = String(x.displayValue ?? "");
+    }
+    const [fgm, fga] = pair(s["fieldGoalsMade-fieldGoalsAttempted"]);
+    const [fg3m, fg3a] = pair(s["threePointFieldGoalsMade-threePointFieldGoalsAttempted"]);
+    const [ftm, fta] = pair(s["freeThrowsMade-freeThrowsAttempted"]);
+    const paintPts = n(s.pointsInPaint);
+    teams.push({
+      team: abbr,
+      fgm,
+      fga,
+      fg3m,
+      fg3a,
+      ftm,
+      fta,
+      oreb: n(s.offensiveRebounds),
+      dreb: n(s.defensiveRebounds),
+      tov: n(s.totalTurnovers || s.turnovers),
+      fouls: n(s.fouls),
+      offFouls: 0,
+      paintPts,
+      midMade: Math.max(0, fgm - fg3m - paintPts / 2),
+      fastBreakPts: n(s.fastBreakPoints),
+    });
+  }
+  for (const p of (Array.isArray(data?.plays) ? data.plays : []) as any[]) {
+    const type = String(p?.type?.text ?? "");
+    if (type !== "Offensive Foul" && type !== "Offensive Charge") continue;
+    const abbr = idToAbbr.get(String(p?.team?.id ?? ""));
+    const row = teams.find((x) => x.team === abbr);
+    if (row) row.offFouls++;
+  }
+  const officials = ((Array.isArray(data?.gameInfo?.officials) ? data.gameInfo.officials : []) as any[])
+    .map((o) => String(o?.fullName ?? o?.displayName ?? ""))
+    .filter(Boolean);
+  return { teams, officials };
+}
