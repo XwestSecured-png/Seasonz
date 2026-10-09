@@ -72,35 +72,36 @@ a {
   }
 }
 
-/* Fire-outlined SEASONZ background (app/background-field.tsx). Flicker is
-   animated with CSS so reduced-motion users get a still version. */
+/* Fire-outlined SEASONZ background (app/background-field.tsx). Only
+   opacity/transform are animated, on HTML layers, so phones composite them
+   on the GPU instead of re-running SVG filters every frame. */
 .szn-fire-flicker {
   animation: szn-flicker 3.2s ease-in-out infinite;
-  transform-origin: 50% 60%;
-}
-.szn-fire-glow {
-  animation: szn-glow 4.5s ease-in-out infinite;
-}
-.szn-ember {
-  animation: szn-rise linear infinite;
+  will-change: opacity;
 }
 @keyframes szn-flicker {
-  0%, 100% { opacity: 0.9; transform: scaleY(1); }
-  25% { opacity: 1; transform: scaleY(1.015); }
-  50% { opacity: 0.8; transform: scaleY(0.99); }
-  75% { opacity: 0.95; transform: scaleY(1.02); }
+  0%, 100% { opacity: 0.85; }
+  25% { opacity: 1; }
+  50% { opacity: 0.75; }
+  75% { opacity: 0.95; }
 }
-@keyframes szn-glow {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 0.85; }
+.szn-ember {
+  position: absolute;
+  bottom: 4%;
+  border-radius: 9999px;
+  background: #ffb347;
+  box-shadow: 0 0 6px 2px rgba(255, 140, 40, 0.6);
+  opacity: 0;
+  animation: szn-rise linear infinite;
+  will-change: transform, opacity;
 }
 @keyframes szn-rise {
-  from { transform: translateY(0); opacity: 0; }
+  from { transform: translate3d(0, 0, 0); opacity: 0; }
   10% { opacity: 0.9; }
-  to { transform: translateY(-420px); opacity: 0; }
+  to { transform: translate3d(0, -45vh, 0); opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .szn-fire-flicker, .szn-fire-glow, .szn-ember { animation: none; }
+  .szn-fire-flicker, .szn-ember { animation: none; }
 }
 
 /* Animated SEASONZ wordmark (app/seasonz-logo.tsx) */
@@ -128,12 +129,14 @@ a {
   50% { transform: scale(1.04, 0.95) rotate(2deg); opacity: 1; }
   75% { transform: scale(0.97, 1.05) rotate(-1deg); opacity: 0.85; }
 }
-/* Background: flame colours rise through the outline, heat shimmer moves */
+/* Background heat glow from the bottom of the screen */
 .szn-heat-pulse {
+  background: radial-gradient(ellipse 70% 60% at 50% 100%, rgba(255, 106, 0, 0.3), rgba(181, 42, 0, 0.07) 55%, transparent 100%);
   animation: szn-heat 6s ease-in-out infinite;
+  will-change: opacity;
 }
 @keyframes szn-heat {
-  0%, 100% { opacity: 0.8; }
+  0%, 100% { opacity: 0.7; }
   50% { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
