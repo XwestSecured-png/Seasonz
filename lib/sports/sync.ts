@@ -748,7 +748,10 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
           gameDate: g.gameDate,
         }));
 
-        const upcoming = allGameRows.filter((g) => !g.isFinal);
+        // Ignore games that started 12h+ ago but never went final
+        // (postponed/canceled) so they can't pin "this week" to an old week.
+        const liveCutoff = Date.now() - 12 * 3600_000;
+        const upcoming = allGameRows.filter((g) => !g.isFinal && (!g.kickoffAt || g.kickoffAt.getTime() > liveCutoff));
         const week =
           upcoming.length > 0
             ? Math.min(...upcoming.map((g) => g.week))
