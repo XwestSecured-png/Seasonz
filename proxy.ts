@@ -18,6 +18,7 @@ export function proxy(req: NextRequest) {
     pathname.startsWith("/signup") ||
     pathname.startsWith("/api/signup") ||
     pathname.startsWith("/api/sync") ||
+    pathname.startsWith("/api/health") ||
     pathname.startsWith("/api/stripe/webhook") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon")
