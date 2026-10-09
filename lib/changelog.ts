@@ -33,6 +33,36 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.1.0",
+    date: "2026-10-09",
+    title: "Smarter NFL model and a new look",
+    summary:
+      "The NFL model now reads Next Gen Stats tracking data and pass-rush pressure, the ticker is easier to read, and Seasonz has a new fire background.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Next Gen Stats and pressure data in NFL predictions",
+        whatChanged:
+          "The model now looks at how open each team's receivers get (Next Gen Stats separation) and how much pressure each team's pass rush creates and its offensive line allows.",
+        whatItMeans:
+          "Win chances, spreads, and Best Bets account for matchups the old stats missed. In testing on the 2024-2025 seasons, picks got slightly more accurate. You'll see these listed as \u201cNGS separation\u201d and \u201cPressure\u201d in a game's factor breakdown.",
+        href: "/model-tracker",
+      },
+      {
+        kind: "improved",
+        title: "Slower scores ticker",
+        whatChanged: "The scores and injuries ticker at the bottom scrolls much more slowly, and pauses when you hover over it.",
+        whatItMeans: "You can actually read the scores as they go by.",
+      },
+      {
+        kind: "new",
+        title: "New background",
+        whatChanged: "Seasonz has a new dark background with the Seasonz name outlined in fire.",
+        whatItMeans: "Just a new look. If your phone is set to reduce motion, the flames stay still.",
+      },
+    ],
+  },
+  {
     version: "1.0.0",
     date: "2026-10-07",
     title: "Welcome to Seasonz",

@@ -84,6 +84,10 @@ export const games = pgTable(
     penaltyAdjPct: real("penalty_adj_pct"),
     trenchesAdjPct: real("trenches_adj_pct"),
     aggressionAdjPct: real("aggression_adj_pct"),
+    // Seasonz: Next Gen Stats receiver separation + PFR pressure factors
+    // (lib/ngs.ts, lib/ngs-matchup.ts).
+    ngsSeparationAdjPct: real("ngs_separation_adj_pct"),
+    pressureAdjPct: real("pressure_adj_pct"),
     // ESPN's own analyst metrics — Football Power Index and Total QBR, same
     // small-and-capped treatment (see lib/espn-factors.ts). fpi/sos/qbr raw
     // values are stored for display even though only fpiAdjPct/qbrAdjPct are

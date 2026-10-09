@@ -77,6 +77,8 @@ function factorsTooltip(g: {
   penaltyAdjPct: number | null;
   trenchesAdjPct: number | null;
   aggressionAdjPct: number | null;
+  ngsSeparationAdjPct?: number | null;
+  pressureAdjPct?: number | null;
   fpiAdjPct: number | null;
   qbrAdjPct: number | null;
   fpiHome: number | null;
@@ -99,6 +101,8 @@ function factorsTooltip(g: {
     (g.penaltyAdjPct ?? 0) +
     (g.trenchesAdjPct ?? 0) +
     (g.aggressionAdjPct ?? 0) +
+    (g.ngsSeparationAdjPct ?? 0) +
+    (g.pressureAdjPct ?? 0) +
     (g.fpiAdjPct ?? 0) +
     (g.qbrAdjPct ?? 0) +
     (g.injuryAdjPct ?? 0);
@@ -112,6 +116,8 @@ function factorsTooltip(g: {
     `Penalties: ${pct(g.penaltyAdjPct)}`,
     `Trenches: ${pct(g.trenchesAdjPct)}`,
     `Aggression: ${pct(g.aggressionAdjPct)}`,
+    `NGS separation: ${pct(g.ngsSeparationAdjPct ?? null)}`,
+    `Pressure: ${pct(g.pressureAdjPct ?? null)}`,
     `ESPN FPI: ${pct(g.fpiAdjPct)}`,
     `ESPN QBR: ${pct(g.qbrAdjPct)}`,
     `Injuries: ${pct(g.injuryAdjPct)}`,

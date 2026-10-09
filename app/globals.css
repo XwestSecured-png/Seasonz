@@ -49,7 +49,7 @@ a {
    reduced-motion users (shows just the first copy, static). */
 .ticker-track {
   width: max-content;
-  animation: ticker-scroll 45s linear infinite;
+  animation: ticker-scroll 120s linear infinite;
 }
 
 .ticker-track:hover,
@@ -70,4 +70,35 @@ a {
   .ticker-track {
     animation: none;
   }
+}
+
+/* Fire-outlined SEASONZ background (app/background-field.tsx). Flicker is
+   animated with CSS so reduced-motion users get a still version. */
+.szn-fire-flicker {
+  animation: szn-flicker 3.2s ease-in-out infinite;
+  transform-origin: 50% 60%;
+}
+.szn-fire-glow {
+  animation: szn-glow 4.5s ease-in-out infinite;
+}
+.szn-ember {
+  animation: szn-rise linear infinite;
+}
+@keyframes szn-flicker {
+  0%, 100% { opacity: 0.9; transform: scaleY(1); }
+  25% { opacity: 1; transform: scaleY(1.015); }
+  50% { opacity: 0.8; transform: scaleY(0.99); }
+  75% { opacity: 0.95; transform: scaleY(1.02); }
+}
+@keyframes szn-glow {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.85; }
+}
+@keyframes szn-rise {
+  from { transform: translateY(0); opacity: 0; }
+  10% { opacity: 0.9; }
+  to { transform: translateY(-420px); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .szn-fire-flicker, .szn-fire-glow, .szn-ember { animation: none; }
 }

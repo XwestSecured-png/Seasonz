@@ -23,6 +23,8 @@ const FACTOR_LABELS: Record<string, string> = {
   FPI: "ESPN FPI",
   QBR: "ESPN Total QBR",
   INJURY: "Injury report",
+  NGS_SEPARATION: "Next Gen Stats: receiver separation",
+  PRESSURE: "Pass-rush pressure (PFR)",
 };
 
 // Below this many graded predictions, a hit rate is still mostly noise —

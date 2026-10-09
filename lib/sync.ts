@@ -46,6 +46,8 @@ import { computeTeamSeasonFactors } from "./team-factors";
 import { computeTeamFactorAdjustments } from "./team-matchup";
 import { fetchTeamFpi, fetchTeamQbr } from "./espn";
 import { computeEspnFactorAdjustments } from "./espn-factors";
+import { fetchNgsTeamWeeks, computeNgsProfiles, opponentMap, type NgsTeamWeek } from "./ngs";
+import { computeNgsAdjustments } from "./ngs-matchup";
 import {
   computeSeasonAverages,
   buildPropPicks,
@@ -365,6 +367,31 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
 
       const restTravelByGame = computeRestTravelAdjustments(schedule);
 
+      // Next Gen Stats + PFR pressure (lib/ngs.ts) — best-effort like ESPN:
+      // if the files can't be fetched, those factors are just 0 this run.
+      // Profiles are point-in-time per week (only weeks before each game).
+      let ngsWeeks: NgsTeamWeek[] = [];
+      let ngsError: string | null = null;
+      try {
+        ngsWeeks = await fetchNgsTeamWeeks(season);
+      } catch (err) {
+        ngsError = err instanceof Error ? err.message : String(err);
+      }
+      const ngsOpponents = opponentMap(schedule);
+      const ngsProfilesByWeek = new Map<number, ReturnType<typeof computeNgsProfiles>>();
+      const ngsProfilesFor = (week: number) => {
+        let p = ngsProfilesByWeek.get(week);
+        if (!p) {
+          p = computeNgsProfiles(
+            ngsWeeks.filter((x) => x.week < week),
+            ngsOpponents
+          );
+          ngsProfilesByWeek.set(week, p);
+        }
+        return p;
+      };
+      let ngsAdjusted = 0;
+
       let weatherAdjusted = 0;
       let restTravelAdjusted = 0;
       let refAdjusted = 0;
@@ -399,6 +426,13 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         const awayQbr = qbrThisWeek?.get(r.game.awayTeam);
         const espn = computeEspnFactorAdjustments(homeFpi, awayFpi, homeQbr, awayQbr);
 
+        const ngsProfiles = ngsProfilesFor(r.game.week);
+        const ngs = computeNgsAdjustments(
+          ngsProfiles.get(r.game.homeTeam),
+          ngsProfiles.get(r.game.awayTeam)
+        );
+        if (ngs.totalAdjPct !== 0) ngsAdjusted++;
+
         const homeInjuryImpact = injuryImpactByTeam.get(r.game.homeTeam) ?? 0;
         const awayInjuryImpact = injuryImpactByTeam.get(r.game.awayTeam) ?? 0;
         const injuryApplies = !r.game.isFinal && r.game.week === injuryReportWeek;
@@ -423,6 +457,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
               ref.adjPct +
               factors.totalAdjPct +
               espn.totalAdjPct +
+              ngs.totalAdjPct +
               injuryAdjPct
           )
         );
@@ -457,6 +492,8 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
             homeInjuryImpactPct: injuryApplies ? homeInjuryImpact : null,
             awayInjuryImpactPct: injuryApplies ? awayInjuryImpact : null,
             injuryAdjPct,
+            ngsSeparationAdjPct: ngs.ngsSeparationAdjPct,
+            pressureAdjPct: ngs.pressureAdjPct,
           })
           .where(
             sql`${games.season} = ${r.game.season} AND ${games.week} = ${r.game.week} AND ${games.homeTeam} = ${r.game.homeTeam} AND ${games.awayTeam} = ${r.game.awayTeam}`
@@ -482,6 +519,8 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
             { factor: "FPI", adjPct: espn.fpiAdjPct },
             { factor: "QBR", adjPct: espn.qbrAdjPct },
             { factor: "INJURY", adjPct: injuryAdjPct },
+            { factor: "NGS_SEPARATION", adjPct: ngs.ngsSeparationAdjPct },
+            { factor: "PRESSURE", adjPct: ngs.pressureAdjPct },
           ];
           for (const nf of namedFactors) {
             if (nf.adjPct === 0) continue;
@@ -537,7 +576,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
           ? `ESPN unavailable this run (${espnError}).`
           : `${espnAdjusted} ESPN-adjusted (FPI for ${espnFpiMap.size} team(s)${qbrFailures > 0 ? `, QBR fetch failed for ${qbrFailures} week(s)` : ""}).`;
 
-      return `Elo replayed: ${eloResults.length} game(s), ${finalRatings.size} team(s) rated (${weatherAdjusted} weather-adjusted, ${restTravelAdjusted} rest/travel-adjusted, ${refAdjusted} referee-adjusted, ${factorsAdjusted} team-factor-adjusted, ${injuryAdjusted} injury-adjusted). ${espnDetail} ${snapshotsWritten} factor snapshot(s) recorded for calibration tracking.`;
+      return `Elo replayed: ${eloResults.length} game(s), ${finalRatings.size} team(s) rated (${weatherAdjusted} weather-adjusted, ${restTravelAdjusted} rest/travel-adjusted, ${refAdjusted} referee-adjusted, ${factorsAdjusted} team-factor-adjusted, ${injuryAdjusted} injury-adjusted, ${ngsAdjusted} Next Gen Stats/pressure-adjusted${ngsError ? ` — NGS unavailable: ${ngsError}` : ""}). ${espnDetail} ${snapshotsWritten} factor snapshot(s) recorded for calibration tracking.`;
     })
   );
 
