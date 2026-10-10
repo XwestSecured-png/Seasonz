@@ -256,7 +256,7 @@ export async function getGameInsights(sport: SportKey, upcoming: GameRow[]): Pro
     if ((sport === "mlb" || sport === "ncaaf") && ex.weather) {
       const w = ex.weather;
       reasons.push(
-        `Forecast at start: ${w.tempF}°F, wind ${w.windMph} mph${w.precipPct != null ? `, ${w.precipPct}% chance of rain` : ""}. Context only: in testing, weather didn't change who wins.`
+        `Forecast at start: ${w.tempF}°F, wind ${w.windMph} mph${w.precipPct != null ? `, ${w.precipPct}% chance of rain` : ""}. Shown for context, not used in the pick${sport === "mlb" ? " (in testing on past seasons it didn't help predict winners)" : ""}.`
       );
     } else if ((sport === "mlb" || sport === "ncaaf") && ex.preview?.venue?.indoor) {
       reasons.push(`Indoor venue${ex.preview.venue.name ? ` (${ex.preview.venue.name})` : ""}, so weather doesn't apply.`);

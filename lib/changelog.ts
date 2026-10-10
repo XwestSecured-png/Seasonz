@@ -66,7 +66,7 @@ export const RELEASES: Release[] = [
         title: "Recent form and weather",
         whatChanged:
           "Every sport now weighs each team's recent scoring margin. Outdoor MLB and college football games show the game-time forecast.",
-        whatItMeans: "Hot and cold teams are reflected. Weather is shown for context; in testing it didn't change who wins.",
+        whatItMeans: "Hot and cold teams are reflected. Weather is shown for context and isn't used in the pick (in baseball testing it didn't help predict winners).",
       },
       {
         kind: "new",
