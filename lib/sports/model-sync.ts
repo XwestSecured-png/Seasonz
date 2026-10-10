@@ -72,12 +72,15 @@ export interface PreviewExtra {
   awayProbable: string | null;
   venue: PreviewEvent["venue"];
   espnOdds: PreviewEvent["espnOdds"];
+  /** When espnOdds was taken (always before the game started). */
+  espnOddsAt?: string | null;
   updatedAt: string;
 }
 
 type BookLine = { mlHome: number | null; mlAway: number | null };
 interface GameExtra {
   odds?: { fanduel?: BookLine; betmgm?: BookLine };
+  oddsUpdatedAt?: string;
   preview?: PreviewExtra;
   weather?: GameWeather;
   noBox?: boolean;
@@ -115,7 +118,7 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
 
       // ESPN's line for games the scoreboard didn't carry one for (next 3 days only).
       const needLine = upcoming
-        .filter((g) => !byEvent.get(g.espnEventId)?.espnOdds && g.kickoffAt!.getTime() < now + 3 * DAY)
+        .filter((g) => !byEvent.get(g.espnEventId)?.espnOdds && g.kickoffAt!.getTime() > now && g.kickoffAt!.getTime() < now + 3 * DAY)
         .slice(0, 80);
       let coreHits = 0;
       await pool(needLine, 8, async (g) => {
@@ -141,13 +144,15 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
         const ev = byEvent.get(g.espnEventId);
         if (!ev) continue;
         const prev = (g.extra as GameExtra | null)?.preview;
+        const started = g.kickoffAt!.getTime() <= now;
         rows.push({
           id: g.id,
           value: {
             homeProbable: ev.homeProbable ?? prev?.homeProbable ?? null,
             awayProbable: ev.awayProbable ?? prev?.awayProbable ?? null,
             venue: ev.venue ?? prev?.venue ?? null,
-            espnOdds: ev.espnOdds ?? prev?.espnOdds ?? null,
+            espnOdds: started ? (prev?.espnOdds ?? null) : (ev.espnOdds ?? prev?.espnOdds ?? null),
+            espnOddsAt: !started && ev.espnOdds ? new Date().toISOString() : (prev?.espnOddsAt ?? null),
             updatedAt: new Date().toISOString(),
           },
         });
@@ -176,8 +181,16 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
         .from(sportGames)
         .where(and(eq(sportGames.sport, sport), eq(sportGames.season, year), eq(sportGames.isFinal, false)));
       let matched = 0;
+      const nowMs = Date.now();
+      let live = 0;
       for (const ev of board) {
         const t = Date.parse(ev.commenceTime);
+        // Games already under way carry live in-game prices — never let
+        // those replace the pre-game line.
+        if (!(t > nowMs)) {
+          live++;
+          continue;
+        }
         const near = upcoming.filter((x) => x.kickoffAt && Math.abs(x.kickoffAt.getTime() - t) < 18 * HOUR);
         const cands = new Set(near.flatMap((x) => [x.homeTeam, x.awayTeam]));
         const home = resolve(ev.homeTeam, cands);
@@ -205,7 +218,7 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
           .where(eq(sportGames.id, g.id));
         matched++;
       }
-      return `FanDuel/BetMGM odds matched to ${matched} of ${board.length} board game(s).`;
+      return `FanDuel/BetMGM odds matched to ${matched} of ${board.length - live} upcoming board game(s)${live ? ` (${live} already started, skipped)` : ""}.`;
     })
   );
 
@@ -519,7 +532,10 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
     // Market: FanDuel, then BetMGM, then ESPN's line.
     let marketPct: number | null = null;
     let marketSource: string | null = null;
+    // Only lines captured before the game started count.
+    const preGame = (at: string | null | undefined) => !!at && Date.parse(at) < t;
     for (const [k, label] of [["fanduel", "FanDuel"], ["betmgm", "BetMGM"]] as const) {
+      if (!preGame(ex.oddsUpdatedAt)) break;
       const b = ex.odds?.[k];
       const p = b ? noVigHome(b.mlHome, b.mlAway) : null;
       if (p !== null) {
@@ -528,7 +544,7 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
         break;
       }
     }
-    if (marketPct === null && ex.preview?.espnOdds) {
+    if (marketPct === null && ex.preview?.espnOdds && preGame(ex.preview.espnOddsAt)) {
       marketPct = noVigHome(ex.preview.espnOdds.mlHome, ex.preview.espnOdds.mlAway);
       marketSource = marketPct !== null ? `ESPN (${ex.preview.espnOdds.provider})` : null;
     }

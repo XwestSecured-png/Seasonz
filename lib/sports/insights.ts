@@ -273,7 +273,7 @@ export async function getGameInsights(sport: SportKey, upcoming: GameRow[]): Pro
     if (m?.calibrationShift && Math.abs(m.calibrationShift) >= 0.005) {
       reasons.push(`Calibration: this season's graded games show the model running ${m.calibrationShift * sideSign > 0 ? "a bit cautious" : "a bit overconfident"}, so it's adjusted ${signed(m.calibrationShift * 100 * sideSign)} points.`);
     }
-    if (g.restDaysHome !== null || g.restDaysAway !== null) {
+    if (SPORT_ELO[sport].restPerDay > 0 && (g.restDaysHome !== null || g.restDaysAway !== null)) {
       const rp = homePick ? g.restDaysHome : g.restDaysAway;
       const ro = homePick ? g.restDaysAway : g.restDaysHome;
       if (rp !== null && ro !== null && rp !== ro) {

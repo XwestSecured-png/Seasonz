@@ -39,7 +39,8 @@ type Row = typeof sportGames.$inferSelect;
 interface Extra {
   locked?: { pct: number; market: number | null };
   odds?: { fanduel?: { mlHome: number | null; mlAway: number | null }; betmgm?: { mlHome: number | null; mlAway: number | null } };
-  preview?: { espnOdds?: { mlHome: number; mlAway: number } | null };
+  oddsUpdatedAt?: string;
+  preview?: { espnOdds?: { mlHome: number; mlAway: number } | null; espnOddsAt?: string | null };
 }
 
 /** The home win chance the model showed before the game started. */
@@ -51,8 +52,14 @@ export function pregamePct(g: Row): number | null {
 function bookPct(g: Row): number | null {
   const ex = (g.extra ?? {}) as Extra;
   if (ex.locked?.market != null) return ex.locked.market;
-  const b = ex.odds?.fanduel ?? ex.odds?.betmgm;
-  return noVigHome(b?.mlHome ?? null, b?.mlAway ?? null) ?? noVigHome(ex.preview?.espnOdds?.mlHome, ex.preview?.espnOdds?.mlAway);
+  // Only lines captured before the game started.
+  const start = g.kickoffAt?.getTime() ?? 0;
+  const pre = (at: string | null | undefined) => !!at && Date.parse(at) < start;
+  const b = pre(ex.oddsUpdatedAt) ? (ex.odds?.fanduel ?? ex.odds?.betmgm) : undefined;
+  return (
+    noVigHome(b?.mlHome ?? null, b?.mlAway ?? null) ??
+    (pre(ex.preview?.espnOddsAt) ? noVigHome(ex.preview?.espnOdds?.mlHome, ex.preview?.espnOdds?.mlAway) : null)
+  );
 }
 
 export function scoreGames(rows: Row[]): ScoreLine {
