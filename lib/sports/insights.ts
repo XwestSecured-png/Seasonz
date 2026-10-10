@@ -27,6 +27,7 @@ export interface Insight {
   compareNote: string | null;
   meetings: { date: string; text: string }[];
   injuries: { team: string; player: string; status: string; ppg: number | null }[];
+  injuryStat: string; // what `ppg` measures in this sport
   officials: { names: string[]; style: string[] } | null;
   schedule: string[];
   odds: { book: string; ml: string; spread: string; total: string; edge: string | null }[];
@@ -40,20 +41,66 @@ const implied = (a: number) => (a > 0 ? 100 / (a + 100) : -a / (-a + 100));
 const dateEt = (d: Date | null) =>
   d ? d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/New_York" }) : "";
 
+interface OutPlayer {
+  player: string;
+  status: string;
+  ppg: number;
+  value?: number;
+}
+interface PitcherInfo {
+  name: string;
+  value: number; // runs per 9 (avg of FIP and ERA, shrunk)
+  ip: number;
+  starts: number;
+}
 interface ModelExtra {
   eloPct: number;
   formShift: number;
+  formDiff?: number | null;
   injuryShift: number;
-  homeForm: TeamForm | null;
-  awayForm: TeamForm | null;
-  homeOut: { player: string; status: string; ppg: number }[];
-  awayOut: { player: string; status: string; ppg: number }[];
+  homeForm: (TeamForm & { n?: number; avg?: number }) | null;
+  awayForm: (TeamForm & { n?: number; avg?: number }) | null;
+  homeOut: OutPlayer[];
+  awayOut: OutPlayer[];
+  starter?: {
+    home?: PitcherInfo | string | null;
+    away?: PitcherInfo | string | null;
+    diff?: number | null;
+    homeShare?: number | null;
+    awayShare?: number | null;
+    homeBackup?: boolean;
+    awayBackup?: boolean;
+  } | null;
+  modelOnlyPct?: number;
+  marketPct?: number | null;
+  marketSource?: string | null;
+  marketShift?: number;
+  calibrationShift?: number;
 }
 interface Extra {
   officials?: string[];
   odds?: Record<string, { mlHome: number | null; mlAway: number | null; spreadHome: number | null; spreadHomePrice: number | null; spreadAwayPrice: number | null; total: number | null; overPrice: number | null; underPrice: number | null }>;
   model?: ModelExtra;
+  weather?: { tempF: number; windMph: number; precipPct: number | null };
+  preview?: { venue?: { name: string | null; indoor: boolean | null } | null; espnOdds?: { provider: string; mlHome: number; mlAway: number } | null };
 }
+
+const UNIT: Record<SportKey, string> = {
+  nba: "points",
+  wnba: "points",
+  ncaab: "points",
+  ncaaf: "points",
+  nhl: "goals",
+  mlb: "runs",
+};
+const OUT_STAT: Record<SportKey, string> = {
+  nba: "PPG",
+  wnba: "PPG",
+  ncaab: "PPG",
+  nhl: "pts/game",
+  mlb: "runs produced/game",
+  ncaaf: "yds/game",
+};
 
 export async function getGameInsights(sport: SportKey, upcoming: GameRow[]): Promise<Map<number, Insight>> {
   const out = new Map<number, Insight>();
@@ -168,12 +215,63 @@ export async function getGameInsights(sport: SportKey, upcoming: GameRow[]): Pro
     if (m && m.formShift !== 0 && m.homeForm && m.awayForm) {
       const pf = homePick ? m.homeForm : m.awayForm;
       const of = homePick ? m.awayForm : m.homeForm;
+      if (pf.mov !== undefined && pf.paint !== undefined) {
+        reasons.push(
+          `Recent form (last ${Math.min(pf.games, of.games)}+ games): ${pick} ${signed(pf.mov)} points per game and ${signed(pf.paint)} in the paint, ${opp} ${signed(of.mov)} and ${signed(of.paint)}. That moves the pick ${signed(m.formShift * 100 * sideSign)} points.`
+        );
+      } else if (pf.avg !== undefined && of.avg !== undefined) {
+        const what = sport === "mlb" || sport === "nhl" ? "Recent form and starters" : "Recent form";
+        reasons.push(
+          `Recent scoring margin (last ${Math.min(pf.n ?? 0, of.n ?? 0)} games): ${pick} ${signed(pf.avg)} ${UNIT[sport]} per game, ${opp} ${signed(of.avg)}. ${what} move the pick ${signed(m.formShift * 100 * sideSign)} points.`
+        );
+      }
+    }
+    const st = m?.starter;
+    if (sport === "mlb" && st) {
+      const mine = (homePick ? st.home : st.away) as PitcherInfo | null | undefined;
+      const theirs = (homePick ? st.away : st.home) as PitcherInfo | null | undefined;
+      const desc = (p: PitcherInfo | null | undefined, team: string) =>
+        p && typeof p === "object"
+          ? `${p.name} (${team}): ${p.value.toFixed(2)} runs allowed per 9 innings over ${Math.round(p.ip)} IP${p.ip < 30 ? ", small sample so pulled toward league average" : ""}`
+          : `${team}: starter not announced yet`;
+      reasons.push(`Starting pitchers — ${desc(mine, pick)}; ${desc(theirs, opp)}. Lower is better.`);
+    }
+    if (sport === "nhl" && st) {
+      const g = (name: unknown, share: number | null | undefined, backup: boolean | undefined, team: string) =>
+        typeof name === "string" && name
+          ? `${name} (${team}${share != null ? `, started ${Math.round(share * 100)}% of games` : ""}${backup ? ", backup" : ""})`
+          : `${team}: starter not confirmed`;
       reasons.push(
-        `Recent form (last ${Math.min(pf.games, of.games)}+ games): ${pick} ${signed(pf.mov)} points per game and ${signed(pf.paint)} in the paint, ${opp} ${signed(of.mov)} and ${signed(of.paint)}. That moves the pick ${signed(m.formShift * 100 * sideSign)} points.`
+        `Goalies — ${g(homePick ? st.home : st.away, homePick ? st.homeShare : st.awayShare, homePick ? st.homeBackup : st.awayBackup, pick)} vs ${g(homePick ? st.away : st.home, homePick ? st.awayShare : st.homeShare, homePick ? st.awayBackup : st.homeBackup, opp)}. A backup in net costs a team about 4 points of win chance in testing.`
       );
     }
     if (m && m.injuryShift !== 0) {
-      reasons.push(`Injuries and suspensions move it ${signed(m.injuryShift * 100 * sideSign)} points (see the injury list).`);
+      const top = [...(m.homeOut ?? []), ...(m.awayOut ?? [])]
+        .filter((p) => (p.value ?? p.ppg) > 0)
+        .sort((a, b) => (b.value ?? b.ppg) - (a.value ?? a.ppg))
+        .slice(0, 3)
+        .map((p) => `${p.player} (${p.ppg} ${OUT_STAT[sport]})`);
+      reasons.push(`Injuries and suspensions move it ${signed(m.injuryShift * 100 * sideSign)} points${top.length ? `: biggest absences ${top.join(", ")}` : ""}.`);
+    }
+    if ((sport === "mlb" || sport === "ncaaf") && ex.weather) {
+      const w = ex.weather;
+      reasons.push(
+        `Forecast at start: ${w.tempF}°F, wind ${w.windMph} mph${w.precipPct != null ? `, ${w.precipPct}% chance of rain` : ""}. Context only: in testing, weather didn't change who wins.`
+      );
+    } else if ((sport === "mlb" || sport === "ncaaf") && ex.preview?.venue?.indoor) {
+      reasons.push(`Indoor venue${ex.preview.venue.name ? ` (${ex.preview.venue.name})` : ""}, so weather doesn't apply.`);
+    }
+    if (m && m.marketPct != null && m.modelOnlyPct != null) {
+      const book = homePick ? m.marketPct : 1 - m.marketPct;
+      const mine = homePick ? m.modelOnlyPct : 1 - m.modelOnlyPct;
+      reasons.push(
+        `Betting line (${m.marketSource}): ${pick} ${pctStr(book)} after removing the book's margin. Our model alone: ${pctStr(mine)}. The final number blends both — the line gets most of the weight because in testing it was the most accurate single predictor in every sport.`
+      );
+    } else if (m && m.modelOnlyPct != null) {
+      reasons.push("No betting line posted yet, so this is the model alone. It will blend in FanDuel/BetMGM/ESPN lines once they're up.");
+    }
+    if (m?.calibrationShift && Math.abs(m.calibrationShift) >= 0.005) {
+      reasons.push(`Calibration: this season's graded games show the model running ${m.calibrationShift * sideSign > 0 ? "a bit cautious" : "a bit overconfident"}, so it's adjusted ${signed(m.calibrationShift * 100 * sideSign)} points.`);
     }
     if (g.restDaysHome !== null || g.restDaysAway !== null) {
       const rp = homePick ? g.restDaysHome : g.restDaysAway;
@@ -271,7 +369,12 @@ export async function getGameInsights(sport: SportKey, upcoming: GameRow[]): Pro
     // Injuries & suspensions
     const inj = injuries
       .filter((r) => r.team === g.homeTeam || r.team === g.awayTeam)
-      .map((r) => ({ team: r.team, player: r.player, status: r.status, ppg: ppgByPlayer.get(r.player) ?? null }))
+      .map((r) => ({
+        team: r.team,
+        player: r.player,
+        status: r.status,
+        ppg: ppgByPlayer.get(r.player) ?? [...(m?.homeOut ?? []), ...(m?.awayOut ?? [])].find((p) => p.player === r.player)?.ppg ?? null,
+      }))
       .sort((a, b) => (b.ppg ?? 0) - (a.ppg ?? 0));
 
     // Officials
@@ -320,7 +423,8 @@ export async function getGameInsights(sport: SportKey, upcoming: GameRow[]): Pro
       const b = ex.odds?.[key];
       if (!b) continue;
       const ml = homePick ? b.mlHome : b.mlAway;
-      const edge = ml != null ? pickPct - implied(ml) : null;
+      const own = m?.modelOnlyPct != null ? (homePick ? m.modelOnlyPct : 1 - m.modelOnlyPct) : pickPct;
+      const edge = ml != null ? own - implied(ml) : null;
       oddsRows.push({
         book: label,
         ml: `${g.awayTeam} ${odds(b.mlAway)} / ${g.homeTeam} ${odds(b.mlHome)}`,
@@ -329,11 +433,11 @@ export async function getGameInsights(sport: SportKey, upcoming: GameRow[]): Pro
         edge:
           edge == null
             ? null
-            : `${pick} at ${odds(ml)} implies ${pctStr(implied(ml!))}; model says ${pctStr(pickPct)} (${signed(edge * 100)} pts${edge > 0.03 ? ", value" : edge < -0.03 ? ", price too short" : ""}).`,
+            : `${pick} at ${odds(ml)} implies ${pctStr(implied(ml!))}; our model alone says ${pctStr(own)} (${signed(edge * 100)} pts${edge > 0.03 ? ", value" : edge < -0.03 ? ", price too short" : ""}).`,
       });
     }
 
-    out.set(g.id, { pick, pickPct, reasons, compare, compareNote, meetings, injuries: inj, officials, schedule, odds: oddsRows });
+    out.set(g.id, { pick, pickPct, reasons, compare, compareNote, meetings, injuries: inj, injuryStat: OUT_STAT[sport], officials, schedule, odds: oddsRows });
   }
   return out;
 }

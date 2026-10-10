@@ -24,8 +24,6 @@ import {
   syncRuns,
 } from "@/db/schema";
 import { replaySportElo, type SportEloGame } from "./sport-elo";
-import { formBefore, nbaWinProb, lostScoring, applyInjuries, type FormRow } from "./nba-model";
-import { fetchGameOddsForSport } from "./game-odds";
 import { makeTeamResolver } from "./team-match";
 import { SPORTS, type SportKey } from "./types";
 import {
@@ -37,6 +35,7 @@ import {
   currentSeasonYear,
 } from "./espn";
 import { gradePendingPropPicks } from "./prop-grading";
+import { runModelStages } from "./model-sync";
 import { fetchUpcomingEventsForSport, fetchEventPlayerPropsForSport } from "./odds";
 import { computeSportSeasonAverages, buildSportPropPicks, type SportScheduleGame } from "./props-model";
 import { americanToImpliedProb } from "../props-model";
@@ -429,10 +428,14 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
   // for a cron-driven sync inside one serverless invocation's time budget.
   results.push(
     await logStage(`${sport}:playerStats`, async () => {
+      // NHL and MLB also backfill last season (newest first, after this
+      // season's games), so starting goalies/pitchers have a track record
+      // from day one of a new season.
+      const statSeasons = sport === "nhl" || sport === "mlb" ? [year - 1, year] : [year];
       const finalGames = await db
-        .select({ id: sportGames.id, espnEventId: sportGames.espnEventId, week: sportGames.week, extra: sportGames.extra })
+        .select({ id: sportGames.id, espnEventId: sportGames.espnEventId, week: sportGames.week, season: sportGames.season, extra: sportGames.extra })
         .from(sportGames)
-        .where(and(eq(sportGames.sport, sport), eq(sportGames.season, year), eq(sportGames.isFinal, true)));
+        .where(and(eq(sportGames.sport, sport), inArray(sportGames.season, statSeasons), eq(sportGames.isFinal, true)));
 
       if (finalGames.length === 0) return "No final games yet — nothing to fetch box scores for.";
       // Games ESPN has no box score for (common in lower college divisions)
@@ -461,7 +464,7 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
           await db
             .select({ id: sportGames.id, kickoffAt: sportGames.kickoffAt })
             .from(sportGames)
-            .where(and(eq(sportGames.sport, sport), eq(sportGames.season, year), eq(sportGames.isFinal, true)))
+            .where(and(eq(sportGames.sport, sport), inArray(sportGames.season, statSeasons), eq(sportGames.isFinal, true)))
         ).map((r) => [r.id, r.kickoffAt?.getTime() ?? 0])
       );
       const toFetch = finalGames
@@ -496,7 +499,7 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
             .map((line) => ({
               sport,
               gameId: g.id,
-              season: year,
+              season: g.season,
               week: g.week,
               team: line.team,
               player: line.player,
@@ -980,155 +983,8 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
 
   // Grades any "make your own pick" other-sport player props (Props page)
   // whose game just went final this run — see lib/sports/prop-grading.ts.
-  if (sport === "nba") {
-    // FanDuel + BetMGM moneyline, spread and total for upcoming games.
-    results.push(
-      await logStage(`${sport}:gameOdds`, async () => {
-        const teamRows = await db.select().from(sportTeams).where(eq(sportTeams.sport, sport));
-        const nameToAbbr = new Map(teamRows.map((t) => [t.name.trim().toLowerCase(), t.abbr]));
-        const board = await fetchGameOddsForSport(sport);
-        if (board.length === 0) return "No FanDuel/BetMGM board posted (or no odds key).";
-        const upcoming = await db
-          .select()
-          .from(sportGames)
-          .where(and(eq(sportGames.sport, sport), eq(sportGames.season, year), eq(sportGames.isFinal, false)));
-        let matched = 0;
-        for (const ev of board) {
-          const home = nameToAbbr.get(ev.homeTeam.trim().toLowerCase());
-          const away = nameToAbbr.get(ev.awayTeam.trim().toLowerCase());
-          const g = upcoming.find(
-            (x) =>
-              x.homeTeam === home &&
-              x.awayTeam === away &&
-              x.kickoffAt &&
-              Math.abs(x.kickoffAt.getTime() - Date.parse(ev.commenceTime)) < 18 * 3600_000
-          );
-          if (!g) continue;
-          const main = ev.books.fanduel ?? ev.books.betmgm;
-          await db
-            .update(sportGames)
-            .set({
-              extra: { ...((g.extra as object) ?? {}), odds: ev.books, oddsUpdatedAt: new Date().toISOString() },
-              moneylineHomeOdds: main?.mlHome ?? null,
-              moneylineAwayOdds: main?.mlAway ?? null,
-              moneylineBook: main ? (ev.books.fanduel ? "FanDuel" : "BetMGM") : null,
-              spreadHomeLine: main?.spreadHome ?? null,
-              spreadHomePriceAmerican: main?.spreadHomePrice ?? null,
-              spreadAwayPriceAmerican: main?.spreadAwayPrice ?? null,
-              spreadBook: main ? (ev.books.fanduel ? "FanDuel" : "BetMGM") : null,
-              totalLine: main?.total ?? null,
-              totalOverPriceAmerican: main?.overPrice ?? null,
-              totalUnderPriceAmerican: main?.underPrice ?? null,
-              totalBook: main ? (ev.books.fanduel ? "FanDuel" : "BetMGM") : null,
-            })
-            .where(eq(sportGames.id, g.id));
-          matched++;
-        }
-        return `FanDuel/BetMGM odds matched to ${matched} of ${board.length} board game(s).`;
-      })
-    );
-
-    // Elo + recent paint/margin form + injuries -> final win chance.
-    results.push(
-      await logStage(`${sport}:model`, async () => {
-        const games = await db
-          .select()
-          .from(sportGames)
-          .where(and(eq(sportGames.sport, sport), eq(sportGames.season, year)));
-        const statRows = await db
-          .select()
-          .from(sportTeamGameStats)
-          .where(and(eq(sportTeamGameStats.sport, sport), eq(sportTeamGameStats.season, year)));
-        const gameMs = new Map(games.map((g) => [g.id, g.kickoffAt?.getTime() ?? 0]));
-        // Paint margin needs the opponent's paint points from the same game.
-        const byGame = new Map<number, typeof statRows>();
-        for (const r of statRows) byGame.set(r.gameId, [...(byGame.get(r.gameId) ?? []), r]);
-        const formRows = new Map<string, FormRow[]>();
-        for (const [gid, pair] of byGame) {
-          if (pair.length !== 2) continue;
-          for (const r of pair) {
-            const o = pair.find((x) => x !== r)!;
-            const list = formRows.get(r.team) ?? [];
-            list.push({ ms: gameMs.get(gid) ?? 0, mov: r.pts - r.oppPts, paint: r.paintPts - o.paintPts });
-            formRows.set(r.team, list);
-          }
-        }
-        for (const list of formRows.values()) list.sort((a, b) => a.ms - b.ms);
-
-        // Injuries: OUT / suspended players' scoring this season (or last).
-        const injuries = await db
-          .select()
-          .from(sportInjuryReports)
-          .where(and(eq(sportInjuryReports.sport, sport), eq(sportInjuryReports.season, year)));
-        const outRows = injuries.filter((r) => /^(OUT|SUSPENDED|INJURED RESERVE|IR)$/i.test(r.status.trim()));
-        const ppgRows = await db
-          .select({ player: sportPlayerGameStats.player, team: sportPlayerGameStats.team, stats: sportPlayerGameStats.stats })
-          .from(sportPlayerGameStats)
-          .where(and(eq(sportPlayerGameStats.sport, sport), inArray(sportPlayerGameStats.season, [year - 1, year])));
-        const ppgAcc = new Map<string, { pts: number; n: number }>();
-        for (const r of ppgRows) {
-          const pts = Number((r.stats as Record<string, string>)?.PTS);
-          if (!Number.isFinite(pts)) continue;
-          const a = ppgAcc.get(r.player) ?? { pts: 0, n: 0 };
-          a.pts += pts;
-          a.n += 1;
-          ppgAcc.set(r.player, a);
-        }
-        const ppg = (player: string) => {
-          const a = ppgAcc.get(player);
-          return a && a.n >= 3 ? a.pts / a.n : 0;
-        };
-        const outByTeam = new Map<string, { player: string; status: string; ppg: number }[]>();
-        for (const r of outRows) {
-          const list = outByTeam.get(r.team) ?? [];
-          list.push({ player: r.player, status: r.status.toUpperCase(), ppg: ppg(r.player) });
-          outByTeam.set(r.team, list);
-        }
-
-        const now = Date.now();
-        const updates: { id: number; pct: number; extra: object }[] = [];
-        for (const g of games) {
-          if (g.homeWinPctPre === null) continue;
-          const ms = g.kickoffAt?.getTime() ?? 0;
-          const eloPct = g.homeWinPctPre;
-          const hf = formBefore(formRows.get(g.homeTeam) ?? [], ms);
-          const af = formBefore(formRows.get(g.awayTeam) ?? [], ms);
-          let pct = nbaWinProb(eloPct, hf, af);
-          const formShift = pct - eloPct;
-          let injuryShift = 0;
-          const upcoming = !g.isFinal && ms > now - 6 * 3600_000;
-          const homeOut = upcoming ? (outByTeam.get(g.homeTeam) ?? []) : [];
-          const awayOut = upcoming ? (outByTeam.get(g.awayTeam) ?? []) : [];
-          if (upcoming) {
-            const r = applyInjuries(pct, lostScoring(homeOut), lostScoring(awayOut));
-            pct = r.pct;
-            injuryShift = r.shift;
-          }
-          updates.push({
-            id: g.id,
-            pct,
-            extra: {
-              ...((g.extra as object) ?? {}),
-              model: { eloPct, formShift, injuryShift, homeForm: hf, awayForm: af, homeOut, awayOut },
-            },
-          });
-        }
-        for (let i = 0; i < updates.length; i += 300) {
-          const chunk = updates.slice(i, i + 300);
-          const values = sql.join(
-            chunk.map((u) => sql`(${u.id}::int, ${u.pct}::float8, ${JSON.stringify(u.extra)}::jsonb)`),
-            sql`, `
-          );
-          await db.execute(sql`
-            update ${sportGames} as g set home_win_pct_pre = v.p, extra = v.x
-            from (values ${values}) as v(id, p, x)
-            where g.id = v.id`);
-        }
-        const withForm = updates.filter((u) => (u.extra as { model: { formShift: number } }).model.formShift !== 0).length;
-        return `Model updated ${updates.length} game(s); ${withForm} with recent-form adjustment, ${outRows.length} player(s) out/suspended considered.`;
-      })
-    );
-  }
+  // Probable starters, ESPN/FanDuel/BetMGM lines, weather, and the win model.
+  results.push(...(await runModelStages(sport, year, logStage)));
 
   results.push(await logStage(`${sport}:propGrading`, () => gradePendingPropPicks(sport)));
 

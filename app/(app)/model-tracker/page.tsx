@@ -413,26 +413,46 @@ export default async function ModelTrackerPage() {
       </div>
 
       <div>
-        <h2 className="text-sm font-semibold text-neutral-300 mb-2">All Sports — Model Accuracy</h2>
+        <h2 className="text-sm font-semibold text-neutral-300 mb-2">All Sports — Model Scorecard</h2>
         <SectionNote>
-          How often each sport&rsquo;s model favorite (whichever team had the higher pre-game win
-          probability) has actually won, so far this season. These sports don&rsquo;t have the
-          full NFL breakdown yet (no CLV, no Best Bet edge) — just the same favorite-vs-actual
-          grading as the AI card above. Click through to make your own game-winner picks for that
-          sport, see your graded record, and check that sport&rsquo;s own leaderboard — the same
-          AI-vs-You tracking NFL gets above, kept separate per sport.
+          Every sport&rsquo;s model is graded against real results: how often its pick won this week
+          and this season, and how the sportsbook favorite did on the same games. Picks are graded
+          on the number shown before each game started, so later updates can&rsquo;t change the
+          record. &ldquo;Calibration&rdquo; is the Brier score (lower is better; 0.250 is a coin
+          flip). Click a sport to see its games and make your own picks.
         </SectionNote>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {otherAccuracy.map((s) => (
             <Link prefetch={false}
               key={s.sportKey}
               href={`/sports/${s.sportKey}`}
-              className="rounded-md border border-neutral-800 px-4 py-3 hover:bg-neutral-900/50 transition-colors"
+              className="rounded-md border border-neutral-800 px-4 py-3 hover:bg-neutral-900/50 transition-colors space-y-2"
             >
-              <div className="text-xs text-neutral-500 mb-1">{s.sportLabel}</div>
-              <div className="text-xl font-semibold">{s.pct !== null ? `${s.pct.toFixed(1)}%` : "—"}</div>
-              <div className="text-xs text-neutral-400">
-                {s.graded > 0 ? `${s.correct}-${s.graded - s.correct} (${s.graded} graded)` : "No graded games yet"}
+              <div className="text-xs text-neutral-500">{s.sportLabel}</div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <div className="text-[11px] text-neutral-500">This week</div>
+                  <div className="text-lg font-semibold">{s.week.pct !== null ? `${s.week.pct.toFixed(1)}%` : "—"}</div>
+                  <div className="text-xs text-neutral-400">
+                    {s.week.graded > 0 ? `${s.week.correct}-${s.week.graded - s.week.correct}` : "No games graded"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] text-neutral-500">Season</div>
+                  <div className="text-lg font-semibold">{s.season.pct !== null ? `${s.season.pct.toFixed(1)}%` : "—"}</div>
+                  <div className="text-xs text-neutral-400">
+                    {s.season.graded > 0 ? `${s.season.correct}-${s.season.graded - s.season.correct}` : "No games graded"}
+                  </div>
+                </div>
+              </div>
+              <div className="text-xs text-neutral-500 space-y-0.5">
+                {s.season.brier !== null && <div>Calibration (Brier): {s.season.brier.toFixed(3)}</div>}
+                {s.season.bookGraded > 0 && (
+                  <div>
+                    Book favorite on games with a line: {((s.season.bookCorrect / s.season.bookGraded) * 100).toFixed(1)}% (
+                    {s.season.bookGraded} games)
+                  </div>
+                )}
               </div>
             </Link>
           ))}

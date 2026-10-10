@@ -461,3 +461,96 @@ export async function fetchGameSummaryTeams(
     .filter(Boolean);
   return { teams, officials };
 }
+
+// ---------------------------------------------------------------------------
+// Game previews: probable starters, venue, and ESPN's posted line.
+
+export interface PreviewEvent {
+  espnEventId: string;
+  homeAbbr: string;
+  awayAbbr: string;
+  /** MLB probable starting pitcher / NHL probable starting goalie. */
+  homeProbable: string | null;
+  awayProbable: string | null;
+  venue: { name: string | null; city: string | null; state: string | null; indoor: boolean | null } | null;
+  /** ESPN's own posted moneyline (ESPN BET / DraftKings feed), when the scoreboard carries one. */
+  espnOdds: { provider: string; mlHome: number; mlAway: number } | null;
+}
+
+const SCOREBOARD_GROUPS: Partial<Record<SportKey, string>> = {
+  ncaaf: "&groups=80", // FBS
+  ncaab: "&groups=50", // Division I
+};
+
+/** Every event on one ET date's scoreboard (YYYYMMDD), with probables, venue and ESPN's line. */
+export async function fetchScoreboardPreview(def: SportDef, yyyymmdd: string): Promise<PreviewEvent[]> {
+  const url = `${ESPN_BASE}/${def.espnSport}/${def.espnLeague}/scoreboard?dates=${yyyymmdd}&limit=500${SCOREBOARD_GROUPS[def.key] ?? ""}`;
+  const data = await fetchJson(url);
+  const out: PreviewEvent[] = [];
+  for (const e of (Array.isArray(data?.events) ? data.events : []) as any[]) {
+    try {
+      const c = e?.competitions?.[0];
+      const comps: any[] = Array.isArray(c?.competitors) ? c.competitors : [];
+      const h = comps.find((x) => x?.homeAway === "home");
+      const a = comps.find((x) => x?.homeAway === "away");
+      if (!h || !a) continue;
+      const probable = (x: any): string | null => {
+        const list: any[] = Array.isArray(x?.probables) ? x.probables : [];
+        const p = list.find((q) => /probableStarting(Pitcher|Goalie)/i.test(String(q?.name ?? ""))) ?? list[0];
+        return p?.athlete?.displayName ? String(p.athlete.displayName) : null;
+      };
+      let espnOdds: PreviewEvent["espnOdds"] = null;
+      for (const o of (Array.isArray(c?.odds) ? c.odds : []) as any[]) {
+        const mh = Number(o?.homeTeamOdds?.moneyLine ?? o?.moneyline?.home?.close?.odds ?? o?.moneyline?.home?.open?.odds);
+        const ma = Number(o?.awayTeamOdds?.moneyLine ?? o?.moneyline?.away?.close?.odds ?? o?.moneyline?.away?.open?.odds);
+        if (Number.isFinite(mh) && Number.isFinite(ma) && mh !== 0 && ma !== 0) {
+          espnOdds = { provider: String(o?.provider?.name ?? "ESPN"), mlHome: mh, mlAway: ma };
+          break;
+        }
+      }
+      const v = c?.venue;
+      out.push({
+        espnEventId: String(e.id),
+        homeAbbr: String(h?.team?.abbreviation ?? "").toUpperCase(),
+        awayAbbr: String(a?.team?.abbreviation ?? "").toUpperCase(),
+        homeProbable: probable(h),
+        awayProbable: probable(a),
+        venue: v
+          ? {
+              name: v.fullName ? String(v.fullName) : null,
+              city: v.address?.city ? String(v.address.city) : null,
+              state: v.address?.state ? String(v.address.state) : null,
+              indoor: typeof v.indoor === "boolean" ? v.indoor : null,
+            }
+          : null,
+        espnOdds,
+      });
+    } catch {
+      // one malformed event never sinks the rest
+    }
+  }
+  return out;
+}
+
+/** ESPN's posted moneyline for one game (core API) — used when the scoreboard didn't carry one. */
+export async function fetchEspnEventMoneyline(
+  def: SportDef,
+  espnEventId: string
+): Promise<{ provider: string; mlHome: number; mlAway: number } | null> {
+  const url = `https://sports.core.api.espn.com/v2/sports/${def.espnSport}/leagues/${def.espnLeague}/events/${espnEventId}/competitions/${espnEventId}/odds`;
+  let data: any;
+  try {
+    data = await fetchJson(url);
+  } catch {
+    return null;
+  }
+  for (const it of (Array.isArray(data?.items) ? data.items : []) as any[]) {
+    if (/live/i.test(String(it?.provider?.name ?? ""))) continue;
+    const mh = Number(it?.homeTeamOdds?.moneyLine ?? it?.homeTeamOdds?.current?.moneyLine?.american);
+    const ma = Number(it?.awayTeamOdds?.moneyLine ?? it?.awayTeamOdds?.current?.moneyLine?.american);
+    if (Number.isFinite(mh) && Number.isFinite(ma) && mh !== 0 && ma !== 0) {
+      return { provider: String(it?.provider?.name ?? "ESPN"), mlHome: mh, mlAway: ma };
+    }
+  }
+  return null;
+}

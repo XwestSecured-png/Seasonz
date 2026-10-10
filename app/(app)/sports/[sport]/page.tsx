@@ -1,3 +1,4 @@
+import { pregamePct } from "@/lib/sports/accuracy";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
 import { sportEloRatings, sportGames, sportTeamMetrics, sportUserPicks, users } from "@/db/schema";
@@ -199,8 +200,9 @@ export default async function SportPage({ params }: { params: Promise<{ sport: s
         ? g.homeScore > g.awayScore
         : null;
 
-    if (g.homeWinPctPre !== null && actualHome !== null) {
-      const predictedHome = g.homeWinPctPre > 0.5;
+    const pre = pregamePct(g);
+    if (pre !== null && actualHome !== null) {
+      const predictedHome = pre > 0.5;
       result = predictedHome === actualHome ? "CORRECT" : "WRONG";
       aiGraded++;
       if (result === "CORRECT") aiCorrect++;
@@ -415,7 +417,7 @@ export default async function SportPage({ params }: { params: Promise<{ sport: s
                     <Td>
                       {g.awayScore}–{g.homeScore}
                     </Td>
-                    <Td>{g.homeWinPctPre !== null ? `${(g.homeWinPctPre * 100).toFixed(1)}%` : "—"}</Td>
+                    <Td>{pregamePct(g) !== null ? `${(pregamePct(g)! * 100).toFixed(1)}%` : "—"}</Td>
                     <Td>
                       <ResultBadge result={g.result} />
                     </Td>

@@ -33,6 +33,53 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.5.0",
+    date: "2026-10-10",
+    title: "Sharper picks in every sport",
+    summary:
+      "Game picks for NBA, WNBA, NHL, MLB, college football and college basketball now use the betting line, starting pitchers and goalies, injuries, recent form and weather, and the model grades itself every week.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Picks use the betting line",
+        whatChanged:
+          "Each game's chance now blends our model with the FanDuel, BetMGM or ESPN moneyline, after taking out the book's built-in margin.",
+        whatItMeans:
+          "Tested on last season's games, this picked more winners (for example NBA went from 67.9% to 68.9%, and college football games with a posted line from 69.1% to 74.3%). Each pick's \"Why\" panel shows the model's own number next to the book's.",
+      },
+      {
+        kind: "new",
+        title: "Starting pitchers and goalies",
+        whatChanged:
+          "MLB picks rate both probable starting pitchers. NHL picks check whether a team is starting its backup goalie.",
+        whatItMeans: "Picks change when a team's ace or its backup goalie is going, and the Why panel names them.",
+      },
+      {
+        kind: "improved",
+        title: "Injuries count in every sport",
+        whatChanged:
+          "Players listed out, on the IL or suspended now lower their team's chance in every sport, based on how much they produce.",
+        whatItMeans: "A star sitting out moves the pick. The biggest absences are listed in the Why panel.",
+      },
+      {
+        kind: "new",
+        title: "Recent form and weather",
+        whatChanged:
+          "Every sport now weighs each team's recent scoring margin. Outdoor MLB and college football games show the game-time forecast.",
+        whatItMeans: "Hot and cold teams are reflected. Weather is shown for context; in testing it didn't change who wins.",
+      },
+      {
+        kind: "new",
+        title: "Weekly scorecard",
+        whatChanged:
+          "The Model Tracker shows each sport's record this week and this season, a calibration score, and how the betting favorite did on the same games.",
+        whatItMeans:
+          "Picks are graded on the number shown before each game started, so the record can't be rewritten. If a sport's numbers drift, the model corrects itself.",
+        href: "/model-tracker",
+      },
+    ],
+  },
+  {
     version: "1.4.0",
     date: "2026-10-09",
     title: "Parlays for every sport, 2 to 8 legs",

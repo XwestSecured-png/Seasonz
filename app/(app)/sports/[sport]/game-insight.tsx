@@ -63,7 +63,7 @@ export function GameInsight({ insight: i }: { insight: Insight }) {
             {i.injuries.map((p) => (
               <li key={p.team + p.player}>
                 <span className="text-neutral-500">{p.team}</span> {p.player} — {p.status}
-                {p.ppg ? ` (${p.ppg.toFixed(1)} ppg)` : ""}
+                {p.ppg ? ` (${p.ppg.toFixed(1)} ${i.injuryStat})` : ""}
               </li>
             ))}
           </ul>
