@@ -119,7 +119,7 @@ out.oddsCoverage = { tune: `${tuneM.length}/${tuneAll.length}`, test: `${testM.l
 const W = {};
 const pred = (name, r) => 1 / (1 + Math.exp(-feats[name](r).reduce((s, x, k) => s + x * W[name][k], 0)));
 for (const name of Object.keys(feats)) {
-  if ((name === "starter" || name === "eloBackup" || name === "eloStarter") && base !== "starter") continue;
+  if ((name === "starter" || name === "eloBackup" || name === "eloStarter") && !(sport === "mlb" || sport === "nhl")) continue;
   if (name === "weather" && !rows.some((r) => r.wx)) continue;
   const needM = name === "market";
   const tr = needM ? tuneM : tuneAll; if (tr.length < 50) continue;
@@ -131,6 +131,10 @@ for (const name of Object.keys(feats)) {
 if (tuneM.length >= 50) {
   const bf = (r) => [1, logit(clampP(pred(base, r))), logit(clampP(r.market))];
   const wb = fit(tuneM.map(bf), tuneM.map((r) => r.act));
+  const cz = (r, w) => w * logit(clampP(pred(base, r))) + (1 - w) * logit(clampP(r.market));
+  let bw = 0, bl = 1e9;
+  for (let w = 0; w <= 1.0001; w += 0.01) { const l = score(tuneM.map((r) => 1 / (1 + Math.exp(-cz(r, w)))), tuneM.map((r) => r.act)).ll; if (l < bl) { bl = l; bw = w; } }
+  out.models.convex = { w: [+bw.toFixed(2)], testWithOdds: score(testM.map((r) => 1 / (1 + Math.exp(-cz(r, bw)))), testM.map((r) => r.act)) };
   out.models.blend2 = { w: wb.map((x) => +x.toFixed(4)), testWithOdds: score(testM.map((r) => 1 / (1 + Math.exp(-bf(r).reduce((s, x, k) => s + x * wb[k], 0)))), testM.map((r) => r.act)) };
 }
 out.rawElo = { testAll: score(testAll.map((r) => r.pElo), testAll.map((r) => r.act)), testWithOdds: testM.length ? score(testM.map((r) => r.pElo), testM.map((r) => r.act)) : undefined };

@@ -26,8 +26,8 @@ export interface GameModelParams {
   /** MLB/NHL: weights on [1, logit(Elo), form/formSd, starter/starterSd, backup]. */
   starter?: [number, number, number, number, number];
   starterSd?: number;
-  /** Final weights on [1, logit(model-only), logit(no-vig market)]. */
-  blend: [number, number, number];
+  /** Share of the final number (in log-odds) that comes from our model; the rest is the book's no-vig line. */
+  modelWeight: number;
   /** How a 1-point change in expected scoring margin moves logit(win). */
   logitPerPoint: number;
   /** Injury: per-player value above a replacement-level fill-in. */
@@ -39,18 +39,18 @@ export interface GameModelParams {
 // Held-out season results (log loss / picked winner), see README in
 // scripts/backtest-game-model:
 export const GAME_MODEL: Record<SportKey, GameModelParams> = {
-  // 2025-26: Elo .6005 / 67.9% -> + form .5983 / 68.3% -> + FanDuel-style line .5761 / 68.9-69.1%
-  nba: { formN: 20, form: [0.0481, 0.761, 0.2239], formSd: 9.5589, blend: [-0.0466, 0.1077, 0.9461], logitPerPoint: 0.115, replacement: 8, injuryCap: 0.1 },
-  // 2026: .5949 / 68.0% -> .592 / 68.3% -> .5802 / 69.7%
-  wnba: { formN: 20, form: [0.0014, 0.8812, 0.1594], formSd: 9.3908, blend: [-0.006, 0.1601, 0.7991], logitPerPoint: 0.115, replacement: 6, injuryCap: 0.1 },
-  // 2025-26: Elo .6952 / 53.0% -> + backup-goalie flag .6928 / 54.6% -> + line .6862 / 54.6%
-  nhl: { formN: 20, form: [0.0104, 1.1077, 0], formSd: 1, starter: [0.0104, 1.1077, 0, 0, 0.1654], starterSd: 1, blend: [0.0968, 0.1136, 0.9715], logitPerPoint: 0.6, replacement: 0.35, injuryCap: 0.06 },
-  // 2026: Elo .6846 / 56.1% -> + form & starting pitchers .6833 / 56.5%; with a line (2,045 games) .6829-.683
-  mlb: { formN: 10, form: [0.0642, 0.7891, 0.0717], formSd: 2.569, starter: [0.0737, 0.7314, 0.0707, 0.0705, 0], starterSd: 0.7616, blend: [0.0658, 0.1915, 0.796], logitPerPoint: 0.35, replacement: 0.35, injuryCap: 0.04 },
-  // 2025 (FBS + FCS): Elo .5339 / 72.6% -> + form .5308 / 73.1%; with a line (867 games): .5799 / 69.1% -> .5157 / 74.3%
-  ncaaf: { formN: 10, form: [-0.0125, 1.0072, 0.2785], formSd: 18.6887, blend: [0.1249, 0.1585, 0.9383], logitPerPoint: 0.1, replacement: 0, injuryCap: 0.08 },
-  // 2025-26: Elo .5345 / 73.0% -> + form .5327 / 73.5%; with a line (5,569 games): .5731 / 70.6% -> .5285 / 72.0%
-  ncaab: { formN: 20, form: [0.218, 0.9337, 0.2502], formSd: 10.6753, blend: [0.0061, 0.0377, 1.111], logitPerPoint: 0.1, replacement: 6, injuryCap: 0.08 },
+  // 2025-26: Elo .6005 / 67.9% -> + form .5983 / 68.3% -> blended with the line .5761 / 68.5%
+  nba: { formN: 20, form: [0.0481, 0.761, 0.2239], formSd: 9.5589, modelWeight: 0.06, logitPerPoint: 0.115, replacement: 8, injuryCap: 0.1 },
+  // 2026: .5949 / 68.0% -> .592 / 68.3% -> blended .5794 / 70.0% (line alone .5820)
+  wnba: { formN: 20, form: [0.0014, 0.8812, 0.1594], formSd: 9.3908, modelWeight: 0.17, logitPerPoint: 0.115, replacement: 6, injuryCap: 0.1 },
+  // 2025-26: Elo .6952 / 53.0% -> + backup-goalie flag .6928 / 54.6%; games with a line: line alone .6854 / 54.7% -> blended .6834 / 55.2%
+  nhl: { formN: 20, form: [0.0104, 1.1077, 0], formSd: 1, starter: [0.0104, 1.1077, 0, 0, 0.1654], starterSd: 1, modelWeight: 0.17, logitPerPoint: 0.6, replacement: 0.35, injuryCap: 0.06 },
+  // 2026: Elo .6846 / 56.1% -> + form & starting pitchers .6833 / 56.5%; games with a line: line alone .6828 / 55.6% -> blended .6822 / 56.5%
+  mlb: { formN: 10, form: [0.0642, 0.7891, 0.0717], formSd: 2.569, starter: [0.0737, 0.7314, 0.0707, 0.0705, 0], starterSd: 0.7616, modelWeight: 0.24, logitPerPoint: 0.35, replacement: 0.35, injuryCap: 0.04 },
+  // 2025 (FBS + FCS): Elo .5339 / 72.6% -> + form .5308 / 73.1%; games with a line (867): model .5799 / 69.1% -> blended .5183 / 73.7%
+  ncaaf: { formN: 10, form: [-0.0125, 1.0072, 0.2785], formSd: 18.6887, modelWeight: 0.08, logitPerPoint: 0.1, replacement: 0, injuryCap: 0.08 },
+  // 2025-26: Elo .5345 / 73.0% -> + form .5327 / 73.5%; games with a line (5,569): model .5731 / 70.6% -> blended .529 / 72.0%
+  ncaab: { formN: 20, form: [0.218, 0.9337, 0.2502], formSd: 10.6753, modelWeight: 0.02, logitPerPoint: 0.1, replacement: 6, injuryCap: 0.08 },
 };
 
 const clampP = (p: number) => Math.min(0.995, Math.max(0.005, p));
@@ -107,8 +107,8 @@ export function injuryShift(sport: SportKey, homePct: number, homeLost: number, 
 /** Blends the model-only chance with the book's no-vig chance (when there is a line). */
 export function blendWithMarket(sport: SportKey, modelPct: number, marketPct: number | null): number {
   if (marketPct == null) return modelPct;
-  const w = GAME_MODEL[sport].blend;
-  return sigmoid(w[0] + w[1] * logit(modelPct) + w[2] * logit(marketPct));
+  const w = GAME_MODEL[sport].modelWeight;
+  return sigmoid(w * logit(modelPct) + (1 - w) * logit(marketPct));
 }
 
 export interface Calibration {

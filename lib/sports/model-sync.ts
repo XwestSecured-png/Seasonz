@@ -504,11 +504,13 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
     }
     const formShift = pModel - eloPct;
 
-    // Injuries (upcoming games only — ESPN's report is "as of now").
+    // Injuries — ESPN's report is "as of now".
     let injShift = 0;
-    const homeOut = upcoming ? (outByTeam.get(g.homeTeam) ?? []) : [];
-    const awayOut = upcoming ? (outByTeam.get(g.awayTeam) ?? []) : [];
-    if (upcoming) {
+    // Only for games in the next week: today's report says little about a game months away.
+    const injWindow = upcoming && t < now + 7 * DAY;
+    const homeOut = injWindow ? (outByTeam.get(g.homeTeam) ?? []) : [];
+    const awayOut = injWindow ? (outByTeam.get(g.awayTeam) ?? []) : [];
+    if (injWindow) {
       const lost = (l: PlayerValue[]) => l.reduce((s, p) => s + p.value, 0);
       injShift = injuryShift(sport, pModel, lost(homeOut), lost(awayOut));
     }

@@ -458,7 +458,8 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
 
       // Newest games first: props are projected from each player's most
       // recent games, so those matter most. Older games fill in over later runs.
-      const PER_RUN_CAP = 300;
+      // Larger for NHL/MLB while last season's box scores backfill (starters need them).
+      const PER_RUN_CAP = sport === "nhl" || sport === "mlb" ? 900 : 300;
       const kickoffById = new Map(
         (
           await db

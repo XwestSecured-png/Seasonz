@@ -45,7 +45,7 @@ export const RELEASES: Release[] = [
         whatChanged:
           "Each game's chance now blends our model with the FanDuel, BetMGM or ESPN moneyline, after taking out the book's built-in margin.",
         whatItMeans:
-          "Tested on last season's games, this picked more winners (for example NBA went from 67.9% to 68.9%, and college football games with a posted line from 69.1% to 74.3%). Each pick's \"Why\" panel shows the model's own number next to the book's.",
+          "Tested on last season's games, this picked more winners: on games with a posted line, NHL went from 51.8% to 55.2% and college football from 69.1% to 73.7%, and every sport's percentages got more accurate. Each pick's \"Why\" panel shows the model's own number next to the book's.",
       },
       {
         kind: "new",
