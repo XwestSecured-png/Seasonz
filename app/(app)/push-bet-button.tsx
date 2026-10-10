@@ -17,6 +17,37 @@ const COOKIE_NAME = "nfl_sportsbook_pref";
 type Status = "idle" | "working" | "done";
 
 /**
+ * Copies synchronously, inside the tap, before anything else happens.
+ * The old version started the async Clipboard API write and then opened the
+ * sportsbook immediately; on iPhone (Safari and the installed app) opening
+ * the book blurs the page before that write finishes, so Safari rejects it
+ * ("document is not focused") and nothing lands on the clipboard. The
+ * hidden-textarea + execCommand path completes before this function
+ * returns, so the copy is done before any tab or app opens.
+ */
+function copyNow(text: string): boolean {
+  let ok = false;
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    // 16px stops iOS zooming; off-screen so nothing flashes.
+    ta.style.cssText = "position:fixed;top:0;left:-9999px;opacity:0;font-size:16px;";
+    document.body.appendChild(ta);
+    const prevFocus = document.activeElement as HTMLElement | null;
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, text.length); // iOS ignores select() alone
+    ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    prevFocus?.focus?.();
+  } catch {
+    ok = false;
+  }
+  return ok;
+}
+
+/**
  * "Push" a bet slip: copies a plain-text summary of the legs to the
  * clipboard once, then opens EVERY platform in the user's saved "my
  * platforms" list (see app/(app)/sportsbook-picker.tsx) in its own tab, so
@@ -83,25 +114,47 @@ export function PushBetButton({
   // actually gets pasted.
   const slipText = useMemo(() => formatBetSlipText(legs, title), [legs, title]);
 
+  const [copyFailed, setCopyFailed] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function copyOnly() {
+    let ok = copyNow(slipText);
+    if (!ok && navigator.clipboard) {
+      ok = await navigator.clipboard.writeText(slipText).then(() => true, () => false);
+    }
+    setCopyFailed(!ok);
+    if (ok) {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } else {
+      setPreviewOpen(true);
+    }
+  }
+
   async function pushToAll(books: Sportsbook[]) {
     if (legs.length === 0 || status === "working" || books.length === 0) return;
+
+    // 1) Copy first, synchronously, while the page still has focus.
+    let ok = copyNow(slipText);
+    if (!ok && navigator.clipboard) {
+      // Fallback: the async API, awaited BEFORE leaving the page so the
+      // write can't be cut off by the book opening.
+      ok = await navigator.clipboard.writeText(slipText).then(() => true, () => false);
+    }
+    if (!ok) {
+      // Don't send them to the book with an empty clipboard — show the slip
+      // so they can long-press and copy it themselves.
+      setCopyFailed(true);
+      setPreviewOpen(true);
+      return;
+    }
+    setCopyFailed(false);
     setStatus("working");
 
-    // Fire the clipboard write and every new-tab open back to back, with no
-    // await between any of them, all still inside this click/change handler.
-    // Once an await happens first, iOS Safari (and some popup blockers) stop
-    // treating the next call as user-initiated and silently block it — so
-    // awaiting the clipboard write (or awaiting between tabs) before calling
-    // window.open would make later tabs fail to open on exactly the
-    // browsers this matters most for.
-    const clipboardWrite = navigator.clipboard.writeText(slipText).catch(() => {
-      // Clipboard access can be denied (permissions, non-HTTPS, older
-      // browser) — the tabs still open either way, just without the copy.
-    });
+    // 2) Then open the books.
     for (const bookKey of books) {
       window.open(SPORTSBOOKS[bookKey].webUrl, "_blank", "noopener,noreferrer");
     }
-    await clipboardWrite;
 
     if (!alreadyTracked && signature !== lastSavedSignature && legs.length >= 2) {
       try {
@@ -168,7 +221,7 @@ export function PushBetButton({
                 ))}
               </span>
             )}
-            {status === "working" ? "Pushing…" : status === "done" ? "Pushed ✓" : pushLabel}
+            {status === "working" ? "Pushing…" : status === "done" ? "Copied ✓ — paste in your book" : pushLabel}
           </button>
         ) : (
           <PlatformSelect
@@ -182,6 +235,15 @@ export function PushBetButton({
               if (book) choosePlatformAndPush(book);
             }}
           />
+        )}
+        {legs.length > 0 && (
+          <button
+            type="button"
+            onClick={() => void copyOnly()}
+            className="text-xs text-neutral-400 hover:text-neutral-200 underline underline-offset-2 decoration-neutral-700"
+          >
+            {copied ? "Copied ✓" : "Copy slip"}
+          </button>
         )}
         {legs.length > 0 && (
           <button
@@ -203,8 +265,14 @@ export function PushBetButton({
           to include {locked.length === 1 ? "it" : "them"}.
         </p>
       )}
+      {copyFailed && (
+        <p className="text-xs text-amber-400">
+          Your browser blocked the copy. Press and hold the slip below, choose Select All, then Copy.
+        </p>
+      )}
       {previewOpen && (
-        <pre className="whitespace-pre-wrap rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-neutral-300 max-w-sm">
+        <pre
+          style={{ userSelect: "text", WebkitUserSelect: "text" }} className="whitespace-pre-wrap rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2.5 font-mono text-[11px] leading-relaxed text-neutral-300 max-w-sm">
           {slipText}
         </pre>
       )}

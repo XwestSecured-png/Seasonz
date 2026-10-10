@@ -31,7 +31,7 @@ function formatUsd(n: number): string {
 export function formatBetSlipText(legs: BetSlipLeg[], title?: string): string {
   if (legs.length === 0) return "";
 
-  const header = `🏈 ${title ?? "Bet slip"}`;
+  const header = `🎯 ${title ?? "Bet slip"}`;
   const legCount = `${legs.length} leg${legs.length === 1 ? "" : "s"}`;
   const legLines = legs.map((l, i) => `${i + 1}. ${l.label}  ${formatPrice(l.priceAmerican)}`);
 
