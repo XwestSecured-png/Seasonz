@@ -9,10 +9,10 @@
 import type { SportKey } from "./types";
 
 export const PROP_STAT_HINTS: Record<SportKey, string[]> = {
-  nba: ["PTS", "REB", "AST", "STL", "BLK", "3PM"],
-  wnba: ["PTS", "REB", "AST", "STL", "BLK", "3PM"],
+  nba: ["PTS", "REB", "AST", "PRA", "PR", "RA", "STL", "TO", "BLK", "3PM"],
+  wnba: ["PTS", "REB", "AST", "PRA", "PR", "RA", "STL", "TO", "BLK", "3PM"],
   nhl: ["G", "A", "P", "SOG", "PIM"],
   mlb: ["H", "HR", "RBI", "R", "SO", "BB"],
   ncaaf: ["YDS", "TD", "REC", "CAR"],
-  ncaab: ["PTS", "REB", "AST", "STL", "BLK"],
+  ncaab: ["PTS", "REB", "AST", "PRA", "PR", "RA", "STL", "TO", "BLK"],
 };

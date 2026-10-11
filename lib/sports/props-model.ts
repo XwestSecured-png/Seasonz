@@ -45,6 +45,10 @@ const BASKETBALL_FLOORS: Record<string, number> = {
   "3-Pointers Made": 1,
   Steals: 0.7,
   Blocks: 0.7,
+  Turnovers: 0.8,
+  "Pts+Reb+Ast": 6,
+  "Pts+Reb": 5,
+  "Reb+Ast": 2.5,
 };
 const STDDEV_FLOOR_ABS: Record<SportKey, Record<string, number>> = {
   nba: BASKETBALL_FLOORS,

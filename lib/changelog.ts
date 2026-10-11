@@ -33,6 +33,22 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.5.1",
+    date: "2026-10-10",
+    title: "More basketball props",
+    summary: "Points + Rebounds + Assists, Points + Rebounds, Rebounds + Assists, Turnovers and Steals for NBA, WNBA and college basketball.",
+    changes: [
+      {
+        kind: "new",
+        title: "Combo, turnover and steal props",
+        whatChanged:
+          "Player Props now cover P+R+A, P+R, R+A, Turnovers and Steals: the model's picks use the FanDuel and BetMGM lines, and Make Your Own Pick lists them in the stat dropdown with each player's averages filled in.",
+        whatItMeans: "Bet the combo lines most books feature, and picks on them grade automatically when the game ends.",
+        href: "/props",
+      },
+    ],
+  },
+  {
     version: "1.5.0",
     date: "2026-10-10",
     title: "Sharper picks in every sport",

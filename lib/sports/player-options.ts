@@ -8,15 +8,19 @@ import { sportGames, sportPlayerGameStats, sportPropLinesRaw } from "@/db/schema
 import { and, eq, inArray, max } from "drizzle-orm";
 import type { SportKey } from "./types";
 import { currentSeasonYear } from "./espn";
+import { comboStat } from "./stat-extract";
 
 const HOOPS: [string, string][] = [
   ["PTS", "Points"],
   ["REB", "Rebounds"],
   ["AST", "Assists"],
+  ["PRA", "Pts + Reb + Ast"],
+  ["PR", "Pts + Reb"],
+  ["RA", "Reb + Ast"],
   ["3PT", "3-pointers made"],
   ["STL", "Steals"],
-  ["BLK", "Blocks"],
   ["TO", "Turnovers"],
+  ["BLK", "Blocks"],
   ["OREB", "Offensive rebounds"],
   ["DREB", "Defensive rebounds"],
   ["FG", "Field goals made"],
@@ -70,6 +74,10 @@ const BOOK_TO_KEY: Record<string, { key: string; role?: Role }> = {
   "3-Pointers Made": { key: "3PT" },
   Steals: { key: "STL" },
   Blocks: { key: "BLK" },
+  Turnovers: { key: "TO" },
+  "Pts+Reb+Ast": { key: "PRA" },
+  "Pts+Reb": { key: "PR" },
+  "Reb+Ast": { key: "RA" },
   Goals: { key: "G" },
   // ESPN's NHL box score puts shots on goal under "S" (its "SOG" column is always 0).
   "Shots on Goal": { key: "S" },
@@ -147,10 +155,6 @@ export interface PlayerOption {
   role: string | null;
 }
 
-const num = (v: unknown) => {
-  const m = String(v ?? "").match(/-?\d+(\.\d+)?/);
-  return m ? Number(m[0]) : null;
-};
 
 export async function getPlayerOptions(sport: SportKey, teams: string[]): Promise<Record<string, PlayerOption[]>> {
   if (teams.length === 0) return {};
@@ -220,9 +224,7 @@ export async function getPlayerOptions(sport: SportKey, teams: string[]): Promis
     const menu = (role && ROLE_CHOICES[role]) || choices;
     for (const [key, label] of menu) {
       const vals = recent
-        .map((r) => (r.stats as Record<string, string>)[key])
-        .filter((v) => v !== undefined)
-        .map(num)
+        .map((r) => comboStat(r.stats as Record<string, string>, key))
         .filter((v): v is number => v !== null);
       if (vals.length === 0) continue;
       const group = (recent[0].stats as Record<string, string>).group ?? null;

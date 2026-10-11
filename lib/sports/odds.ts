@@ -46,6 +46,10 @@ export const MARKET_LABELS_BY_SPORT: Record<SportKey, Record<string, string>> = 
     player_threes: "3-Pointers Made",
     player_steals: "Steals",
     player_blocks: "Blocks",
+    player_turnovers: "Turnovers",
+    player_points_rebounds_assists: "Pts+Reb+Ast",
+    player_points_rebounds: "Pts+Reb",
+    player_rebounds_assists: "Reb+Ast",
   },
   wnba: {
     player_points: "Points",
@@ -54,6 +58,10 @@ export const MARKET_LABELS_BY_SPORT: Record<SportKey, Record<string, string>> = 
     player_threes: "3-Pointers Made",
     player_steals: "Steals",
     player_blocks: "Blocks",
+    player_turnovers: "Turnovers",
+    player_points_rebounds_assists: "Pts+Reb+Ast",
+    player_points_rebounds: "Pts+Reb",
+    player_rebounds_assists: "Reb+Ast",
   },
   ncaab: {
     player_points: "Points",
@@ -62,6 +70,10 @@ export const MARKET_LABELS_BY_SPORT: Record<SportKey, Record<string, string>> = 
     player_threes: "3-Pointers Made",
     player_steals: "Steals",
     player_blocks: "Blocks",
+    player_turnovers: "Turnovers",
+    player_points_rebounds_assists: "Pts+Reb+Ast",
+    player_points_rebounds: "Pts+Reb",
+    player_rebounds_assists: "Reb+Ast",
   },
   nhl: {
     player_goals: "Goals",
@@ -136,6 +148,13 @@ interface RawOddsEventResponse {
   }[];
 }
 
+const EXTENDED_MARKETS = new Set([
+  "player_turnovers",
+  "player_points_rebounds_assists",
+  "player_points_rebounds",
+  "player_rebounds_assists",
+]);
+
 /** Player prop outcomes (Over + Under, every book that has a line posted) for one event of this sport, restricted to the markets this app can project (see MARKET_LABELS_BY_SPORT). */
 export async function fetchEventPlayerPropsForSport(
   sport: SportKey,
@@ -148,11 +167,22 @@ export async function fetchEventPlayerPropsForSport(
   if (markets.length === 0) return [];
 
   try {
-    const data = await oddsApiGet<RawOddsEventResponse>(`/sports/${sportKey}/events/${eventId}/odds`, {
-      regions: "us",
-      markets: markets.join(","),
-      oddsFormat: "american",
-    });
+    const get = (m: string[]) =>
+      oddsApiGet<RawOddsEventResponse>(`/sports/${sportKey}/events/${eventId}/odds`, {
+        regions: "us",
+        markets: m.join(","),
+        oddsFormat: "american",
+      });
+    let data: RawOddsEventResponse;
+    try {
+      data = await get(markets);
+    } catch (err) {
+      // If a provider rejects one of the newer combo/turnover markets, still
+      // get the core markets rather than nothing.
+      const core = markets.filter((m) => !EXTENDED_MARKETS.has(m));
+      if (core.length === markets.length) throw err;
+      data = await get(core);
+    }
 
     const out: PropOutcome[] = [];
     for (const bookmaker of data.bookmakers ?? []) {

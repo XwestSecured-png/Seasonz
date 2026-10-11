@@ -25,6 +25,27 @@ function firstNumber(raw: string | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+// Combined basketball stats that books offer as one line. Not box-score
+// columns, so they're added up from PTS / REB / AST.
+export const COMBO_STATS: Record<string, string[]> = {
+  PRA: ["PTS", "REB", "AST"],
+  PR: ["PTS", "REB"],
+  RA: ["REB", "AST"],
+};
+
+/** A box-score value by key, adding up combo keys (PRA, PR, RA). Null when any part is missing. */
+export function comboStat(s: Record<string, string>, key: string): number | null {
+  const parts = COMBO_STATS[key.toUpperCase()];
+  if (!parts) return firstNumber(s[key]);
+  let sum = 0;
+  for (const k of parts) {
+    const v = firstNumber(s[k]);
+    if (v === null) return null;
+    sum += v;
+  }
+  return sum;
+}
+
 export interface StatExtractor {
   statType: string;
   extract: (stats: Record<string, string>) => number | null;
@@ -40,6 +61,10 @@ const BASKETBALL_STATS: StatExtractor[] = [
   { statType: "3-Pointers Made", extract: (s) => firstNumber(s["3PT"]) },
   { statType: "Steals", extract: (s) => firstNumber(s.STL) },
   { statType: "Blocks", extract: (s) => firstNumber(s.BLK) },
+  { statType: "Turnovers", extract: (s) => firstNumber(s.TO) },
+  { statType: "Pts+Reb+Ast", extract: (s) => comboStat(s, "PRA") },
+  { statType: "Pts+Reb", extract: (s) => comboStat(s, "PR") },
+  { statType: "Reb+Ast", extract: (s) => comboStat(s, "RA") },
 ];
 
 // NHL: skater stats (G/A/S) only come from forwards/defenses rows, and
