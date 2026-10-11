@@ -50,6 +50,9 @@ export const FOOTBALL_ALL_MARKETS: Record<string, string> = { ...FOOTBALL_CORE_M
 /** Book name used for the model's own fair-priced props (no sportsbook posts these). */
 export const MODEL_FAIR_BOOK = "Seasonz model (fair price)";
 
+/** Books shown in the parlay builder and the props browser: the four main US sportsbooks plus the model's fair price. */
+export const MAIN_BOOKS = ["FanDuel", "DraftKings", "BetMGM", "Caesars", "Caesars Sportsbook", MODEL_FAIR_BOOK];
+
 /** A raw outcome -> side + line, for Over/Under, Over-only and Yes/No markets. Null when it isn't a usable player outcome. */
 export function readPropOutcome(o: { name: string; point?: number | null; description?: string }): { side: string; line: number } | null {
   if (!o.description) return null;

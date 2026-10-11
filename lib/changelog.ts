@@ -33,6 +33,22 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.5.3",
+    date: "2026-10-10",
+    title: "Every prop on the Props page",
+    summary: "Player Props now has an \"Every prop this week\" browser for the NFL and college football.",
+    changes: [
+      {
+        kind: "new",
+        title: "Browse every prop",
+        whatChanged:
+          "Player Props lists every line FanDuel, DraftKings, BetMGM and Caesars posted, sorted into Touchdowns, Quarterback, Rushing, Receiving, Turnovers, Defense and Kicking, with the best price first. Fumbles, QB sacked, INT thrown and 2+ TDs show the model's chance too.",
+        whatItMeans: "Find any prop and the book paying the most for it, not just the model's 70%+ picks.",
+        href: "/props",
+      },
+    ],
+  },
+  {
     version: "1.5.2",
     date: "2026-10-10",
     title: "Every football prop in the parlay builder",

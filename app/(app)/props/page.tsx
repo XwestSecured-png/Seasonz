@@ -8,7 +8,9 @@ import {
   sportPropLinesRaw,
   userPropPicks,
 } from "@/db/schema";
-import { and, asc, desc, eq, gt, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, max, sql } from "drizzle-orm";
+import { MAIN_BOOKS } from "@/lib/football-markets";
+import { AllLinesBrowser } from "./all-lines-browser";
 import { etWeekWindow, inWindow } from "@/lib/week-window";
 import { PropsExplorer } from "./props-explorer";
 import { SportPropsExplorer } from "./sport-props-explorer";
@@ -64,8 +66,19 @@ async function NflProps() {
       ? await db
           .select()
           .from(propLinesRaw)
-          .where(and(eq(propLinesRaw.season, season), eq(propLinesRaw.week, week)))
+          // Main sportsbooks + the model's fair price only: the feed also
+          // carries dozens of DFS apps/exchanges (70k+ rows a week).
+          .where(and(eq(propLinesRaw.season, season), eq(propLinesRaw.week, week), inArray(propLinesRaw.book, MAIN_BOOKS)))
       : [];
+  const browseLines = rawLines.map((r) => ({
+      player: r.player,
+      team: r.team,
+      statType: r.statType,
+      line: r.line,
+      side: r.side,
+      book: r.book,
+      priceAmerican: r.priceAmerican,
+    }));
   const booksByLine = new Map<string, { book: string; priceAmerican: number }[]>();
   for (const r of rawLines) {
     const key = `${r.player}|${r.statType}|${r.line}|${r.side}`;
@@ -126,6 +139,17 @@ async function NflProps() {
         </Link>
       </PageInfo>
 
+      <section className="space-y-2">
+        <h2 className="text-sm font-semibold text-neutral-200">Every prop this week</h2>
+        <p className="text-xs text-neutral-500 max-w-2xl">
+          Every line FanDuel, DraftKings, BetMGM and Caesars posted (best price first), including touchdowns, QB
+          stats, turnovers, sacks, tackles and kicking. Fumbles, QB sacked, INT thrown and 2+ TDs also show the
+          model&rsquo;s chance from each player&rsquo;s rate this season, since books rarely post them.
+        </p>
+        <AllLinesBrowser lines={browseLines} />
+      </section>
+
+      <h2 className="text-sm font-semibold text-neutral-200">Model picks (70%+)</h2>
       {week === null ? (
         <p className="text-sm text-neutral-500">
           No prop data yet — run a sync from the Dashboard (requires an Odds API key to be
@@ -245,7 +269,8 @@ async function OtherSportPropsSection({ sport, userId }: { sport: SportKey; user
             and(
               eq(sportPropLinesRaw.sport, sport),
               eq(sportPropLinesRaw.season, season),
-              eq(sportPropLinesRaw.week, modelWeek)
+              eq(sportPropLinesRaw.week, modelWeek),
+              inArray(sportPropLinesRaw.book, MAIN_BOOKS)
             )
           )
       : [];
@@ -341,6 +366,29 @@ async function OtherSportPropsSection({ sport, userId }: { sport: SportKey; user
           />
         )}
       </div>
+
+      {sport === "ncaaf" && (
+        <section className="space-y-2 border-t border-neutral-800 pt-5">
+          <h2 className="text-sm font-semibold text-neutral-200">Every prop this week</h2>
+          <p className="text-xs text-neutral-500 max-w-2xl">
+            Every line FanDuel, DraftKings, BetMGM and Caesars posted, best price first: touchdowns, QB stats,
+            rushing, receiving, defense and kicking.
+          </p>
+          <AllLinesBrowser
+            lines={rawModelLines
+              .filter((r) => MAIN_BOOKS.includes(r.book))
+              .map((r) => ({
+                player: r.player,
+                team: r.team,
+                statType: r.statType,
+                line: r.line,
+                side: r.side,
+                book: r.book,
+                priceAmerican: r.priceAmerican,
+              }))}
+          />
+        </section>
+      )}
 
       <div className="border-t border-neutral-800 pt-5">
         <OtherSportProps sport={sport} games={games} picks={picks} playerOptions={playerOptions} />

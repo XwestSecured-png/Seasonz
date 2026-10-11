@@ -1,12 +1,7 @@
 import { db } from "@/db";
 import { games, oddsLines, parlayPicks, propLinesRaw, sportGames, sportPropLinesRaw } from "@/db/schema";
 import { and, asc, desc, eq, gt, max, inArray } from "drizzle-orm";
-import { MODEL_FAIR_BOOK } from "@/lib/football-markets";
-
-// Books offered in the builder: the four main US sportsbooks plus the
-// model's fair price for props no book posts (keeps the page light; the
-// feed also carries dozens of DFS apps and exchanges).
-const BUILDER_BOOKS = ["FanDuel", "DraftKings", "BetMGM", "Caesars", "Caesars Sportsbook", MODEL_FAIR_BOOK];
+import { MAIN_BOOKS as BUILDER_BOOKS } from "@/lib/football-markets";
 import { getModelBuilds, type BuildSportFilter } from "@/lib/auto-builds";
 import { BuildsView } from "../best-builds/builds-view";
 import { SPORTS, type SportKey } from "@/lib/sports/types";
