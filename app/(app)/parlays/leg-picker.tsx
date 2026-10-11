@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { FOOTBALL_ALL_MARKETS, propLegLabel } from "@/lib/football-markets";
 
 export interface LegPickerGame {
   id: number;
@@ -35,8 +36,38 @@ function formatPrice(price: number | null): string {
 }
 
 function comboLabel(c: LegPickerProp): string {
-  return `${c.side} ${c.line} (${c.book}) ${formatPrice(c.priceAmerican)}`;
+  const what =
+    c.statType === "TDs" && c.side === "Over"
+      ? `${Math.ceil(c.line)}+`
+      : c.side === "Yes" || c.side === "No"
+        ? c.side
+        : `${c.side} ${c.line}`;
+  return `${what} (${c.book}) ${formatPrice(c.priceAmerican)}`;
 }
+
+// Stat dropdown order: the same order the markets are listed in
+// lib/football-markets.ts, then the model-only props, then anything else.
+const STAT_ORDER = [
+  ...Object.values(FOOTBALL_ALL_MARKETS),
+  "2+ TDs",
+  "INT Thrown",
+  "Fumble Lost",
+  "QB Sacked",
+  "Anytime Sack",
+  "Anytime INT",
+];
+// Real sportsbook prices first, the model's fair price last.
+const isModelPrice = (p: LegPickerProp) => p.book.startsWith("Seasonz model");
+function sortCombos(list: LegPickerProp[]): LegPickerProp[] {
+  return [...list].sort(
+    (a, b) => Number(isModelPrice(a)) - Number(isModelPrice(b)) || a.line - b.line || a.side.localeCompare(b.side)
+  );
+}
+
+const statRank = (s: string) => {
+  const i = STAT_ORDER.indexOf(s);
+  return i === -1 ? STAT_ORDER.length : i;
+};
 
 /**
  * Cascading dropdown leg entry: Team -> Player (or "Team bet") -> Stat Type
@@ -89,13 +120,13 @@ export function LegPicker({
         .filter((p) => p.team === teamEntry.team && p.player === player)
         .map((p) => p.statType)
     );
-    return Array.from(types).sort();
+    return Array.from(types).sort((a, b) => statRank(a) - statRank(b) || a.localeCompare(b));
   }, [propOptions, teamEntry, player]);
 
   const combos = useMemo(() => {
     if (!teamEntry || !player || player === TEAM_BET || !statType) return [];
-    return propOptions.filter(
-      (p) => p.team === teamEntry.team && p.player === player && p.statType === statType
+    return sortCombos(
+      propOptions.filter((p) => p.team === teamEntry.team && p.player === player && p.statType === statType)
     );
   }, [propOptions, teamEntry, player, statType]);
 
@@ -156,11 +187,11 @@ export function LegPicker({
   const chooseStatType = (st: string) => {
     setStatType(st);
     setComboIdx(0);
-    const match = propOptions.find(
-      (p) => p.team === teamEntry?.team && p.player === player && p.statType === st
-    );
+    const match = sortCombos(
+      propOptions.filter((p) => p.team === teamEntry?.team && p.player === player && p.statType === st)
+    )[0];
     if (match) {
-      onChange({ label: `${player} ${match.side} ${match.line} ${match.statType}`, priceAmerican: String(match.priceAmerican) });
+      onChange({ label: propLegLabel(player, match.statType, match.side, match.line), priceAmerican: String(match.priceAmerican) });
     }
   };
 
@@ -168,7 +199,7 @@ export function LegPicker({
     setComboIdx(idx);
     const c = combos[idx];
     if (c) {
-      onChange({ label: `${player} ${c.side} ${c.line} ${c.statType}`, priceAmerican: String(c.priceAmerican) });
+      onChange({ label: propLegLabel(player, c.statType, c.side, c.line), priceAmerican: String(c.priceAmerican) });
     }
   };
 

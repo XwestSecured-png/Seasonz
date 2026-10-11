@@ -1,6 +1,12 @@
 import { db } from "@/db";
 import { games, oddsLines, parlayPicks, propLinesRaw, sportGames, sportPropLinesRaw } from "@/db/schema";
-import { and, asc, desc, eq, gt, max } from "drizzle-orm";
+import { and, asc, desc, eq, gt, max, inArray } from "drizzle-orm";
+import { MODEL_FAIR_BOOK } from "@/lib/football-markets";
+
+// Books offered in the builder: the four main US sportsbooks plus the
+// model's fair price for props no book posts (keeps the page light; the
+// feed also carries dozens of DFS apps and exchanges).
+const BUILDER_BOOKS = ["FanDuel", "DraftKings", "BetMGM", "Caesars", "Caesars Sportsbook", MODEL_FAIR_BOOK];
 import { getModelBuilds, type BuildSportFilter } from "@/lib/auto-builds";
 import { BuildsView } from "../best-builds/builds-view";
 import { SPORTS, type SportKey } from "@/lib/sports/types";
@@ -81,7 +87,14 @@ async function sportBuilderData(sport: SportKey): Promise<{ games: LegPickerGame
             priceAmerican: sportPropLinesRaw.priceAmerican,
           })
           .from(sportPropLinesRaw)
-          .where(and(eq(sportPropLinesRaw.sport, sport), eq(sportPropLinesRaw.season, season), eq(sportPropLinesRaw.week, latest.week)))
+          .where(
+            and(
+              eq(sportPropLinesRaw.sport, sport),
+              eq(sportPropLinesRaw.season, season),
+              eq(sportPropLinesRaw.week, latest.week),
+              inArray(sportPropLinesRaw.book, BUILDER_BOOKS)
+            )
+          )
       : [];
   return {
     games: list.map((g) => ({
@@ -176,7 +189,7 @@ export default async function ParlaysPage({ searchParams }: { searchParams: Prom
             priceAmerican: propLinesRaw.priceAmerican,
           })
           .from(propLinesRaw)
-          .where(and(eq(propLinesRaw.season, season), eq(propLinesRaw.week, week)))
+          .where(and(eq(propLinesRaw.season, season), eq(propLinesRaw.week, week), inArray(propLinesRaw.book, BUILDER_BOOKS)))
       : [];
 
   // This week's model-favorite picks for every other sport (NBA, WNBA, NHL,

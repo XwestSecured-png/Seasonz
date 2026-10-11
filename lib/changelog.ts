@@ -33,6 +33,30 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.5.2",
+    date: "2026-10-10",
+    title: "Every football prop in the parlay builder",
+    summary: "The builder's stat dropdown now covers touchdowns (anytime, 1+, 2+, 3+, first and last), QB stats, turnovers, sacks, tackles and kicking for the NFL and college football.",
+    changes: [
+      {
+        kind: "new",
+        title: "Touchdowns, QB, turnovers and defense",
+        whatChanged:
+          "Pick a player and the Stat type list now includes Anytime TD, 2+ TDs, First/Last TD, Pass/Rush/Rec TDs, completions, attempts, INTs thrown, longest plays, sacks, tackles, defensive INTs, field goals and extra points, with every FanDuel, DraftKings, BetMGM and Caesars price posted.",
+        whatItMeans: "Build parlays from any prop the books offer, not just yards and catches.",
+        href: "/parlays",
+      },
+      {
+        kind: "new",
+        title: "Fumbles and QB sacked, priced by the model",
+        whatChanged:
+          "For NFL props books rarely post — Fumble Lost, QB Sacked, INT Thrown, Anytime Sack, Anytime INT and 2+ TDs — the builder offers the model's fair price, from each player's rate this season.",
+        whatItMeans: "Any of these can be a leg. The price is labelled \"Seasonz model (fair price)\"; check your book's actual price before betting.",
+        href: "/parlays",
+      },
+    ],
+  },
+  {
     version: "1.5.1",
     date: "2026-10-10",
     title: "More basketball props",

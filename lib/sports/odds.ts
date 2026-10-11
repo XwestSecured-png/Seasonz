@@ -20,6 +20,7 @@
 // sport's board simply isn't up yet, these sports' props sync stage just
 // has nothing to fetch — same honest "nothing yet" as every other empty
 // state in this app, not a silent wrong answer.
+import { FOOTBALL_ALL_MARKETS, FOOTBALL_EXTENDED_MARKETS, readPropOutcome } from "../football-markets";
 import { oddsApiGet, hasOddsApiKey } from "../odds-provider";
 import type { OddsEvent, PropOutcome } from "../odds";
 import type { SportKey } from "./types";
@@ -99,12 +100,7 @@ export const MARKET_LABELS_BY_SPORT: Record<SportKey, Record<string, string>> = 
   // yardage/reception markets lib/odds.ts already uses, so NCAAF's
   // statType labels match NFL's exactly and can share the same projection
   // shape (recency-weighted average, opponent-allowed adjustment).
-  ncaaf: {
-    player_pass_yds: "Pass Yds",
-    player_rush_yds: "Rush Yds",
-    player_reception_yds: "Rec Yds",
-    player_receptions: "Receptions",
-  },
+  ncaaf: FOOTBALL_ALL_MARKETS,
 };
 
 interface RawOddsListResponse {
@@ -149,6 +145,7 @@ interface RawOddsEventResponse {
 }
 
 const EXTENDED_MARKETS = new Set([
+  ...Object.keys(FOOTBALL_EXTENDED_MARKETS),
   "player_turnovers",
   "player_points_rebounds_assists",
   "player_points_rebounds",
@@ -190,13 +187,13 @@ export async function fetchEventPlayerPropsForSport(
         const label = marketLabels[market.key];
         if (!label) continue;
         for (const outcome of market.outcomes ?? []) {
-          if (outcome.name !== "Over" && outcome.name !== "Under") continue;
-          if (outcome.point == null || !outcome.description) continue;
+          const read = readPropOutcome(outcome);
+          if (!read) continue;
           out.push({
-            player: outcome.description,
+            player: outcome.description!,
             statType: label,
-            line: outcome.point,
-            side: outcome.name,
+            line: read.line,
+            side: read.side,
             book: bookmaker.title,
             priceAmerican: outcome.price,
           });

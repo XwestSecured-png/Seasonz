@@ -1,3 +1,4 @@
+import { MODEL_FAIR_BOOK, fairAmerican } from "./football-markets";
 import { db } from "@/db";
 import {
   games,
@@ -794,7 +795,40 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         written++;
       }
 
-      return `Model props: ${written} line(s) written for week ${week} (TD/turnover/defensive categories, ${defPlayerStats.length} defensive-player rows scanned).`;
+      // Every model row (not only 70%+ picks) as a fair-priced option in the
+      // parlay builder — fumbles, QB sacked, INT thrown, sacks and TDs
+      // aren't all posted by books, so these let any of them be a leg.
+      await db
+        .delete(propLinesRaw)
+        .where(sql`${propLinesRaw.season} = ${season} AND ${propLinesRaw.week} = ${week} AND ${propLinesRaw.book} = ${MODEL_FAIR_BOOK}`);
+      const outNow = new Set(
+        impactRows.filter((r) => r.status === "OUT" || r.status === "DOUBTFUL").map((r) => `${r.team}|${r.player}`)
+      );
+      const fairRows = rows
+        .filter((r) => r.probability >= 0.02 && !outNow.has(`${r.team}|${r.player}`))
+        .map((r) => ({
+          season,
+          week,
+          player: r.player,
+          team: r.team,
+          statType: r.statType,
+          line: r.line,
+          side: "Yes",
+          book: MODEL_FAIR_BOOK,
+          priceAmerican: fairAmerican(r.probability),
+        }));
+      const seenFair = new Set<string>();
+      const uniqueFair = fairRows.filter((r) => {
+        const k = `${r.player}|${r.statType}`;
+        if (seenFair.has(k)) return false;
+        seenFair.add(k);
+        return true;
+      });
+      for (let i = 0; i < uniqueFair.length; i += 500) {
+        await db.insert(propLinesRaw).values(uniqueFair.slice(i, i + 500)).onConflictDoNothing();
+      }
+
+      return `Model props: ${written} line(s) written for week ${week} (TD/turnover/defensive categories, ${defPlayerStats.length} defensive-player rows scanned); ${uniqueFair.length} fair-priced builder option(s).`;
     })
   );
 
@@ -1088,24 +1122,40 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         // above that cleared the edge threshold — so the Props page can
         // show a side-by-side "which book pays best" comparison for any
         // prop, not only the ones flagged as a model edge.
+        // Every player's team (offense and defense), so props the model
+        // doesn't project (TDs, sacks, tackles, kicking...) still land
+        // under the right team in the parlay builder.
+        const defStats = await fetchDefPlayerWeekStats(season).catch(() => []);
+        const teamOf = new Map<string, string>();
+        for (const r of [...playerStats, ...defStats]) teamOf.set(r.player, r.team);
+
         await db
           .delete(propLinesRaw)
-          .where(sql`${propLinesRaw.season} = ${season} AND ${propLinesRaw.week} = ${week}`);
+          .where(
+            sql`${propLinesRaw.season} = ${season} AND ${propLinesRaw.week} = ${week} AND ${propLinesRaw.book} <> ${MODEL_FAIR_BOOK}`
+          );
+        const seenRaw = new Set<string>();
+        const rawRows = [];
         for (const raw of allProps) {
-          const team = averages.get(`${raw.player}|${raw.statType}`)?.team ?? null;
+          const k = `${raw.player}|${raw.statType}|${raw.line}|${raw.side}|${raw.book}`;
+          if (seenRaw.has(k)) continue;
+          seenRaw.add(k);
+          rawRows.push({
+            season,
+            week,
+            player: raw.player,
+            team: averages.get(`${raw.player}|${raw.statType}`)?.team ?? teamOf.get(raw.player) ?? null,
+            statType: raw.statType,
+            line: raw.line,
+            side: raw.side,
+            book: raw.book,
+            priceAmerican: raw.priceAmerican,
+          });
+        }
+        for (let i = 0; i < rawRows.length; i += 500) {
           await db
             .insert(propLinesRaw)
-            .values({
-              season,
-              week,
-              player: raw.player,
-              team,
-              statType: raw.statType,
-              line: raw.line,
-              side: raw.side,
-              book: raw.book,
-              priceAmerican: raw.priceAmerican,
-            })
+            .values(rawRows.slice(i, i + 500))
             .onConflictDoUpdate({
               target: [
                 propLinesRaw.season,
@@ -1116,7 +1166,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
                 propLinesRaw.side,
                 propLinesRaw.book,
               ],
-              set: { team, priceAmerican: raw.priceAmerican, fetchedAt: new Date() },
+              set: { team: sql`excluded.team`, priceAmerican: sql`excluded.price_american`, fetchedAt: new Date() },
             });
         }
 

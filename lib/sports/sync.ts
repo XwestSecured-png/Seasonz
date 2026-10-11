@@ -941,27 +941,58 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
             });
         }
 
+        // Each player's team for every line, including props the model
+        // doesn't project (TDs, sacks, tackles, kicking...): from the
+        // projections first, else his most recent box score.
+        const teamOf = new Map<string, string>();
+        for (const avg of averages.values()) teamOf.set(avg.player, avg.team);
+        const needTeam = Array.from(new Set(allProps.map((p) => p.player).filter((p) => !teamOf.has(p))));
+        for (let i = 0; i < needTeam.length; i += 1000) {
+          const rows = await db
+            .select({ player: sportPlayerGameStats.player, team: sportPlayerGameStats.team, gameId: sportPlayerGameStats.gameId })
+            .from(sportPlayerGameStats)
+            .where(
+              and(
+                eq(sportPlayerGameStats.sport, sport),
+                inArray(sportPlayerGameStats.season, [year - 1, year]),
+                inArray(sportPlayerGameStats.player, needTeam.slice(i, i + 1000))
+              )
+            );
+          rows.sort((x, y) => x.gameId - y.gameId);
+          for (const r of rows) {
+            const teams = eventTeamsByPlayer.get(r.player);
+            if (!teams || teams.has(r.team)) teamOf.set(r.player, r.team);
+          }
+        }
+
         await db
           .delete(sportPropLinesRaw)
           .where(
             sql`${sportPropLinesRaw.sport} = ${sport} AND ${sportPropLinesRaw.season} = ${year} AND ${sportPropLinesRaw.week} = ${week}`
           );
+        const seenRaw = new Set<string>();
+        const rawRows = [];
         for (const raw of allProps) {
-          const team = averages.get(`${raw.player}|${raw.statType}`)?.team ?? null;
+          const k = `${raw.player}|${raw.statType}|${raw.line}|${raw.side}|${raw.book}`;
+          if (seenRaw.has(k)) continue;
+          seenRaw.add(k);
+          rawRows.push({
+            sport,
+            season: year,
+            week,
+            player: raw.player,
+            team: averages.get(`${raw.player}|${raw.statType}`)?.team ?? teamOf.get(raw.player) ?? null,
+            statType: raw.statType,
+            line: raw.line,
+            side: raw.side,
+            book: raw.book,
+            priceAmerican: raw.priceAmerican,
+          });
+        }
+        for (let i = 0; i < rawRows.length; i += 500) {
           await db
             .insert(sportPropLinesRaw)
-            .values({
-              sport,
-              season: year,
-              week,
-              player: raw.player,
-              team,
-              statType: raw.statType,
-              line: raw.line,
-              side: raw.side,
-              book: raw.book,
-              priceAmerican: raw.priceAmerican,
-            })
+            .values(rawRows.slice(i, i + 500))
             .onConflictDoUpdate({
               target: [
                 sportPropLinesRaw.sport,
@@ -973,7 +1004,7 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
                 sportPropLinesRaw.side,
                 sportPropLinesRaw.book,
               ],
-              set: { team, priceAmerican: raw.priceAmerican, fetchedAt: new Date() },
+              set: { team: sql`excluded.team`, priceAmerican: sql`excluded.price_american`, fetchedAt: new Date() },
             });
         }
 

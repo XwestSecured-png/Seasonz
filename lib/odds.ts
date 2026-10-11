@@ -23,20 +23,17 @@ import {
 // player props). Re-exported below so nothing that already imports
 // hasOddsApiKey/oddsApiKeyStatus from "./odds" needs to change.
 import { oddsApiGet, hasOddsApiKey, oddsApiKeyStatus } from "./odds-provider";
+import { FOOTBALL_ALL_MARKETS, FOOTBALL_CORE_MARKETS, readPropOutcome } from "./football-markets";
 export { hasOddsApiKey, oddsApiKeyStatus };
 
 const SPORT = "americanfootball_nfl";
 
-// Keep this list small and yardage/reception-focused — these are the markets
-// we can actually project from nflverse's weekly counting stats (see
-// lib/props-model.ts). Add more once there's a matching projection for them.
-const MARKET_LABELS: Record<string, string> = {
-  player_pass_yds: "Pass Yds",
-  player_rush_yds: "Rush Yds",
-  player_reception_yds: "Rec Yds",
-  player_receptions: "Receptions",
-};
+// Every football prop market the feed offers (lib/football-markets.ts). The
+// model projects the four CORE yardage/reception markets; the rest are
+// stored so the parlay builder can offer every prop a book posts.
+const MARKET_LABELS: Record<string, string> = FOOTBALL_ALL_MARKETS;
 const MARKETS = Object.keys(MARKET_LABELS);
+const CORE_MARKETS = Object.keys(FOOTBALL_CORE_MARKETS);
 
 export interface OddsEvent {
   id: string;
@@ -47,9 +44,9 @@ export interface OddsEvent {
 
 export interface PropOutcome {
   player: string;
-  statType: string; // "Pass Yds" | "Rush Yds" | "Rec Yds" | "Receptions"
+  statType: string; // see lib/football-markets.ts
   line: number;
-  side: "Over" | "Under";
+  side: string; // "Over" | "Under" | "Yes" | "No"
   book: string;
   priceAmerican: number;
 }
@@ -236,11 +233,20 @@ interface RawOddsEventResponse {
 export async function fetchEventPlayerProps(eventId: string): Promise<PropOutcome[]> {
   if (hasOddsApiKey()) {
     try {
-      const data = await oddsApiGet<RawOddsEventResponse>(`/sports/${SPORT}/events/${eventId}/odds`, {
-        regions: "us",
-        markets: MARKETS.join(","),
-        oddsFormat: "american",
-      });
+      const get = (m: string[]) =>
+        oddsApiGet<RawOddsEventResponse>(`/sports/${SPORT}/events/${eventId}/odds`, {
+          regions: "us",
+          markets: m.join(","),
+          oddsFormat: "american",
+        });
+      let data: RawOddsEventResponse;
+      try {
+        data = await get(MARKETS);
+      } catch (e) {
+        if (e instanceof Error && /422|404/.test(e.message) && !/INVALID_MARKET|market/i.test(e.message)) throw e;
+        // A provider that rejects one of the extra markets still gets the core ones.
+        data = await get(CORE_MARKETS);
+      }
 
       const out: PropOutcome[] = [];
       for (const bookmaker of data.bookmakers ?? []) {
@@ -248,13 +254,13 @@ export async function fetchEventPlayerProps(eventId: string): Promise<PropOutcom
           const label = MARKET_LABELS[market.key];
           if (!label) continue;
           for (const outcome of market.outcomes ?? []) {
-            if (outcome.name !== "Over" && outcome.name !== "Under") continue;
-            if (outcome.point == null || !outcome.description) continue;
+            const read = readPropOutcome(outcome);
+            if (!read) continue;
             out.push({
-              player: outcome.description,
+              player: outcome.description!,
               statType: label,
-              line: outcome.point,
-              side: outcome.name,
+              line: read.line,
+              side: read.side,
               book: bookmaker.title,
               priceAmerican: outcome.price,
             });
