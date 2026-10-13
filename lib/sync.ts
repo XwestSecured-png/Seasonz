@@ -1069,7 +1069,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
 
         const keyNote = oddsProviderNote();
         const blend = await applyNflLineBlend(season);
-        return `Game odds matched for ${matched} game(s): ${picked} moneyline edge(s), ${bestPicked} with a best-market recommendation (ML/spread/total); ${blend.blended} pick(s) blended with the line.${keyNote}`;
+        return `Game odds matched for ${matched} of ${moneylines.length} board game(s): ${picked} moneyline edge(s), ${bestPicked} with a best-market recommendation (ML/spread/total); ${blend.blended} pick(s) blended with the line.${keyNote}`;
       })
     );
   }

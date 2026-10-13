@@ -10,7 +10,7 @@
 // behavior is unchanged from before this provider existed (the original
 // error is thrown, and sync.ts's existing stage-skip logic handles it).
 import { consensusHome } from "./sports/game-model";
-import { mainSpread, mainTotal } from "./sports/game-odds";
+import { mainSpread, mainTotal, GAME_BOOKS } from "./sports/game-odds";
 import {
   hasSportsGameOddsKey,
   fetchSgoEvents,
@@ -123,7 +123,7 @@ interface RawOddsListResponse {
 
 // Main US books plus the sharp, low-margin ones (Pinnacle, BetOnline,
 // LowVig) for the market consensus. Ten books cost the same as one region.
-const NFL_GAME_BOOKS = "draftkings,fanduel,betmgm,williamhill_us,espnbet,betrivers,pinnacle,betonlineag,lowvig,bovada";
+const NFL_GAME_BOOKS = GAME_BOOKS.join(",");
 
 // Preferred book when more than one has a line posted — keeps the stored
 // line consistent week to week rather than picking whichever book happened
@@ -149,7 +149,7 @@ export async function fetchGameOdds(): Promise<GameOdds> {
         });
       // A provider that rejects the book list falls back to every US book.
       let data = await get({ bookmakers: NFL_GAME_BOOKS }).catch(() => [] as RawOddsListResponse[]);
-      if (data.length === 0) data = await get({});
+      if (!data.some((e) => (e.bookmakers ?? []).length > 0)) data = await get({});
 
       const moneylines: MoneylineOdds[] = [];
       const spreads: SpreadOdds[] = [];

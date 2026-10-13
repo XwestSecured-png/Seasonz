@@ -104,7 +104,7 @@ export async function fetchGameOddsForSport(sport: SportKey): Promise<BoardGame[
     });
   try {
     data = await get(GAME_BOOKS.join(","));
-    if (data.length === 0) data = await get("fanduel,betmgm");
+    if (!data.some((e) => (e.bookmakers ?? []).length > 0)) data = await get("fanduel,betmgm");
   } catch {
     // A provider that doesn't carry one of the extra books: fall back to the two main ones.
     try {
