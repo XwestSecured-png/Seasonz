@@ -267,7 +267,7 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
           // A book whose closest number is still off ESPN's posted line only
           // listed an alternate / period line: don't use it.
           if (sp && pv?.spread != null && Math.abs(sp.home - pv.spread) > 0.5) sp = null;
-          if (tp && pv?.total != null && Math.abs(tp.line - pv.total) > 1) tp = null;
+          if (tp && pv?.total != null && Math.abs(tp.line - pv.total) > 0.5) tp = null;
           ev.books[k] = {
             ...b,
             spreadHome: sp?.home ?? null,
