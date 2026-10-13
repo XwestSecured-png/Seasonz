@@ -183,7 +183,10 @@ export async function fetchGameOdds(): Promise<GameOdds> {
         // Alternate lines can share the market with the main one; take the
         // pair priced closest to even (lib/sports/game-odds.ts).
         const spread = chosen.markets?.find((m) => m.key === "spreads");
-        const sp = mainSpread(spread?.outcomes ?? [], event.home_team, event.away_team);
+        const sp = mainSpread(spread?.outcomes ?? [], event.home_team, event.away_team, {
+          sport: "nfl",
+          homePct: homeMl && awayMl ? consensusHome({ b: { mlHome: homeMl.price, mlAway: awayMl.price } })?.pct ?? null : null,
+        });
         if (sp) {
           spreads.push({
             homeTeam: event.home_team,
@@ -196,7 +199,7 @@ export async function fetchGameOdds(): Promise<GameOdds> {
         }
 
         const total = chosen.markets?.find((m) => m.key === "totals");
-        const tl = mainTotal(total?.outcomes ?? []);
+        const tl = mainTotal(total?.outcomes ?? [], "nfl");
         if (tl) {
           totals.push({
             homeTeam: event.home_team,
