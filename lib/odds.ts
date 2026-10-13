@@ -148,7 +148,8 @@ export async function fetchGameOdds(): Promise<GameOdds> {
           ...extra,
         });
       // A provider that rejects the book list falls back to every US book.
-      const data = await get({ bookmakers: NFL_GAME_BOOKS }).catch(() => get({}));
+      let data = await get({ bookmakers: NFL_GAME_BOOKS }).catch(() => [] as RawOddsListResponse[]);
+      if (data.length === 0) data = await get({});
 
       const moneylines: MoneylineOdds[] = [];
       const spreads: SpreadOdds[] = [];
