@@ -33,6 +33,23 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.8.0",
+    date: "2026-10-13",
+    title: "My Picks: all your picks in one place",
+    summary: "A new My Picks tab collects every pick you've made, for every sport, in one list.",
+    changes: [
+      {
+        kind: "new",
+        title: "My Picks tab",
+        whatChanged:
+          "Your NFL picks, game picks for every other sport and your player-prop picks now live together on one page, split into Upcoming and Results, with a sport filter and your overall record.",
+        whatItMeans:
+          "No more jumping between sport pages to see what you've picked. Each result shows the final score and whether the model agreed with you, and tapping a pick takes you to its game.",
+        href: "/my-picks",
+      },
+    ],
+  },
+  {
     version: "1.7.1",
     date: "2026-10-13",
     title: "NBA preseason games",

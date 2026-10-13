@@ -28,9 +28,10 @@ import {
   FootballIcon,
   LockIcon,
   ShieldStarIcon,
+  CheckListIcon,
 } from "./icons";
 
-// The four sections used most often get a permanent spot in the tab bar
+// The five sections used most often get a permanent spot in the tab bar
 // (mirrors a native sports-betting app's bottom nav, e.g. Gambly); everything
 // else — plus the team picker and account actions that used to live in the
 // header — lives one tap away behind "More". Only rendered on small screens
@@ -38,6 +39,7 @@ import {
 // ground on wider screens.
 const PRIMARY = [
   { href: "/", label: "Dashboard", Icon: HomeIcon },
+  { href: "/my-picks", label: "My Picks", Icon: CheckListIcon },
   { href: "/props", label: "Props", Icon: ListIcon },
   { href: "/parlays", label: "Parlays", Icon: TicketIcon },
   { href: "/model-tracker", label: "Tracker", Icon: TargetIcon },
@@ -188,7 +190,7 @@ export function BottomNav({
         className="fixed inset-x-0 bottom-0 z-50 border-t border-neutral-800/80 bg-neutral-950/95 backdrop-blur sm:hidden"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        <div className="grid grid-cols-5">
+        <div className="grid grid-cols-6">
           {PRIMARY.map((l) => {
             const active = pathname === l.href;
             return (
