@@ -50,7 +50,7 @@ const BASKETBALL_FLOORS: Record<string, number> = {
   "Pts+Reb": 5,
   "Reb+Ast": 2.5,
 };
-const STDDEV_FLOOR_ABS: Record<SportKey, Record<string, number>> = {
+export const STDDEV_FLOOR_ABS: Record<SportKey, Record<string, number>> = {
   nba: BASKETBALL_FLOORS,
   wnba: BASKETBALL_FLOORS,
   ncaab: BASKETBALL_FLOORS,

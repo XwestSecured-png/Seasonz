@@ -13,7 +13,7 @@ const RECENT_GAMES_WINDOW = 5;
 // stat type (yards are a bigger number than receptions) plus a
 // percent-of-mean floor, whichever is larger.
 const STDDEV_FLOOR_PCT = 0.12;
-const STDDEV_FLOOR_ABS: Record<string, number> = {
+export const NFL_STDDEV_FLOOR_ABS: Record<string, number> = {
   "Pass Yds": 15,
   "Rush Yds": 8,
   "Rec Yds": 8,
@@ -170,7 +170,7 @@ export function computeSeasonAverages(
     const rawMean = windowed.reduce((a, g) => a + g.value, 0) / n;
     const variance =
       n > 1 ? windowed.reduce((a, g) => a + (g.value - rawMean) ** 2, 0) / (n - 1) : 0;
-    const floor = Math.max(weightedMean * STDDEV_FLOOR_PCT, STDDEV_FLOOR_ABS[statType] ?? 5);
+    const floor = Math.max(weightedMean * STDDEV_FLOOR_PCT, NFL_STDDEV_FLOOR_ABS[statType] ?? 5);
     const stdDev = Math.max(Math.sqrt(variance), floor);
 
     const team = sorted[0].team;
