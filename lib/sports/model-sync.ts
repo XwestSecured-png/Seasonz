@@ -262,8 +262,12 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
         for (const k of Object.keys(ev.books) as (keyof typeof ev.books)[]) {
           const b = ev.books[k];
           if (!b) continue;
-          const sp = pickSpread(b.spreadAlts ?? [], { sport, homePct: null, anchor: pv?.spread ?? b.spreadHome });
-          const tp = pickTotal(b.totalAlts ?? [], sport, pv?.total ?? b.total);
+          let sp = pickSpread(b.spreadAlts ?? [], { sport, homePct: null, anchor: pv?.spread ?? b.spreadHome });
+          let tp = pickTotal(b.totalAlts ?? [], sport, pv?.total ?? b.total);
+          // A book whose closest number is still off ESPN's posted line only
+          // listed an alternate / period line: don't use it.
+          if (sp && pv?.spread != null && Math.abs(sp.home - pv.spread) > 0.5) sp = null;
+          if (tp && pv?.total != null && Math.abs(tp.line - pv.total) > 1) tp = null;
           ev.books[k] = {
             ...b,
             spreadHome: sp?.home ?? null,
@@ -277,9 +281,16 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
           };
         }
         // Shown/linked line: the first main US book that posted one.
-        const mainKey = (["fanduel", "betmgm", "draftkings", "williamhill_us"] as const).find((k) => ev.books[k]?.mlHome != null);
+        const ORDER = ["fanduel", "betmgm", "draftkings", "williamhill_us", "pinnacle", "betonlineag", "lowvig"] as const;
+        const mainKey = ORDER.slice(0, 4).find((k) => ev.books[k]?.mlHome != null);
         const main = mainKey ? ev.books[mainKey] : undefined;
         const book = mainKey ? BOOK_LABEL[mainKey] : "";
+        // Spread and total: the first book (main ones first) with a full-game
+        // line; else ESPN's posted number without a price.
+        const spKey = ORDER.find((k) => ev.books[k]?.spreadHome != null);
+        const totKey = ORDER.find((k) => ev.books[k]?.total != null);
+        const spB = spKey ? ev.books[spKey] : undefined;
+        const totB = totKey ? ev.books[totKey] : undefined;
         await db
           .update(sportGames)
           .set({
@@ -287,14 +298,14 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
             moneylineHomeOdds: main?.mlHome ?? null,
             moneylineAwayOdds: main?.mlAway ?? null,
             moneylineBook: main ? book : null,
-            spreadHomeLine: main?.spreadHome ?? null,
-            spreadHomePriceAmerican: main?.spreadHomePrice ?? null,
-            spreadAwayPriceAmerican: main?.spreadAwayPrice ?? null,
-            spreadBook: main ? book : null,
-            totalLine: main?.total ?? null,
-            totalOverPriceAmerican: main?.overPrice ?? null,
-            totalUnderPriceAmerican: main?.underPrice ?? null,
-            totalBook: main ? book : null,
+            spreadHomeLine: spB?.spreadHome ?? pv?.spread ?? null,
+            spreadHomePriceAmerican: spB?.spreadHomePrice ?? null,
+            spreadAwayPriceAmerican: spB?.spreadAwayPrice ?? null,
+            spreadBook: spKey ? BOOK_LABEL[spKey] : pv?.spread != null ? `ESPN (${pv.provider})` : null,
+            totalLine: totB?.total ?? pv?.total ?? null,
+            totalOverPriceAmerican: totB?.overPrice ?? null,
+            totalUnderPriceAmerican: totB?.underPrice ?? null,
+            totalBook: totKey ? BOOK_LABEL[totKey] : pv?.total != null ? `ESPN (${pv.provider})` : null,
           })
           .where(eq(sportGames.id, g.id));
         matched++;
