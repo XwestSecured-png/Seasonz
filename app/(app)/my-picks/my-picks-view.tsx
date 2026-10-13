@@ -13,17 +13,46 @@ const STATUS_STYLE: Record<PickStatus, string> = {
 };
 const STATUS_LABEL: Record<PickStatus, string> = { pending: "Pending", won: "Won", lost: "Lost", push: "Push", void: "Void" };
 
-const fmtTime = (iso: string | null) =>
-  iso
-    ? new Date(iso).toLocaleString("en-US", {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-        timeZone: "America/New_York",
-      }) + " ET"
-    : "Time TBD";
+const ET = "America/New_York";
+const dayKey = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: ET }); // YYYY-MM-DD in ET
+function dayLabel(key: string): string {
+  const today = dayKey(new Date().toISOString());
+  const shift = (d: number) => dayKey(new Date(Date.now() + d * 86_400_000).toISOString());
+  const pretty = new Date(`${key}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+  if (key === today) return `Today · ${pretty}`;
+  if (key === shift(1)) return `Tomorrow · ${pretty}`;
+  if (key === shift(-1)) return `Yesterday · ${pretty}`;
+  return pretty;
+}
+const timeLabel = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: ET }) + " ET";
+
+interface DayGroup {
+  key: string;
+  label: string;
+  slots: { time: string; picks: MyPick[] }[];
+  count: number;
+}
+/** Picks grouped by ET date, then by start time, in the list's existing order. */
+function groupByDayAndTime(list: MyPick[]): DayGroup[] {
+  const days: DayGroup[] = [];
+  for (const p of list) {
+    const key = p.kickoffAt ? dayKey(p.kickoffAt) : "tbd";
+    let day = days.find((d) => d.key === key);
+    if (!day) {
+      day = { key, label: key === "tbd" ? "Date TBD" : dayLabel(key), slots: [], count: 0 };
+      days.push(day);
+    }
+    const time = p.kickoffAt ? timeLabel(p.kickoffAt) : "Time TBD";
+    let slot = day.slots.find((x) => x.time === time);
+    if (!slot) {
+      slot = { time, picks: [] };
+      day.slots.push(slot);
+    }
+    slot.picks.push(p);
+    day.count++;
+  }
+  return days;
+}
 
 export function MyPicksView({ picks }: { picks: MyPick[] }) {
   const [view, setView] = useState<"upcoming" | "results">("upcoming");
@@ -133,40 +162,54 @@ export function MyPicksView({ picks }: { picks: MyPick[] }) {
           {view === "upcoming" ? "Nothing pending for this filter." : "No finished picks for this filter yet."}
         </p>
       ) : (
-        <ul className="space-y-2">
-          {list.slice(0, 200).map((p) => (
-            <li key={p.key}>
-              <Link
-                href={p.href}
-                className="block rounded-md border border-neutral-800 px-3 py-2 hover:border-neutral-700 hover:bg-neutral-900/50 transition-colors"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium text-neutral-100">{p.pick}</div>
-                    <div className="text-xs text-neutral-500">
-                      <span className="text-neutral-400">{p.sportLabel}</span> · {p.kind} · {p.matchup} · {fmtTime(p.kickoffAt)}
-                      {p.preseason && <span className="ml-1 text-amber-300">· Preseason</span>}
-                    </div>
-                  </div>
-                  <span className={`shrink-0 rounded px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLE[p.status]}`}>
-                    {STATUS_LABEL[p.status]}
-                  </span>
+        <div className="space-y-5">
+          {groupByDayAndTime(list.slice(0, 200)).map((day) => (
+            <section key={day.key} className="space-y-2">
+              <h2 className="sticky top-0 z-10 -mx-1 px-1 py-1 bg-neutral-950/95 backdrop-blur text-sm font-semibold text-neutral-200 border-b border-neutral-800">
+                {day.label} <span className="text-xs font-normal text-neutral-500">· {day.count} pick{day.count === 1 ? "" : "s"}</span>
+              </h2>
+              {day.slots.map((slot) => (
+                <div key={slot.time} className="space-y-1.5">
+                  <div className="text-xs font-medium text-sky-400">{slot.time}</div>
+                  <ul className="space-y-2">
+                    {slot.picks.map((p) => (
+                      <li key={p.key}>
+                        <Link
+                          href={p.href}
+                          className="block rounded-md border border-neutral-800 px-3 py-2 hover:border-neutral-700 hover:bg-neutral-900/50 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium text-neutral-100">{p.pick}</div>
+                              <div className="text-xs text-neutral-500">
+                                <span className="text-neutral-400">{p.sportLabel}</span> · {p.kind} · {p.matchup}
+                                {p.preseason && <span className="ml-1 text-amber-300">· Preseason</span>}
+                              </div>
+                            </div>
+                            <span className={`shrink-0 rounded px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLE[p.status]}`}>
+                              {STATUS_LABEL[p.status]}
+                            </span>
+                          </div>
+                          {(p.result || p.model) && (
+                            <div className="mt-1 text-xs text-neutral-400 flex flex-wrap gap-x-3">
+                              {p.result && <span>{p.result}</span>}
+                              {p.model && (
+                                <span className={p.model.agrees ? "text-sky-400" : "text-amber-400"}>
+                                  Model: {p.model.side} {Math.round(p.model.pct * 100)}%{p.model.agrees ? " (agrees)" : " (disagrees)"}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                {(p.result || p.model) && (
-                  <div className="mt-1 text-xs text-neutral-400 flex flex-wrap gap-x-3">
-                    {p.result && <span>{p.result}</span>}
-                    {p.model && (
-                      <span className={p.model.agrees ? "text-sky-400" : "text-amber-400"}>
-                        Model: {p.model.side} {Math.round(p.model.pct * 100)}%{p.model.agrees ? " (agrees)" : " (disagrees)"}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </Link>
-            </li>
+              ))}
+            </section>
           ))}
           {list.length > 200 && <p className="text-xs text-neutral-500">Showing the latest 200. Filter by sport to see more.</p>}
-        </ul>
+        </div>
       )}
     </div>
   );
