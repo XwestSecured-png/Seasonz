@@ -98,7 +98,8 @@ async function NflProps() {
       <p className="text-sm text-neutral-400 max-w-2xl">
         Player stats compared against this week&rsquo;s sportsbook lines, adjusted for recent
         form and the upcoming opponent&rsquo;s real defense. Only picks at 70% model confidence
-        or higher are shown — a close call isn&rsquo;t worth a pick.
+        or higher that also beat the book&rsquo;s price by 3+ points are shown — a likely prop at a
+        bad price still loses money over time.
         {week !== null && <> Currently showing week {week}.</>}
       </p>
       <PageInfo>

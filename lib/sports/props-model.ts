@@ -7,7 +7,7 @@
 // field name (winProbability / americanToImpliedProb) are imported from
 // lib/props-model.ts rather than duplicated.
 import type { PropOutcome } from "../odds";
-import { winProbability } from "../props-model";
+import { winProbability, americanToImpliedProb, MIN_PROP_EDGE } from "../props-model";
 import { MIN_MODEL_WIN_PCT } from "../confidence";
 import { STAT_EXTRACTORS } from "./stat-extract";
 import type { SportKey } from "./types";
@@ -50,6 +50,44 @@ const BASKETBALL_FLOORS: Record<string, number> = {
   "Pts+Reb": 5,
   "Reb+Ast": 2.5,
 };
+// Spread multipliers from the prop calibration check (lib/prop-calibration.ts,
+// /api/health/insights?propcal=<sport>): replaying last and this season's
+// box scores, the old model said ~80% on its 70%+ picks but hit 71-78%. With
+// zero games counted and these wider spreads, predicted and actual match
+// (e.g. NBA points 80.1% predicted / 80.2% actual). Stats too rare to fit
+// use 1.5.
+const BASKETBALL_SD_MULT: Record<string, number> = {
+  Points: 1.2,
+  Rebounds: 1.1,
+  Assists: 1.1,
+  "3-Pointers Made": 1.3,
+  Steals: 1.5,
+  Blocks: 1.5,
+  Turnovers: 1.4,
+  "Pts+Reb+Ast": 1.1,
+  "Pts+Reb": 1.1,
+  "Reb+Ast": 1.1,
+};
+export const PROP_SD_MULT: Record<SportKey, Record<string, number>> = {
+  nba: BASKETBALL_SD_MULT,
+  wnba: { ...BASKETBALL_SD_MULT, Rebounds: 1.0, "Pts+Reb+Ast": 1.0, Blocks: 1.4 },
+  ncaab: BASKETBALL_SD_MULT,
+  nhl: { Goals: 1.5, Assists: 1.5, Points: 1.3, "Shots on Goal": 1.1, Saves: 1.2 },
+  mlb: {
+    Hits: 1.4,
+    "Home Runs": 1.5,
+    RBIs: 1.5,
+    "Runs Scored": 1.4,
+    Walks: 1.7,
+    "Strikeouts (Batter)": 1.5,
+    "Strikeouts (Pitcher)": 0.9,
+    "Hits Allowed": 0.9,
+    "Walks Allowed": 1.2,
+    "Earned Runs": 1.3,
+  },
+  ncaaf: { "Pass Yds": 1.3, "Rush Yds": 1.3, "Rec Yds": 1.4, Receptions: 1.3 },
+};
+
 export const STDDEV_FLOOR_ABS: Record<SportKey, Record<string, number>> = {
   nba: BASKETBALL_FLOORS,
   wnba: BASKETBALL_FLOORS,
@@ -170,7 +208,7 @@ export function computeSportSeasonAverages(
   for (const row of rows) {
     for (const { statType, extract } of extractors) {
       const value = extract(row.stats);
-      if (value === null || value <= 0) continue;
+      if (value === null || value < 0) continue;
       const key = `${row.player}|${statType}`;
       const list = byKey.get(key) ?? [];
       list.push({ team: row.team, week: row.week, value });
@@ -200,7 +238,7 @@ export function computeSportSeasonAverages(
     const rawMean = windowed.reduce((a, g) => a + g.value, 0) / n;
     const variance = n > 1 ? windowed.reduce((a, g) => a + (g.value - rawMean) ** 2, 0) / (n - 1) : 0;
     const floor = Math.max(weightedMean * STDDEV_FLOOR_PCT, floors[statType] ?? 1);
-    const stdDev = Math.max(Math.sqrt(variance), floor);
+    const stdDev = Math.max(Math.sqrt(variance), floor) * (PROP_SD_MULT[sport][statType] ?? 1.3);
 
     const team = sorted[0].team;
     const opponent = opponentThisWeek.get(team);
@@ -269,6 +307,9 @@ export function buildSportPropPicks(
 
     const price = side === "Over" ? g.overPrice : g.underPrice;
     if (price == null) continue;
+    // Only a pick when it beats the price: a 75% chance at -500 (83%
+    // implied) is a losing bet however likely it is.
+    if (modelWinPct - americanToImpliedProb(price) < MIN_PROP_EDGE) continue;
 
     const matchup = opponentThisWeek.get(avg.team);
 

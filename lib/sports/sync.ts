@@ -462,7 +462,10 @@ export async function runSportSync(
             .where(
               and(
                 eq(sportPlayerGameStats.sport, sport),
-                inArray(sportPlayerGameStats.gameId, finalGames.map((g) => g.id))
+                inArray(sportPlayerGameStats.gameId, finalGames.map((g) => g.id)),
+                // College games saved before every stat group was kept get
+                // fetched again (the upsert below overwrites them).
+                sport === "ncaaf" ? sql`${sportPlayerGameStats.stats} ? 'groups'` : sql`true`
               )
             )
         ).map((r) => r.gameId)

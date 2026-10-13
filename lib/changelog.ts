@@ -33,6 +33,54 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.6.0",
+    date: "2026-10-13",
+    title: "More accurate NFL picks and honest prop percentages",
+    summary:
+      "The NFL model now carries team strength over from past seasons and uses the betting line, prop percentages were tested against real results and corrected, and lines and starters refresh before games.",
+    changes: [
+      {
+        kind: "improved",
+        title: "NFL picks",
+        whatChanged:
+          "NFL team ratings now carry over from the last three seasons instead of starting fresh every September, and each pick uses the betting line once it's posted.",
+        whatItMeans:
+          "Tested on 2023-2025: the model alone went from 60.7% to 63.9% of winners (weeks 1-4: 50% to 60%); with the line, 67.9%.",
+        href: "/model-tracker",
+      },
+      {
+        kind: "fixed",
+        title: "Prop percentages tested and corrected",
+        whatChanged:
+          "Replaying last season's games showed props marked \"70%+\" were winning less often than shown (about 71-78% when the app said ~80%). Games where a player recorded zero now count, the spread of outcomes is wider, and a prop is only picked when it also beats the book's price.",
+        whatItMeans:
+          "The percentages now match how often picks actually hit, and you'll see fewer, better props — no more heavy favorites at prices that lose money.",
+        href: "/props",
+      },
+      {
+        kind: "improved",
+        title: "Lines for more games",
+        whatChanged:
+          "College football now gets ESPN's line for FCS games too, and FanDuel/BetMGM lines match neutral-site games listed with home and away swapped.",
+        whatItMeans: "More picks use a betting line, which tested as the most accurate input.",
+      },
+      {
+        kind: "new",
+        title: "Pre-game refresh and closing-line check",
+        whatChanged:
+          "Lines, injuries, starting pitchers and goalies refresh at 11am and 5pm ET as well as the 12am and 2pm syncs. The Model Tracker shows how often the line moved toward our side after we disagreed with it.",
+        whatItMeans: "Late scratches and line moves are caught before games, and you can see whether the model is ahead of the market long before win-loss records settle.",
+        href: "/model-tracker",
+      },
+      {
+        kind: "fixed",
+        title: "College player stats",
+        whatChanged: "College box scores now keep every stat for a player — a quarterback's rushing yards were being dropped when his passing yards were saved.",
+        whatItMeans: "College football props and injury values use complete numbers.",
+      },
+    ],
+  },
+  {
     version: "1.5.3",
     date: "2026-10-10",
     title: "Every prop on the Props page",

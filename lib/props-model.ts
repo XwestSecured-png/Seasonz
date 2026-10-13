@@ -13,6 +13,14 @@ const RECENT_GAMES_WINDOW = 5;
 // stat type (yards are a bigger number than receptions) plus a
 // percent-of-mean floor, whichever is larger.
 const STDDEV_FLOOR_PCT = 0.12;
+// From the prop calibration check (lib/prop-calibration.ts) on 2024-2026
+// weekly stats: the old spread said 81-84% on 70%+ picks that hit 74-77%.
+// Wider spreads bring predicted and actual together (e.g. Rec Yds 78.1% / 78.2%).
+const NFL_SD_MULT: Record<string, number> = { "Pass Yds": 1.3, "Rush Yds": 1.3, "Rec Yds": 1.4, Receptions: 1.3 };
+
+/** A prop is only picked when the model's chance beats the price's implied chance by at least this much. */
+export const MIN_PROP_EDGE = 0.03;
+
 export const NFL_STDDEV_FLOOR_ABS: Record<string, number> = {
   "Pass Yds": 15,
   "Rush Yds": 8,
@@ -133,10 +141,12 @@ export function computeSeasonAverages(
   for (const row of rows) {
     for (const { statType, field } of STAT_FIELDS) {
       const value = Number(row[field]) || 0;
-      // Only count games where the player actually touched the stat, so a
-      // bye-week/zero-target row doesn't drag their average down to look
-      // like a game they were meaningfully on the field for.
-      if (value <= 0) continue;
+      // Zero games count: a receiver held without a catch is a real
+      // outcome. (Leaving them out pushed projections up; the calibration
+      // check in lib/prop-calibration.ts showed it.) Rows only exist for
+      // games the player played, so byes never appear here. A player who
+      // never records the stat (a QB's receiving yards) gets no line anyway.
+      if (value < 0) continue;
       const key = `${row.player}|${statType}`;
       const list = byKey.get(key) ?? [];
       list.push({ team: row.team, week: row.week, value });
@@ -171,7 +181,7 @@ export function computeSeasonAverages(
     const variance =
       n > 1 ? windowed.reduce((a, g) => a + (g.value - rawMean) ** 2, 0) / (n - 1) : 0;
     const floor = Math.max(weightedMean * STDDEV_FLOOR_PCT, NFL_STDDEV_FLOOR_ABS[statType] ?? 5);
-    const stdDev = Math.max(Math.sqrt(variance), floor);
+    const stdDev = Math.max(Math.sqrt(variance), floor) * (NFL_SD_MULT[statType] ?? 1.3);
 
     const team = sorted[0].team;
     const opponent = opponentThisWeek.get(team);
@@ -283,6 +293,8 @@ export function buildPropPicks(
 
     const price = side === "Over" ? g.overPrice : g.underPrice;
     if (price == null) continue;
+    // Only a pick when it beats the price (see MIN_PROP_EDGE).
+    if (modelWinPct - americanToImpliedProb(price) < MIN_PROP_EDGE) continue;
 
     const matchup = opponentThisWeek.get(avg.team);
 
