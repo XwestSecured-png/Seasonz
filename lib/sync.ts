@@ -892,7 +892,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
     resetOddsProviderTracking();
     results.push(
       await logStage("gameOdds", async () => {
-        const { moneylines, spreads, totals } = await fetchGameOdds();
+        const { moneylines, spreads, totals, note: boardNote } = await fetchGameOdds();
         const teamScoring = computeTeamScoring(schedule);
 
         const keyOf = (home: string, away: string) => `${home}|${away}`;
@@ -1069,7 +1069,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
 
         const keyNote = oddsProviderNote();
         const blend = await applyNflLineBlend(season);
-        return `Game odds matched for ${matched} of ${moneylines.length} board game(s): ${picked} moneyline edge(s), ${bestPicked} with a best-market recommendation (ML/spread/total); ${blend.blended} pick(s) blended with the line.${keyNote}`;
+        return `Game odds matched for ${matched} of ${moneylines.length} board game(s): ${picked} moneyline edge(s), ${bestPicked} with a best-market recommendation (ML/spread/total); ${blend.blended} pick(s) blended with the line. Board: ${boardNote ?? "n/a"}.${keyNote}`;
       })
     );
   }

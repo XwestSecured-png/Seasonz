@@ -106,6 +106,8 @@ export interface GameOdds {
   moneylines: MoneylineOdds[];
   spreads: SpreadOdds[];
   totals: TotalOdds[];
+  /** Diagnostics: what the feed returned. */
+  note?: string;
 }
 
 interface RawOddsListResponse {
@@ -212,7 +214,8 @@ export async function fetchGameOdds(): Promise<GameOdds> {
           });
         }
       }
-      return { moneylines, spreads, totals };
+      const books = new Set(data.flatMap((e) => (e.bookmakers ?? []).map((x) => x.key ?? x.title)));
+      return { moneylines, spreads, totals, note: `${data.length} event(s), books: ${[...books].join("/") || "none"}` };
     } catch (err) {
       if (!hasSportsGameOddsKey()) throw err;
     }
