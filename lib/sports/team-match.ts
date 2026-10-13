@@ -10,8 +10,20 @@
 // around that start time), which keeps a short name from matching the
 // wrong school.
 export function makeTeamResolver(teams: { abbr: string; name: string }[]) {
+  const ALIAS: Record<string, string> = {
+    "appalachian state": "app state",
+    "miami fl": "miami",
+    "miami (fl)": "miami",
+    "louisiana-monroe": "ul monroe",
+    "louisiana monroe": "ul monroe",
+    "louisiana-lafayette": "louisiana",
+    "southern miss": "southern miss",
+    "ole miss": "ole miss",
+  };
   const norm = (s: string) =>
-    s
+    (ALIAS[s.trim().toLowerCase()] ?? s)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "") // "San José" -> "San Jose"
       .trim()
       .toLowerCase()
       .replace(/\s+/g, " ")

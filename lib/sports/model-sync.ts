@@ -193,7 +193,19 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
           live++;
           continue;
         }
-        const near = upcoming.filter((x) => x.kickoffAt && Math.abs(x.kickoffAt.getTime() - t) < 18 * HOUR);
+        // Near the book's start time first; ESPN sometimes holds a
+        // placeholder time for college games, so widen to 4 days if needed.
+        let near = upcoming.filter((x) => x.kickoffAt && Math.abs(x.kickoffAt.getTime() - t) < 18 * HOUR);
+        const tryNear = (list: typeof near) => {
+          const c = new Set(list.flatMap((x) => [x.homeTeam, x.awayTeam]));
+          const h = resolve(ev.homeTeam, c);
+          const a = resolve(ev.awayTeam, c);
+          return list.some((x) => (x.homeTeam === h && x.awayTeam === a) || (x.homeTeam === a && x.awayTeam === h));
+        };
+        if (!tryNear(near)) {
+          const wide = upcoming.filter((x) => x.kickoffAt && Math.abs(x.kickoffAt.getTime() - t) < 4 * 24 * HOUR);
+          if (tryNear(wide)) near = wide;
+        }
         const cands = new Set(near.flatMap((x) => [x.homeTeam, x.awayTeam]));
         const home = resolve(ev.homeTeam, cands);
         const away = resolve(ev.awayTeam, cands);
