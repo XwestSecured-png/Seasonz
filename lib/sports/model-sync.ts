@@ -637,7 +637,7 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
       if (c) {
         marketPct = c.pct;
         marketSource =
-          c.books.length === 1 ? (BOOK_LABEL[c.books[0]] ?? c.books[0]) : `${c.books.length}-book consensus${c.sharp ? " incl. Pinnacle-style sharp books" : ""}`;
+          c.books.length === 1 ? (BOOK_LABEL[c.books[0]] ?? c.books[0]) : `${c.books.length}-book consensus${c.sharp ? ", sharp books included" : ""}`;
       }
     }
     if (marketPct === null && ex.preview?.espnOdds && preGame(ex.preview.espnOddsAt)) {
