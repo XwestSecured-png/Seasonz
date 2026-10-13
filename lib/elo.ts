@@ -119,3 +119,85 @@ export function replayElo<G extends EloInputGame>(
 
   return { results, finalRatings: ratings };
 }
+
+// ---------------------------------------------------------------------------
+// NFL Elo v2 — tuned on 2012-2022 and checked on 2023-2025 (held out, 854
+// games; scripts/backtest-nfl):
+//                       log loss  Brier   picked winner
+//   old (reset yearly)   .6477    .2287   60.7%   weeks 1-4: 50.3%
+//   v2 (carryover)       .6339    .2219   63.9%   weeks 1-4: 60.2%
+// Ratings carry over from the previous three seasons, pulled halfway back
+// to average each offseason, so week 1 isn't a coin flip. Home edge 48 Elo
+// points (it has shrunk since the 2010s); K 20; margin-of-victory scaled.
+export const NFL_ELO = { k: 20, hfa: 48, regress: 0.5, seasonsBack: 3 };
+
+// Relocated franchises use their current code all the way back.
+const NFL_CODE: Record<string, string> = { OAK: "LV", SD: "LAC", STL: "LA" };
+
+export function replayNflElo<G extends EloInputGame>(
+  history: EloInputGame[],
+  schedule: G[]
+): { results: EloGameResult<G>[]; finalRatings: Map<string, TeamRatingState> } {
+  const p = NFL_ELO;
+  const season = schedule[0]?.season ?? 0;
+  const code = (t: string) => NFL_CODE[t] ?? t;
+  const ratings = new Map<string, TeamRatingState>();
+  const getState = (team: string): TeamRatingState => {
+    let s = ratings.get(team);
+    if (!s) {
+      s = { rating: BASE_RATING, gamesPlayed: 0 };
+      ratings.set(team, s);
+    }
+    return s;
+  };
+  type Row = { g: EloInputGame; own: G | null };
+  const past: Row[] = history
+    .filter((g) => g.season < season && g.season >= season - p.seasonsBack && g.isFinal)
+    .map((g) => ({ g, own: null }));
+  const rows: Row[] = [...past, ...schedule.map((g) => ({ g: g as EloInputGame, own: g }))].sort(
+    (a, b) => a.g.season - b.g.season || a.g.week - b.g.week
+  );
+
+  const results: EloGameResult<G>[] = [];
+  let current: number | null = null;
+  for (const { g, own } of rows) {
+    if (g.season !== current) {
+      if (current !== null) {
+        for (const s of ratings.values()) {
+          s.rating = BASE_RATING + (1 - p.regress) * (s.rating - BASE_RATING);
+          s.gamesPlayed = 0;
+        }
+      }
+      current = g.season;
+    }
+    const home = getState(code(g.homeTeam));
+    const away = getState(code(g.awayTeam));
+    const homeRatingPre = home.rating;
+    const awayRatingPre = away.rating;
+    const homeWinProbPre = winProbability(homeRatingPre + p.hfa, awayRatingPre);
+    let homeRatingPost = homeRatingPre;
+    let awayRatingPost = awayRatingPre;
+    if (g.isFinal && g.homeScore !== null && g.awayScore !== null) {
+      const actual = g.homeScore > g.awayScore ? 1 : g.homeScore < g.awayScore ? 0 : 0.5;
+      const winnerEdge = actual === 1 ? homeRatingPre + p.hfa - awayRatingPre : awayRatingPre - homeRatingPre - p.hfa;
+      const mult = Math.log(Math.abs(g.homeScore - g.awayScore) + 1) * (2.2 / (winnerEdge * 0.001 + 2.2));
+      const delta = p.k * mult * (actual - homeWinProbPre);
+      homeRatingPost = homeRatingPre + delta;
+      awayRatingPost = awayRatingPre - delta;
+      home.rating = homeRatingPost;
+      away.rating = awayRatingPost;
+      home.gamesPlayed += 1;
+      away.gamesPlayed += 1;
+    }
+    if (own) results.push({ game: own, homeRatingPre, awayRatingPre, homeWinProbPre, homeRatingPost, awayRatingPost });
+  }
+  return { results, finalRatings: ratings };
+}
+
+/**
+ * The NFL's final number blends the model with the sportsbook line (vig
+ * removed). On 2023-2025 the line alone (67.9% of winners, log loss .6077)
+ * beat every model mix, so the line gets all the weight when one is posted;
+ * the model's own number still drives value picks and is shown alongside.
+ */
+export const NFL_MODEL_WEIGHT = 0;

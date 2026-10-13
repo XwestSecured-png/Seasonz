@@ -267,8 +267,10 @@ export default async function ModelTrackerPage() {
         ? g.homeScore > g.awayScore
         : null;
 
-    if (g.homeWinPctPre !== null && actualHome !== null) {
-      const predictedHome = g.homeWinPctPre > 0.5;
+    // Grade the number locked in before kickoff when there is one.
+    const pre = g.lockedPct ?? g.homeWinPctPre;
+    if (pre !== null && actualHome !== null) {
+      const predictedHome = pre > 0.5;
       result = predictedHome === actualHome ? "CORRECT" : "WRONG";
       aiGraded++;
       if (result === "CORRECT") aiCorrect++;
@@ -670,7 +672,7 @@ export default async function ModelTrackerPage() {
                     {g.awayScore}–{g.homeScore}
                   </Td>
                   <Td>
-                    {g.homeWinPctPre !== null ? `${(g.homeWinPctPre * 100).toFixed(1)}%` : "—"}
+                    {(g.lockedPct ?? g.homeWinPctPre) !== null ? `${((g.lockedPct ?? g.homeWinPctPre)! * 100).toFixed(1)}%` : "—"}
                   </Td>
                   <Td>
                     <ResultBadge result={g.result} />

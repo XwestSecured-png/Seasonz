@@ -21,7 +21,8 @@ import {
   fetchAllRegSeasonGames,
   fetchTeamWeekStats,
 } from "./nflverse";
-import { replayElo, type EloGameResult } from "./elo";
+import { replayNflElo, NFL_MODEL_WEIGHT, type EloGameResult } from "./elo";
+import { noVigHome, logit, sigmoid } from "./sports/game-model";
 import type { ScheduleGame } from "./nflverse";
 import { computeInjuryImpact, type InjuryImpactRow } from "./injury-impact";
 import { sumTeamInjuryImpact, computeInjuryAdjustment } from "./injury-adjustment";
@@ -61,7 +62,7 @@ import {
 import { getTeamByFullName } from "./team-colors";
 import { gradeBet } from "./bet-grading";
 import { MIN_MODEL_WIN_PCT } from "./confidence";
-import { sql, eq, and, desc } from "drizzle-orm";
+import { sql, eq, and, desc, gt } from "drizzle-orm";
 
 export interface SyncStageResult {
   stage: string;
@@ -155,6 +156,40 @@ async function logSkip(stage: string, detail: string): Promise<SyncStageResult> 
  * but runs as a normal server-side job (triggered by Vercel Cron or on
  * demand) rather than needing an Apps Script trigger.
  */
+/**
+ * Blends each upcoming NFL game's model number with its posted moneyline
+ * (vig removed) and locks the result in as the pre-game call. Runs after
+ * the "elo" stage (lines from the last sync) and again after "gameOdds"
+ * (fresh lines). Games already under way are never touched.
+ */
+async function applyNflLineBlend(season: number): Promise<{ blended: number; locked: number }> {
+  const now = new Date();
+  const rows = await db
+    .select({
+      id: games.id,
+      modelOnlyPct: games.modelOnlyPct,
+      homeWinPctPre: games.homeWinPctPre,
+      mlHome: games.moneylineHomeOdds,
+      mlAway: games.moneylineAwayOdds,
+    })
+    .from(games)
+    .where(and(eq(games.season, season), eq(games.isFinal, false), gt(games.kickoffAt, now)));
+  let blended = 0;
+  for (const r of rows) {
+    const model = r.modelOnlyPct ?? r.homeWinPctPre;
+    if (model === null) continue;
+    const market = noVigHome(r.mlHome, r.mlAway);
+    const final =
+      market === null ? model : sigmoid(NFL_MODEL_WEIGHT * logit(model) + (1 - NFL_MODEL_WEIGHT) * logit(market));
+    if (market !== null) blended++;
+    await db
+      .update(games)
+      .set({ homeWinPctPre: final, marketPct: market, lockedPct: final, lockedMarketPct: market, lockedAt: now })
+      .where(eq(games.id, r.id));
+  }
+  return { blended, locked: rows.length };
+}
+
 export async function runFullSync(season: number): Promise<SyncStageResult[]> {
   const results: SyncStageResult[] = [];
 
@@ -310,9 +345,6 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
 
   results.push(
     await logStage("elo", async () => {
-      const { results, finalRatings } = replayElo(schedule);
-      eloResults = results;
-
       // Weather needs each team's season-to-date pass reliance; referee bias
       // needs the full historical record, not just this season; the six
       // team-factor adjustments need the team-week stats file; injuries need
@@ -323,6 +355,9 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         fetchTeamWeekStats(season),
         fetchInjuries(season),
       ]);
+      // Ratings carry over from the last three seasons (lib/elo.ts NFL_ELO).
+      const { results, finalRatings } = replayNflElo(historicalGames, schedule);
+      eloResults = results;
       const passShareByTeam = computeTeamPassShare(playerStats);
       const teamFactors = computeTeamSeasonFactors(teamWeekStats);
 
@@ -473,6 +508,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
             eloHomePre: r.homeRatingPre,
             eloAwayPre: r.awayRatingPre,
             homeWinPctPre: finalHomeWinPct,
+            modelOnlyPct: finalHomeWinPct,
             weatherAdjPct: weather.adjPct,
             restTravelAdjPct,
             refAdjPct: ref.adjPct,
@@ -577,7 +613,8 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
           ? `ESPN unavailable this run (${espnError}).`
           : `${espnAdjusted} ESPN-adjusted (FPI for ${espnFpiMap.size} team(s)${qbrFailures > 0 ? `, QBR fetch failed for ${qbrFailures} week(s)` : ""}).`;
 
-      return `Elo replayed: ${eloResults.length} game(s), ${finalRatings.size} team(s) rated (${weatherAdjusted} weather-adjusted, ${restTravelAdjusted} rest/travel-adjusted, ${refAdjusted} referee-adjusted, ${factorsAdjusted} team-factor-adjusted, ${injuryAdjusted} injury-adjusted, ${ngsAdjusted} Next Gen Stats/pressure-adjusted${ngsError ? ` — NGS unavailable: ${ngsError}` : ""}). ${espnDetail} ${snapshotsWritten} factor snapshot(s) recorded for calibration tracking.`;
+      const blend = await applyNflLineBlend(season);
+      return `Line blend: ${blend.blended} of ${blend.locked} upcoming game(s) had a line. Elo replayed: ${eloResults.length} game(s), ${finalRatings.size} team(s) rated (${weatherAdjusted} weather-adjusted, ${restTravelAdjusted} rest/travel-adjusted, ${refAdjusted} referee-adjusted, ${factorsAdjusted} team-factor-adjusted, ${injuryAdjusted} injury-adjusted, ${ngsAdjusted} Next Gen Stats/pressure-adjusted${ngsError ? ` — NGS unavailable: ${ngsError}` : ""}). ${espnDetail} ${snapshotsWritten} factor snapshot(s) recorded for calibration tracking.`;
     })
   );
 
@@ -871,6 +908,8 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
             (g) => !g.isFinal && g.homeTeam === home && g.awayTeam === away
           );
           if (!game) continue;
+          // A game already under way carries live prices — keep the pre-game line.
+          if (game.kickoffAt && game.kickoffAt.getTime() <= Date.now()) continue;
 
           const modelHomeWinPct = finalHomeWinPctByGame.get(
             `${game.season}|${game.week}|${game.homeTeam}|${game.awayTeam}`
@@ -1016,7 +1055,8 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         }
 
         const keyNote = oddsProviderNote();
-        return `Game odds matched for ${matched} game(s): ${picked} moneyline edge(s), ${bestPicked} with a best-market recommendation (ML/spread/total).${keyNote}`;
+        const blend = await applyNflLineBlend(season);
+        return `Game odds matched for ${matched} game(s): ${picked} moneyline edge(s), ${bestPicked} with a best-market recommendation (ML/spread/total); ${blend.blended} pick(s) blended with the line.${keyNote}`;
       })
     );
   }

@@ -51,6 +51,14 @@ export const games = pgTable(
     // the weather/referee nudges below, all baked in once at kickoff and
     // graded as a single number (see lib/weather.ts, lib/referee.ts).
     homeWinPctPre: real("home_win_pct_pre"),
+    // The model's own number before the betting line is blended in, the
+    // no-vig line itself, and the final number locked in before kickoff
+    // (graded by the scorecard so later updates can't rewrite it).
+    modelOnlyPct: real("model_only_pct"),
+    marketPct: real("market_pct"),
+    lockedPct: real("locked_pct"),
+    lockedMarketPct: real("locked_market_pct"),
+    lockedAt: timestamp("locked_at"),
     roof: text("roof"),
     surface: text("surface"),
     tempF: integer("temp_f"),
