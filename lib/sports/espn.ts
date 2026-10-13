@@ -474,7 +474,7 @@ export interface PreviewEvent {
   awayProbable: string | null;
   venue: { name: string | null; city: string | null; state: string | null; indoor: boolean | null } | null;
   /** ESPN's own posted moneyline (ESPN BET / DraftKings feed), when the scoreboard carries one. */
-  espnOdds: { provider: string; mlHome: number; mlAway: number } | null;
+  espnOdds: { provider: string; mlHome: number; mlAway: number; spread?: number | null; total?: number | null } | null;
 }
 
 // ESPN's scoreboard only returns one division at a time for college.
@@ -510,7 +510,15 @@ export async function fetchScoreboardPreview(def: SportDef, yyyymmdd: string): P
         const mh = Number(o?.homeTeamOdds?.moneyLine ?? o?.moneyline?.home?.close?.odds ?? o?.moneyline?.home?.open?.odds);
         const ma = Number(o?.awayTeamOdds?.moneyLine ?? o?.moneyline?.away?.close?.odds ?? o?.moneyline?.away?.open?.odds);
         if (Number.isFinite(mh) && Number.isFinite(ma) && mh !== 0 && ma !== 0) {
-          espnOdds = { provider: String(o?.provider?.name ?? "ESPN"), mlHome: mh, mlAway: ma };
+          const sp = Number(o?.spread);
+          const tot = Number(o?.overUnder);
+          espnOdds = {
+            provider: String(o?.provider?.name ?? "ESPN"),
+            mlHome: mh,
+            mlAway: ma,
+            spread: Number.isFinite(sp) ? sp : null, // home team's spread
+            total: Number.isFinite(tot) && tot > 0 ? tot : null,
+          };
           break;
         }
       }
@@ -542,7 +550,7 @@ export async function fetchScoreboardPreview(def: SportDef, yyyymmdd: string): P
 export async function fetchEspnEventMoneyline(
   def: SportDef,
   espnEventId: string
-): Promise<{ provider: string; mlHome: number; mlAway: number } | null> {
+): Promise<{ provider: string; mlHome: number; mlAway: number; spread?: number | null; total?: number | null } | null> {
   const url = `https://sports.core.api.espn.com/v2/sports/${def.espnSport}/leagues/${def.espnLeague}/events/${espnEventId}/competitions/${espnEventId}/odds`;
   let data: any;
   try {
@@ -555,7 +563,15 @@ export async function fetchEspnEventMoneyline(
     const mh = Number(it?.homeTeamOdds?.moneyLine ?? it?.homeTeamOdds?.current?.moneyLine?.american);
     const ma = Number(it?.awayTeamOdds?.moneyLine ?? it?.awayTeamOdds?.current?.moneyLine?.american);
     if (Number.isFinite(mh) && Number.isFinite(ma) && mh !== 0 && ma !== 0) {
-      return { provider: String(it?.provider?.name ?? "ESPN"), mlHome: mh, mlAway: ma };
+      const sp = Number(it?.spread);
+      const tot = Number(it?.overUnder);
+      return {
+        provider: String(it?.provider?.name ?? "ESPN"),
+        mlHome: mh,
+        mlAway: ma,
+        spread: Number.isFinite(sp) ? sp : null,
+        total: Number.isFinite(tot) && tot > 0 ? tot : null,
+      };
     }
   }
   return null;

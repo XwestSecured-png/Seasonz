@@ -18,7 +18,12 @@ export interface BookLine {
   total: number | null;
   overPrice: number | null;
   underPrice: number | null;
+  /** Every spread / total pair the book listed (alternate and period lines included), so the sync can pick the full-game one against ESPN's posted number. Not stored. */
+  spreadAlts?: SpreadPair[];
+  totalAlts?: TotalPair[];
 }
+export type SpreadPair = { home: number; homePrice: number; awayPrice: number };
+export type TotalPair = { line: number; overPrice: number; underPrice: number };
 
 export interface BoardGame {
   homeTeam: string; // full name, as the book lists it
@@ -52,25 +57,46 @@ const impl = (a: number) => (a < 0 ? -a / (-a + 100) : 100 / (a + 100));
  * at that number (lib/sports/game-sim.ts). Without a moneyline, the pair
  * priced closest to even.
  */
+export function spreadPairs(outs: Outcome[], home: string, away: string): SpreadPair[] {
+  const out: SpreadPair[] = [];
+  for (const h of outs) {
+    if (h.name !== home || h.point == null) continue;
+    const a = outs.find((o) => o.name === away && o.point != null && Math.abs(o.point + h.point!) < 1e-9);
+    if (a) out.push({ home: h.point, homePrice: h.price, awayPrice: a.price });
+  }
+  return out;
+}
+
 export function mainSpread(
   outs: Outcome[],
   home: string,
   away: string,
-  ctx?: { sport: SportKey | "nfl"; homePct: number | null }
-): { home: number; homePrice: number; awayPrice: number } | null {
-  let best: { home: number; homePrice: number; awayPrice: number; gap: number } | null = null;
-  for (const h of outs) {
-    if (h.name !== home || h.point == null) continue;
-    const a = outs.find((o) => o.name === away && o.point != null && Math.abs(o.point + h.point!) < 1e-9);
-    if (!a) continue;
-    const cover = impl(h.price) / (impl(h.price) + impl(a.price));
-    const gap =
-      ctx?.homePct != null
-        ? Math.abs(cover - (simulateGame(ctx.sport, { homePct: ctx.homePct, spreadHome: h.point }).coverHome ?? 0.5))
-        : Math.abs(impl(h.price) - impl(a.price));
-    if (!best || gap < best.gap) best = { home: h.point, homePrice: h.price, awayPrice: a.price, gap };
+  ctx?: { sport: SportKey | "nfl"; homePct: number | null; anchor?: number | null }
+): SpreadPair | null {
+  return pickSpread(spreadPairs(outs, home, away), ctx);
+}
+
+/**
+ * The full-game spread among a book's pairs: ESPN's posted number when
+ * known (closest point wins); otherwise, among pairs whose price agrees
+ * with the moneyline (period lines don't), the one priced closest to even.
+ */
+export function pickSpread(pairs: SpreadPair[], ctx?: { sport: SportKey | "nfl"; homePct: number | null; anchor?: number | null }): SpreadPair | null {
+  if (pairs.length === 0) return null;
+  const balance = (p: SpreadPair) => Math.abs(impl(p.homePrice) - impl(p.awayPrice));
+  if (ctx?.anchor != null) {
+    const a = ctx.anchor;
+    return [...pairs].sort((x, y) => Math.abs(x.home - a) - Math.abs(y.home - a) || balance(x) - balance(y))[0];
   }
-  return best && { home: best.home, homePrice: best.homePrice, awayPrice: best.awayPrice };
+  let pool = pairs;
+  if (ctx?.homePct != null) {
+    const agree = pairs.filter((p) => {
+      const cover = impl(p.homePrice) / (impl(p.homePrice) + impl(p.awayPrice));
+      return Math.abs(cover - (simulateGame(ctx.sport, { homePct: ctx.homePct!, spreadHome: p.home }).coverHome ?? 0.5)) < 0.1;
+    });
+    if (agree.length) pool = agree;
+  }
+  return [...pool].sort((x, y) => balance(x) - balance(y))[0];
 }
 
 /**
@@ -78,18 +104,28 @@ export function mainSpread(
  * average total, which rules out half / quarter / period totals), then the
  * Over/Under pair priced closest to even.
  */
-export function mainTotal(outs: Outcome[], sport?: SportKey | "nfl"): { line: number; overPrice: number; underPrice: number } | null {
-  const avg = sport ? SIM[sport].avgTotal : null;
-  let best: { line: number; overPrice: number; underPrice: number; gap: number } | null = null;
+export function totalPairs(outs: Outcome[]): TotalPair[] {
+  const out: TotalPair[] = [];
   for (const o of outs) {
     if (o.name !== "Over" || o.point == null) continue;
-    if (avg != null && (o.point < 0.6 * avg || o.point > 1.6 * avg)) continue;
     const u = outs.find((x) => x.name === "Under" && x.point === o.point);
-    if (!u) continue;
-    const gap = Math.abs(impl(o.price) - impl(u.price));
-    if (!best || gap < best.gap) best = { line: o.point, overPrice: o.price, underPrice: u.price, gap };
+    if (u) out.push({ line: o.point, overPrice: o.price, underPrice: u.price });
   }
-  return best && { line: best.line, overPrice: best.overPrice, underPrice: best.underPrice };
+  return out;
+}
+
+export function mainTotal(outs: Outcome[], sport?: SportKey | "nfl", anchor?: number | null): TotalPair | null {
+  return pickTotal(totalPairs(outs), sport, anchor);
+}
+
+/** ESPN's posted total when known (closest wins); else numbers in a full-game range, priced closest to even. */
+export function pickTotal(pairs: TotalPair[], sport?: SportKey | "nfl", anchor?: number | null): TotalPair | null {
+  const balance = (p: TotalPair) => Math.abs(impl(p.overPrice) - impl(p.underPrice));
+  if (pairs.length === 0) return null;
+  if (anchor != null) return [...pairs].sort((x, y) => Math.abs(x.line - anchor) - Math.abs(y.line - anchor) || balance(x) - balance(y))[0];
+  const avg = sport ? SIM[sport].avgTotal : null;
+  const pool = avg != null ? pairs.filter((p) => p.line >= 0.6 * avg && p.line <= 1.6 * avg) : pairs;
+  return [...(pool.length ? pool : pairs)].sort((x, y) => balance(x) - balance(y))[0] ?? null;
 }
 
 export async function fetchGameOddsForSport(sport: SportKey): Promise<BoardGame[]> {
@@ -139,14 +175,16 @@ export async function fetchGameOddsForSport(sport: SportKey): Promise<BoardGame[
       for (const m of b.markets ?? []) {
         const outs = m.outcomes ?? [];
         if (m.key === "spreads") {
-          const sp = mainSpread(outs, e.home_team, e.away_team, { sport, homePct: mlPct });
+          line.spreadAlts = spreadPairs(outs, e.home_team, e.away_team);
+          const sp = pickSpread(line.spreadAlts, { sport, homePct: mlPct });
           if (sp) {
             line.spreadHome = sp.home;
             line.spreadHomePrice = sp.homePrice;
             line.spreadAwayPrice = sp.awayPrice;
           }
         } else if (m.key === "totals") {
-          const t = mainTotal(outs, sport);
+          line.totalAlts = totalPairs(outs);
+          const t = pickTotal(line.totalAlts, sport);
           if (t) {
             line.total = t.line;
             line.overPrice = t.overPrice;

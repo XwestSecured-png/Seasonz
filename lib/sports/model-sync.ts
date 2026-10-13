@@ -11,7 +11,7 @@ import { sportGames, sportInjuryReports, sportPlayerGameStats, sportTeamGameStat
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { SPORTS, type SportKey } from "./types";
 import { fetchScoreboardPreview, fetchEspnEventMoneyline, type PreviewEvent } from "./espn";
-import { fetchGameOddsForSport } from "./game-odds";
+import { fetchGameOddsForSport, pickSpread, pickTotal } from "./game-odds";
 import { simulateGame } from "./game-sim";
 
 const BOOK_LABEL: Record<string, string> = {
@@ -252,8 +252,29 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
               spreadHome: b.spreadHome == null ? null : -b.spreadHome,
               spreadHomePrice: b.spreadAwayPrice,
               spreadAwayPrice: b.spreadHomePrice,
+              spreadAlts: b.spreadAlts?.map((x) => ({ home: -x.home, homePrice: x.awayPrice, awayPrice: x.homePrice })),
             };
           }
+        }
+        // Full-game spread/total: anchor every book on ESPN's posted numbers
+        // when we have them (feeds mix in alternate and period lines).
+        const pv = (g.extra as GameExtra | null)?.preview?.espnOdds;
+        for (const k of Object.keys(ev.books) as (keyof typeof ev.books)[]) {
+          const b = ev.books[k];
+          if (!b) continue;
+          const sp = pickSpread(b.spreadAlts ?? [], { sport, homePct: null, anchor: pv?.spread ?? b.spreadHome });
+          const tp = pickTotal(b.totalAlts ?? [], sport, pv?.total ?? b.total);
+          ev.books[k] = {
+            ...b,
+            spreadHome: sp?.home ?? null,
+            spreadHomePrice: sp?.homePrice ?? null,
+            spreadAwayPrice: sp?.awayPrice ?? null,
+            total: tp?.line ?? null,
+            overPrice: tp?.overPrice ?? null,
+            underPrice: tp?.underPrice ?? null,
+            spreadAlts: undefined,
+            totalAlts: undefined,
+          };
         }
         // Shown/linked line: the first main US book that posted one.
         const mainKey = (["fanduel", "betmgm", "draftkings", "williamhill_us"] as const).find((k) => ev.books[k]?.mlHome != null);
