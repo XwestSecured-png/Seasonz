@@ -19,11 +19,22 @@ export function makeTeamResolver(teams: { abbr: string; name: string }[]) {
     "louisiana-lafayette": "louisiana",
     "southern miss": "southern miss",
     "ole miss": "ole miss",
+    umass: "massachusetts",
+    connecticut: "uconn",
+    "central florida": "ucf",
+    fiu: "florida international",
+    "florida intl": "florida international",
+    "southern methodist": "smu",
+    "brigham young": "byu",
+    "north carolina state": "nc state",
+    "texas-san antonio": "utsa",
+    "texas-el paso": "utep",
   };
   const norm = (s: string) =>
     (ALIAS[s.trim().toLowerCase()] ?? s)
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "") // "San José" -> "San Jose"
+      .replace(/['\u2019]/g, "") // "Hawai'i" -> "Hawaii"
       .trim()
       .toLowerCase()
       .replace(/\s+/g, " ")
@@ -31,7 +42,7 @@ export function makeTeamResolver(teams: { abbr: string; name: string }[]) {
       .replace(/\bst\. /g, "state ") // "Michigan St. Spartans"
       .replace(/^los angeles /, "la ");
   const exact = new Map(teams.map((t) => [norm(t.name), t.abbr]));
-  return (bookName: string, candidates?: Set<string>): string | undefined => {
+  const resolve = (bookName: string, candidates?: Set<string>): string | undefined => {
     const n = norm(bookName);
     const pool = teams.filter((t) => !candidates || candidates.has(t.abbr));
     const hit = exact.get(n);
@@ -48,4 +59,34 @@ export function makeTeamResolver(teams: { abbr: string; name: string }[]) {
     if (byFirst.length === 1) return byFirst[0].abbr;
     return hit;
   };
+
+  /**
+   * Every team in `candidates` the book's name could mean: exact name,
+   * name prefix ("Alabama" -> Crimson Tide AND Alabama A&M), nickname,
+   * first word, and abbreviation variants ("UTAH" vs the schedule's "UTA").
+   * The caller keeps the pairing that is an actual scheduled game, which
+   * settles names that are ambiguous on their own.
+   */
+  const resolveAll = (bookName: string, candidates: Set<string>): string[] => {
+    const n = norm(bookName);
+    const words = n.split(" ");
+    const out = new Set<string>();
+    for (const t of teams) {
+      const tn = norm(t.name);
+      if (tn === n || tn.startsWith(n + " ") || tn.split(" ").pop() === words[words.length - 1] || tn.split(" ")[0] === words[0]) out.add(t.abbr);
+    }
+    const one = resolve(bookName, candidates);
+    if (one) out.add(one);
+    const res = new Set<string>();
+    for (const c of candidates) {
+      const cl = c.toLowerCase();
+      if (out.has(c)) res.add(c);
+      // Same team under a slightly different abbreviation (UTAH / UTA).
+      else if ([...out].some((r) => r.length >= 2 && (r.startsWith(c) || c.startsWith(r)))) res.add(c);
+      // No team row at all: the abbreviation starts the book's name ("Utah" -> UTA).
+      else if (cl.length >= 3 && words[0].startsWith(cl)) res.add(c);
+    }
+    return [...res];
+  };
+  return Object.assign(resolve, { all: resolveAll });
 }

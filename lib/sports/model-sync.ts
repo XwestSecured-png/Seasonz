@@ -205,6 +205,7 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
         .where(and(eq(sportGames.sport, sport), eq(sportGames.season, year), eq(sportGames.isFinal, false)));
       let matched = 0;
       let withSharp = 0;
+      let withMl = 0;
       const nowMs = Date.now();
       let live = 0;
       const unmatched: string[] = [];
@@ -218,28 +219,48 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
         }
         // Near the book's start time first; ESPN sometimes holds a
         // placeholder time for college games, so widen to 4 days if needed.
-        let near = upcoming.filter((x) => x.kickoffAt && Math.abs(x.kickoffAt.getTime() - t) < 18 * HOUR);
-        const tryNear = (list: typeof near) => {
+        const TBD = /^(TBD|TBA)$/i;
+        const findGame = (list: typeof upcoming) => {
           const c = new Set(list.flatMap((x) => [x.homeTeam, x.awayTeam]));
-          const h = resolve(ev.homeTeam, c);
-          const a = resolve(ev.awayTeam, c);
-          return list.some((x) => (x.homeTeam === h && x.awayTeam === a) || (x.homeTeam === a && x.awayTeam === h));
+          const H = resolve.all(ev.homeTeam, c);
+          const A = resolve.all(ev.awayTeam, c);
+          // Same two teams twice in the window (a series): the closest start time.
+          const closest = (l: typeof list) =>
+            [...l].sort((x, y) => Math.abs((x.kickoffAt?.getTime() ?? 0) - t) - Math.abs((y.kickoffAt?.getTime() ?? 0) - t))[0];
+          const exact = list.filter((x) => H.includes(x.homeTeam) && A.includes(x.awayTeam));
+          if (exact.length) return { g: closest(exact), swapped: false };
+          // Books sometimes list a neutral-site game with home/away swapped.
+          const swapped = list.filter((x) => A.includes(x.homeTeam) && H.includes(x.awayTeam));
+          if (swapped.length) return { g: closest(swapped), swapped: true };
+          // A playoff game ESPN still lists with one team "TBD".
+          const tbd = list.filter(
+            (x) => (H.includes(x.homeTeam) && TBD.test(x.awayTeam)) || (TBD.test(x.homeTeam) && A.includes(x.awayTeam))
+          );
+          if (tbd.length === 1) return { g: tbd[0], swapped: false, tbd: true };
+          return null;
         };
-        if (!tryNear(near)) {
-          const wide = upcoming.filter((x) => x.kickoffAt && Math.abs(x.kickoffAt.getTime() - t) < 4 * 24 * HOUR);
-          if (tryNear(wide)) near = wide;
-        }
-        const cands = new Set(near.flatMap((x) => [x.homeTeam, x.awayTeam]));
-        const home = resolve(ev.homeTeam, cands);
-        const away = resolve(ev.awayTeam, cands);
-        // Books sometimes list a neutral-site game with home/away swapped.
-        const g =
-          near.find((x) => x.homeTeam === home && x.awayTeam === away) ??
-          near.find((x) => x.homeTeam === away && x.awayTeam === home);
-        if (!g) {
-          unmatched.push(`${ev.awayTeam} @ ${ev.homeTeam}${home && away ? "" : ` [${home ?? "?"}/${away ?? "?"}]`}`);
+        const near = upcoming.filter((x) => x.kickoffAt && Math.abs(x.kickoffAt.getTime() - t) < 18 * HOUR);
+        const found =
+          findGame(near) ?? findGame(upcoming.filter((x) => x.kickoffAt && Math.abs(x.kickoffAt.getTime() - t) < 4 * 24 * HOUR));
+        if (!found) {
+          const c = new Set(near.flatMap((x) => [x.homeTeam, x.awayTeam]));
+          unmatched.push(
+            `${ev.awayTeam} @ ${ev.homeTeam} ${ev.commenceTime.slice(0, 16)} [${resolve.all(ev.awayTeam, c).join("|") || "?"} @ ${resolve.all(ev.homeTeam, c).join("|") || "?"}]`
+          );
           continue;
         }
+        const g = found.g;
+        if (found.tbd) {
+          // Fill in the opponent ESPN hasn't posted yet.
+          const c = new Set(upcoming.flatMap((x) => [x.homeTeam, x.awayTeam]));
+          const fill = TBD.test(g.homeTeam) ? resolve(ev.homeTeam, c) : resolve(ev.awayTeam, c);
+          if (fill) {
+            if (TBD.test(g.homeTeam)) g.homeTeam = fill;
+            else g.awayTeam = fill;
+            await db.update(sportGames).set({ homeTeam: g.homeTeam, awayTeam: g.awayTeam }).where(eq(sportGames.id, g.id));
+          }
+        }
+        const home = found.swapped ? g.awayTeam : g.homeTeam;
         if (g.homeTeam !== home) {
           // Swapped: flip every line to our home/away.
           for (const k of Object.keys(ev.books) as (keyof typeof ev.books)[]) {
@@ -309,10 +330,11 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
           })
           .where(eq(sportGames.id, g.id));
         matched++;
+        if (main?.mlHome != null) withMl++;
         if (Object.keys(ev.books).some((k) => SHARP_BOOKS.has(k))) withSharp++;
       }
       return (
-        `Odds matched to ${matched} of ${board.length - live} upcoming board game(s)${live ? ` (${live} already started, skipped)` : ""}; ${withSharp} with a sharp-book line (Pinnacle/BetOnline/LowVig).` +
+        `Odds matched to ${matched} of ${board.length - live} upcoming board game(s)${live ? ` (${live} already started, skipped)` : ""}: ${withMl} with a moneyline, ${withSharp} with a sharp-book line (Pinnacle/BetOnline/LowVig).` +
         (unmatched.length ? ` Unmatched: ${unmatched.slice(0, 8).join("; ")}.` : "")
       );
     })
