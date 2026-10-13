@@ -118,9 +118,38 @@ export const PROP_MODEL: Record<SportKey, Record<string, PropModelConfig>> = {
   nba: BASKETBALL_PROP_MODEL,
   wnba: BASKETBALL_PROP_MODEL,
   ncaab: BASKETBALL_PROP_MODEL,
-  ncaaf: NFL_PROP_MODEL,
-  nhl: {},
-  mlb: {},
+  // College football (live check, 2025-26 box scores): yardage and catches
+  // prefer heavier shrinkage than the NFL. Rec Yds .612 -> .603, Rush
+  // .619 -> .612, Receptions .583 -> .567.
+  ncaaf: {
+    ...NFL_PROP_MODEL,
+    "Rec Yds": { dist: "normal", sdMult: 1.4, shrinkK: 40, useMinutes: false },
+    "Rush Yds": { dist: "normal", sdMult: 1.3, shrinkK: 40, useMinutes: false },
+    Receptions: { dist: "poisson", sdMult: 1.3, shrinkK: 40, useMinutes: false },
+  },
+  // Hockey (live check on 2025-27 box scores, /api/health/insights?propcal=nhl):
+  // Points .621 -> .590, Assists .640 -> .609, Shots .595 -> .563, Saves .594 -> .554.
+  // Goals had too few lines to grade and keeps the old model.
+  nhl: {
+    Points: { dist: "poisson", sdMult: 1.3, shrinkK: 40, useMinutes: false, temper: 0.88 },
+    Assists: { dist: "poisson", sdMult: 1.5, shrinkK: 40, useMinutes: false, temper: 0.88 },
+    "Shots on Goal": { dist: "poisson", sdMult: 1.1, shrinkK: 40, useMinutes: false, temper: 0.88 },
+    Saves: { dist: "negbin", sdMult: 1.2, shrinkK: 40, useMinutes: false, temper: 0.88 },
+  },
+  // Baseball (live check on 2025-26 box scores): Hits .629 -> .596, Batter K
+  // .629 -> .594, Pitcher K .572 -> .550, Hits Allowed .581 -> .563, Walks
+  // .643 -> .605, Walks Allowed .599 -> .576, Runs .638 -> .607, Earned Runs
+  // .609 -> .592. Home runs and RBIs had too few lines to grade.
+  mlb: {
+    Hits: { dist: "poisson", sdMult: 1.4, shrinkK: 40, useMinutes: false },
+    "Runs Scored": { dist: "poisson", sdMult: 1.4, shrinkK: 40, useMinutes: false, temper: 0.88 },
+    Walks: { dist: "poisson", sdMult: 1.7, shrinkK: 40, useMinutes: false, temper: 0.88 },
+    "Strikeouts (Batter)": { dist: "poisson", sdMult: 1.5, shrinkK: 40, useMinutes: false },
+    "Strikeouts (Pitcher)": { dist: "negbin", sdMult: 0.9, shrinkK: 40, useMinutes: false },
+    "Hits Allowed": { dist: "negbin", sdMult: 0.9, shrinkK: 40, useMinutes: false, temper: 0.88 },
+    "Walks Allowed": { dist: "poisson", sdMult: 1.2, shrinkK: 40, useMinutes: false, temper: 0.88 },
+    "Earned Runs": { dist: "negbin", sdMult: 1.3, shrinkK: 40, useMinutes: false, temper: 0.88 },
+  },
 };
 export function propModelFor(sport: SportKey, statType: string): PropModelConfig {
   return PROP_MODEL[sport][statType] ?? LEGACY_PROP_MODEL(PROP_SD_MULT[sport][statType] ?? 1.3);

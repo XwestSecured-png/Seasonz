@@ -110,3 +110,12 @@ Measured, e.g. NFL QB pass yds ~ his top receivers' rec yds .41, QB pass
 TDs ~ game over .49, RB rush yds ~ his team covering .28, two receivers on
 one team ~0; NBA points ~ threes .65, points ~ rebounds .25, teammates'
 points ~0, points ~ game over .17. Spread vs. total of the same game ~0.
+
+Live check on the app's own database (/api/health/insights?propcal=<sport>),
+old -> new log loss: NHL Points .621 -> .590, Assists .640 -> .609, Shots
+.595 -> .563, Saves .594 -> .554; MLB Hits .629 -> .596, Batter K .629 -> .594,
+Pitcher K .572 -> .550, Hits Allowed .581 -> .563, Walks .643 -> .605, Walks
+Allowed .599 -> .576, Runs .638 -> .607, Earned Runs .609 -> .592; NCAAF Rec
+Yds .612 -> .603, Rush Yds .619 -> .612, Receptions .583 -> .567; NBA P+R+A
+.581 -> .565. Home runs, RBIs and NHL goals had too few lines and keep the
+old model.
