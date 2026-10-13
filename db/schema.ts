@@ -678,6 +678,8 @@ export const sportGames = pgTable(
     awayScore: integer("away_score"),
     isFinal: boolean("is_final").notNull().default(false),
     neutralSite: boolean("neutral_site").notNull().default(false),
+    // ESPN season type: 1 preseason, 2 regular season, 3 postseason.
+    seasonType: integer("season_type").notNull().default(2),
     eloHomePre: real("elo_home_pre"),
     eloAwayPre: real("elo_away_pre"),
     // Model's final pre-game home win probability — raw Elo win% plus

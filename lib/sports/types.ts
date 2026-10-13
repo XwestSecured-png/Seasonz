@@ -52,7 +52,13 @@ export interface GenericGame {
   awayScore: number | null;
   isFinal: boolean;
   neutralSite: boolean;
+  /** ESPN season type: 1 preseason, 2 regular season, 3 postseason. */
+  seasonType?: 1 | 2 | 3;
 }
+
+/** Sports whose preseason games are synced (shown with lines and picks, kept out of ratings and the scorecard). */
+export const PRESEASON_SPORTS = new Set<SportKey>(["nba"]);
+export const PRESEASON = 1;
 
 export interface GenericTeam {
   sport: SportKey;

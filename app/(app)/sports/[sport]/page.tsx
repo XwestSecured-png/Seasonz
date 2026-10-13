@@ -50,6 +50,17 @@ function formatStreak(streak: number | null): string {
   return streak > 0 ? `W${streak}` : `L${Math.abs(streak)}`;
 }
 
+function PreseasonTag() {
+  return (
+    <span
+      title="Preseason: starters often sit, so the pick follows the betting line and the result doesn't count toward the model's record."
+      className="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-300 align-middle"
+    >
+      Preseason
+    </span>
+  );
+}
+
 /** "Locks in 2h 14m" / "Locks in 38m" / "Picks locked" — same copy as the NFL Model Tracker's lock label. Null kickoffAt shows nothing. */
 function lockLabel(kickoffAt: Date | null, locked: boolean): string | null {
   if (!kickoffAt) return null;
@@ -204,8 +215,11 @@ export default async function SportPage({ params }: { params: Promise<{ sport: s
     if (pre !== null && actualHome !== null) {
       const predictedHome = pre > 0.5;
       result = predictedHome === actualHome ? "CORRECT" : "WRONG";
-      aiGraded++;
-      if (result === "CORRECT") aiCorrect++;
+      // Preseason results are shown but don't count toward the season record.
+      if (g.seasonType !== 1) {
+        aiGraded++;
+        if (result === "CORRECT") aiCorrect++;
+      }
     }
 
     const myPick = myPickByGame.get(g.id) ?? null;
@@ -344,6 +358,7 @@ export default async function SportPage({ params }: { params: Promise<{ sport: s
               <div key={g.id} className="rounded-md border border-neutral-800 p-3 text-sm space-y-1.5">
                 <div className="font-medium">
                   {g.awayTeam} @ {g.homeTeam}
+                  {g.seasonType === 1 && <PreseasonTag />}
                 </div>
                 <div className="text-neutral-500 text-xs">
                   {formatEt(g.kickoffAt)}
@@ -413,6 +428,7 @@ export default async function SportPage({ params }: { params: Promise<{ sport: s
                     </Td>
                     <Td>
                       {g.awayTeam} @ {g.homeTeam}
+                      {g.seasonType === 1 && <PreseasonTag />}
                     </Td>
                     <Td>
                       {g.awayScore}–{g.homeScore}

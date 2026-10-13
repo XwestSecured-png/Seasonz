@@ -25,7 +25,7 @@ import {
 } from "@/db/schema";
 import { replaySportElo, type SportEloGame } from "./sport-elo";
 import { makeTeamResolver } from "./team-match";
-import { SPORTS, type SportKey } from "./types";
+import { SPORTS, PRESEASON, PRESEASON_SPORTS, type SportKey } from "./types";
 import {
   fetchTeams,
   fetchFullSeasonSchedule,
@@ -40,7 +40,7 @@ import { fetchUpcomingEventsForSport, fetchEventPlayerPropsForSport } from "./od
 import { computeSportSeasonAverages, buildSportPropPicks, type SportScheduleGame } from "./props-model";
 import { americanToImpliedProb } from "../props-model";
 import { hasOddsApiKey } from "../odds-provider";
-import { eq, and, inArray, notInArray, sql } from "drizzle-orm";
+import { eq, ne, and, inArray, notInArray, sql } from "drizzle-orm";
 
 // SportEloGame plus the DB row id, so each Elo result maps straight back to
 // its row for the write-back.
@@ -49,6 +49,8 @@ interface EloInputGameWithId extends SportEloGame {
 }
 
 /** Upserts a season's games; returns the ESPN event ids that were written. */
+const TBD_RE = /^(TBD|TBA)$/i;
+
 async function upsertSportGames(games: Awaited<ReturnType<typeof fetchFullSeasonSchedule>>) {
   for (const g of games) {
     await db
@@ -66,6 +68,7 @@ async function upsertSportGames(games: Awaited<ReturnType<typeof fetchFullSeason
         awayScore: g.awayScore,
         isFinal: g.isFinal,
         neutralSite: g.neutralSite,
+        seasonType: g.seasonType ?? 2,
       })
       .onConflictDoUpdate({
         target: [sportGames.sport, sportGames.espnEventId],
@@ -77,6 +80,11 @@ async function upsertSportGames(games: Awaited<ReturnType<typeof fetchFullSeason
           awayScore: g.awayScore,
           isFinal: g.isFinal,
           neutralSite: g.neutralSite,
+          seasonType: g.seasonType ?? 2,
+          // Playoff opponents ESPN lists as "TBD" until a series is decided:
+          // take the real team once ESPN posts it, never overwrite one with TBD.
+          ...(TBD_RE.test(g.homeTeam) ? {} : { homeTeam: g.homeTeam }),
+          ...(TBD_RE.test(g.awayTeam) ? {} : { awayTeam: g.awayTeam }),
         },
       });
   }
@@ -168,7 +176,8 @@ export async function runSportSync(
         teamRows
           .filter((t) => t.espnTeamId !== null)
           .map((t) => ({ ...t, sport, espnTeamId: t.espnTeamId as string })),
-        year
+        year,
+        { preseason: PRESEASON_SPORTS.has(sport) }
       );
       if (games.length === 0) return `0 games found for ${def.label} ${year} — nothing to sync yet.`;
 
@@ -248,9 +257,11 @@ export async function runSportSync(
           kickoffAt: g.kickoffAt,
           homeTeam: g.homeTeam,
           awayTeam: g.awayTeam,
-          homeScore: g.homeScore,
-          awayScore: g.awayScore,
-          isFinal: g.isFinal,
+          // Preseason games get a pre-game number but never move ratings
+          // (starters sit, so the results say little about the teams).
+          homeScore: g.seasonType === PRESEASON ? null : g.homeScore,
+          awayScore: g.seasonType === PRESEASON ? null : g.awayScore,
+          isFinal: g.seasonType === PRESEASON ? false : g.isFinal,
           neutralSite: g.neutralSite,
           __id: g.id,
         }))
@@ -302,7 +313,7 @@ export async function runSportSync(
       const gameRows = await db
         .select()
         .from(sportGames)
-        .where(and(eq(sportGames.sport, sport), eq(sportGames.season, year), eq(sportGames.isFinal, true)));
+        .where(and(eq(sportGames.sport, sport), eq(sportGames.season, year), eq(sportGames.isFinal, true), ne(sportGames.seasonType, PRESEASON)));
 
       // Chronological, not insertion order — both the streak calculation
       // below and "most recent week" need games processed oldest-first.
@@ -447,7 +458,7 @@ export async function runSportSync(
       const finalGames = await db
         .select({ id: sportGames.id, espnEventId: sportGames.espnEventId, week: sportGames.week, season: sportGames.season, extra: sportGames.extra })
         .from(sportGames)
-        .where(and(eq(sportGames.sport, sport), inArray(sportGames.season, statSeasons), eq(sportGames.isFinal, true)));
+        .where(and(eq(sportGames.sport, sport), inArray(sportGames.season, statSeasons), eq(sportGames.isFinal, true), ne(sportGames.seasonType, PRESEASON)));
 
       if (finalGames.length === 0) return "No final games yet — nothing to fetch box scores for.";
       // Games ESPN has no box score for (common in lower college divisions)
@@ -590,6 +601,7 @@ export async function runSportSync(
             homeScore: sportGames.homeScore,
             awayScore: sportGames.awayScore,
             isFinal: sportGames.isFinal,
+            seasonType: sportGames.seasonType,
             kickoffAt: sportGames.kickoffAt,
             extra: sportGames.extra,
           })
@@ -625,6 +637,7 @@ export async function runSportSync(
           .filter(
             (g) =>
               g.isFinal &&
+              g.seasonType !== PRESEASON &&
               g.homeScore !== null &&
               g.awayScore !== null &&
               (!have.has(g.id) || (g.season === year - 1 && !havePlayers.has(g.id)))
@@ -736,7 +749,7 @@ export async function runSportSync(
       const allGameRows = await db
         .select({ week: sportGames.week, isFinal: sportGames.isFinal })
         .from(sportGames)
-        .where(and(eq(sportGames.sport, sport), eq(sportGames.season, year)));
+        .where(and(eq(sportGames.sport, sport), eq(sportGames.season, year), ne(sportGames.seasonType, PRESEASON)));
       const upcomingForWeek = allGameRows.filter((g) => !g.isFinal);
       const week =
         upcomingForWeek.length > 0
@@ -797,10 +810,12 @@ export async function runSportSync(
   } else {
     results.push(
       await logStage(`${sport}:props`, async () => {
+        // Props are regular season / playoffs only: preseason minutes are
+        // too unpredictable for player projections.
         const allGameRows = await db
           .select()
           .from(sportGames)
-          .where(and(eq(sportGames.sport, sport), eq(sportGames.season, year)));
+          .where(and(eq(sportGames.sport, sport), eq(sportGames.season, year), ne(sportGames.seasonType, PRESEASON)));
 
         const schedule: SportScheduleGame[] = allGameRows.map((g) => ({
           week: g.week,

@@ -78,6 +78,7 @@ interface ModelExtra {
   marketShift?: number;
   calibrationShift?: number;
   sim?: GameSim;
+  preseason?: boolean;
 }
 interface Extra {
   officials?: string[];
@@ -285,6 +286,13 @@ export async function getGameInsights(sport: SportKey, upcoming: GameRow[]): Pro
             : `Rest works against ${pick} (${rp} vs ${ro} days), already counted above.`
         );
       }
+    }
+    if (m?.preseason) {
+      reasons.push(
+        m.marketPct != null
+          ? "Preseason game: starters often sit or play limited minutes, and the books know the rotation plans, so this number follows the betting line. Preseason results don't count toward team ratings or the model's record."
+          : "Preseason game with no line posted yet: starters often sit, so the model's number is pulled halfway toward a coin flip. Preseason results don't count toward team ratings or the model's record."
+      );
     }
     reasons.push(`Final model chance: ${pick} ${pctStr(pickPct)}.`);
     const sim = m?.sim;

@@ -100,9 +100,9 @@ export async function fetchTeamSchedule(
   def: SportDef,
   espnTeamId: string,
   season: number,
-  seasonType?: 2 | 3
+  seasonType?: 1 | 2 | 3
 ): Promise<GenericGame[]> {
-  // seasontype 2 = regular season, 3 = postseason. Without it ESPN returns
+  // seasontype 1 = preseason, 2 = regular season, 3 = postseason. Without it ESPN returns
   // only the CURRENT phase (e.g. just the playoffs in October for MLB, or
   // just preseason for the NBA), which left the model rating teams off a
   // handful of games.
@@ -146,6 +146,7 @@ export async function fetchTeamSchedule(
         awayScore: Number.isFinite(awayScore) ? awayScore : null,
         isFinal,
         neutralSite: Boolean(competition?.neutralSite),
+        seasonType: seasonType ?? 2,
       });
     } catch {
       continue;
@@ -163,11 +164,16 @@ export async function fetchTeamSchedule(
  * match a league's own numbering exactly.
  */
 function assignWeekBuckets(sortedGames: GenericGame[]): void {
-  const first = sortedGames.find((g) => g.kickoffAt)?.kickoffAt;
+  // Buckets start at the first regular-season game; preseason games are week 0.
+  const first = sortedGames.find((g) => g.kickoffAt && g.seasonType !== 1)?.kickoffAt;
   if (!first) return;
   const firstMs = first.getTime();
   const msPerWeek = 7 * 24 * 60 * 60 * 1000;
   for (const g of sortedGames) {
+    if (g.seasonType === 1) {
+      g.week = 0;
+      continue;
+    }
     if (!g.kickoffAt) {
       g.week = 1;
       continue;
@@ -261,13 +267,16 @@ export async function fetchBoxscorePlayers(
 export async function fetchFullSeasonSchedule(
   def: SportDef,
   teams: GenericTeam[],
-  season: number
+  season: number,
+  opts: { preseason?: boolean } = {}
 ): Promise<GenericGame[]> {
   const byEventId = new Map<string, GenericGame>();
 
-  // Regular season + postseason for every team, a few requests at a time
-  // (gentle on ESPN, but fast enough for 130+ college teams).
-  const jobs = teams.flatMap((team) => ([2, 3] as const).map((st) => ({ team, st })));
+  // Regular season + postseason (+ preseason where enabled) for every team,
+  // a few requests at a time (gentle on ESPN, but fast enough for 130+
+  // college teams).
+  const types: (1 | 2 | 3)[] = opts.preseason ? [1, 2, 3] : [2, 3];
+  const jobs = teams.flatMap((team) => types.map((st) => ({ team, st })));
   let next = 0;
   await Promise.all(
     Array.from({ length: 4 }, async () => {

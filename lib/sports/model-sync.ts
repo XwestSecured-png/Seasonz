@@ -9,7 +9,7 @@
 import { db } from "@/db";
 import { sportGames, sportInjuryReports, sportPlayerGameStats, sportTeamGameStats, sportTeams } from "@/db/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { SPORTS, type SportKey } from "./types";
+import { SPORTS, PRESEASON, type SportKey } from "./types";
 import { fetchScoreboardPreview, fetchEspnEventMoneyline, type PreviewEvent } from "./espn";
 import { fetchGameOddsForSport, pickSpread, pickTotal } from "./game-odds";
 import { simulateGame } from "./game-sim";
@@ -33,6 +33,8 @@ import {
   noVigHome,
   consensusHome,
   SHARP_BOOKS,
+  logit,
+  sigmoid,
   calibrate,
   applyCalibration,
   pitcherRuns9,
@@ -402,7 +404,7 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
   // Recent scoring margin (this season), per team, oldest first.
   const marginLog = new Map<string, { ms: number; m: number }[]>();
   for (const g of games) {
-    if (!g.isFinal || g.homeScore === null || g.awayScore === null) continue;
+    if (!g.isFinal || g.homeScore === null || g.awayScore === null || g.seasonType === PRESEASON) continue;
     const add = (t: string, m: number) => marginLog.set(t, [...(marginLog.get(t) ?? []), { ms: ms(g), m }]);
     add(g.homeTeam, g.homeScore - g.awayScore);
     add(g.awayTeam, g.awayScore - g.homeScore);
@@ -666,14 +668,26 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
       marketPct = noVigHome(ex.preview.espnOdds.mlHome, ex.preview.espnOdds.mlAway);
       marketSource = marketPct !== null ? `ESPN (${ex.preview.espnOdds.provider})` : null;
     }
-    const blended = blendWithMarket(sport, modelOnly, marketPct);
+    // Preseason: rotations and rest decide these games and the books know
+    // the plans, so the line is the number. With no line, the model is
+    // pulled halfway to 50-50.
+    const preseason = g.seasonType === PRESEASON;
+    const blended = preseason
+      ? (marketPct ?? sigmoid(0.5 * logit(modelOnly)))
+      : blendWithMarket(sport, modelOnly, marketPct);
 
     out.push({
       id: g.id,
       pct: blended,
       upcoming,
       hasOpening: !!(ex as { opening?: unknown }).opening,
-      homeWon: g.isFinal && g.homeScore !== null && g.awayScore !== null && g.homeScore !== g.awayScore ? (g.homeScore > g.awayScore ? 1 : 0) : null,
+      // Preseason results don't count toward the season's calibration.
+      homeWon:
+        !preseason && g.isFinal && g.homeScore !== null && g.awayScore !== null && g.homeScore !== g.awayScore
+          ? g.homeScore > g.awayScore
+            ? 1
+            : 0
+          : null,
       model: {
         eloPct,
         formShift,
@@ -689,6 +703,7 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
         marketSource,
         marketShift: blended - modelOnly,
         version: 2,
+        preseason,
         prevElo: prevModel?.eloPct ?? null,
       },
     });

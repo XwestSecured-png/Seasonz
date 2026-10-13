@@ -8,8 +8,8 @@
 // back to the stored pre-game number.
 import { db } from "@/db";
 import { sportGames } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
-import { SPORTS, type SportKey } from "./types";
+import { and, eq, ne } from "drizzle-orm";
+import { SPORTS, PRESEASON, type SportKey } from "./types";
 import { currentSeasonYear } from "./espn";
 import { etWeekWindow, inWindow } from "../week-window";
 import { noVigHome, consensusHome } from "./game-model";
@@ -124,7 +124,9 @@ export async function otherSportsAccuracy(): Promise<SportAccuracy[]> {
     const finals = await db
       .select()
       .from(sportGames)
-      .where(and(eq(sportGames.sport, sportKey), eq(sportGames.season, season), eq(sportGames.isFinal, true)));
+      .where(
+        and(eq(sportGames.sport, sportKey), eq(sportGames.season, season), eq(sportGames.isFinal, true), ne(sportGames.seasonType, PRESEASON))
+      );
     const seasonLine = scoreGames(finals);
     const weekLine = scoreGames(finals.filter((g) => inWindow(g.kickoffAt, w)));
     out.push({

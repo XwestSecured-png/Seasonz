@@ -33,6 +33,23 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.7.1",
+    date: "2026-10-13",
+    title: "NBA preseason games",
+    summary: "NBA preseason games now show up with betting lines and picks, marked Preseason.",
+    changes: [
+      {
+        kind: "new",
+        title: "NBA preseason",
+        whatChanged:
+          "Preseason games are on the NBA page with their lines, a model number and the Why panel, tagged Preseason. Every game on the books' board now matches, including college games with similar school names and playoff games ESPN hadn't filled in yet.",
+        whatItMeans:
+          "Starters often sit in the preseason and the books know the rotation plans, so the pick follows the betting line. Preseason results don't change team ratings, recent form or the model's record, and there are no preseason player props.",
+        href: "/sports/nba",
+      },
+    ],
+  },
+  {
     version: "1.7.0",
     date: "2026-10-13",
     title: "Sharper lines, smarter props and same-game parlay odds",
