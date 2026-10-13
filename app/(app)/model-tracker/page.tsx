@@ -419,7 +419,10 @@ export default async function ModelTrackerPage() {
           and this season, and how the sportsbook favorite did on the same games. Picks are graded
           on the number shown before each game started, so later updates can&rsquo;t change the
           record. &ldquo;Calibration&rdquo; is the Brier score (lower is better; 0.250 is a coin
-          flip). Click a sport to see its games and make your own picks.
+          flip). &ldquo;Line moved our way&rdquo; is the closing-line check: when our model
+          disagrees with the opening line, does the line move toward our side by game time?
+          Above 50% means the model is finding something the market later agrees with, and it
+          shows up long before win-loss records do. Click a sport to see its games and make your own picks.
         </SectionNote>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {otherAccuracy.map((s) => (
@@ -447,6 +450,13 @@ export default async function ModelTrackerPage() {
               </div>
               <div className="text-xs text-neutral-500 space-y-0.5">
                 {s.season.brier !== null && <div>Calibration (Brier): {s.season.brier.toFixed(3)}</div>}
+                {s.season.clvGames > 0 && (
+                  <div>
+                    Line moved our way: {Math.round((s.season.clvToward / s.season.clvGames) * 100)}% of {s.season.clvGames}{" "}
+                    games where we disagreed with the opening line (avg {s.season.clvAvgPts! >= 0 ? "+" : ""}
+                    {s.season.clvAvgPts!.toFixed(1)} pts)
+                  </div>
+                )}
                 {s.season.bookGraded > 0 && (
                   <div>
                     Book favorite on games with a line: {((s.season.bookCorrect / s.season.bookGraded) * 100).toFixed(1)}% (

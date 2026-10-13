@@ -477,17 +477,23 @@ export interface PreviewEvent {
   espnOdds: { provider: string; mlHome: number; mlAway: number } | null;
 }
 
-const SCOREBOARD_GROUPS: Partial<Record<SportKey, string>> = {
-  ncaaf: "&groups=80", // FBS
-  ncaab: "&groups=50", // Division I
+// ESPN's scoreboard only returns one division at a time for college.
+const SCOREBOARD_GROUPS: Partial<Record<SportKey, string[]>> = {
+  ncaaf: ["&groups=80", "&groups=81"], // FBS, FCS
+  ncaab: ["&groups=50"], // Division I
 };
 
 /** Every event on one ET date's scoreboard (YYYYMMDD), with probables, venue and ESPN's line. */
 export async function fetchScoreboardPreview(def: SportDef, yyyymmdd: string): Promise<PreviewEvent[]> {
-  const url = `${ESPN_BASE}/${def.espnSport}/${def.espnLeague}/scoreboard?dates=${yyyymmdd}&limit=500${SCOREBOARD_GROUPS[def.key] ?? ""}`;
-  const data = await fetchJson(url);
+  const groups = SCOREBOARD_GROUPS[def.key] ?? [""];
+  const events: any[] = [];
+  for (const grp of groups) {
+    const url = `${ESPN_BASE}/${def.espnSport}/${def.espnLeague}/scoreboard?dates=${yyyymmdd}&limit=500${grp}`;
+    const data = await fetchJson(url);
+    if (Array.isArray(data?.events)) events.push(...data.events);
+  }
   const out: PreviewEvent[] = [];
-  for (const e of (Array.isArray(data?.events) ? data.events : []) as any[]) {
+  for (const e of events) {
     try {
       const c = e?.competitions?.[0];
       const comps: any[] = Array.isArray(c?.competitors) ? c.competitors : [];

@@ -54,6 +54,8 @@ export async function GET(req: NextRequest) {
   // original NFL-only behavior exactly as it was before this feature
   // existed.
   const sportsParam = req.nextUrl.searchParams.get("sports");
+  // ?refresh=1: the light pre-game refresh (lines, injuries, starters, model).
+  const refresh = req.nextUrl.searchParams.get("refresh") === "1";
   const runNfl = req.nextUrl.searchParams.get("nfl") !== "false";
   const results: { stage: string; status: "ok" | "error" | "skipped"; detail: string }[] = [];
 
@@ -62,14 +64,14 @@ export async function GET(req: NextRequest) {
   }
 
   if (sportsParam === "all") {
-    results.push(...(await runAllSportsSync(ALL_SPORTS)));
+    results.push(...(await runAllSportsSync(ALL_SPORTS, { refresh })));
   } else if (sportsParam) {
     const requested = sportsParam
       .split(",")
       .map((s) => s.trim().toLowerCase())
       .filter((s): s is SportKey => (ALL_SPORTS as string[]).includes(s));
     for (const sport of requested) {
-      results.push(...(await runSportSync(sport)));
+      results.push(...(await runSportSync(sport, undefined, { refresh })));
     }
   }
 

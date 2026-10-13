@@ -88,7 +88,7 @@ export interface SportSyncStageResult {
   detail: string;
 }
 
-async function logStage(
+async function logStageRaw(
   stage: string,
   fn: () => Promise<string>
 ): Promise<SportSyncStageResult> {
@@ -109,7 +109,19 @@ async function logStage(
  * independent — an NBA sync error never touches NFL's tables or an NHL
  * sync running alongside it.
  */
-export async function runSportSync(sport: SportKey, season?: number): Promise<SportSyncStageResult[]> {
+export async function runSportSync(
+  sport: SportKey,
+  season?: number,
+  opts: { refresh?: boolean } = {}
+): Promise<SportSyncStageResult[]> {
+  // Pre-game refresh (11am / 5pm ET): only what moves close to game time —
+  // scores, ratings, injuries, starters, lines, weather and the model.
+  // Box scores, team stats and player props wait for the full sync.
+  const REFRESH_SKIP = new Set(["teamMetrics", "playerStats", "teamGameStats", "props", "propGrading"]);
+  const logStage = (stage: string, fn: () => Promise<string>): Promise<SportSyncStageResult> =>
+    opts.refresh && REFRESH_SKIP.has(stage.split(":")[1])
+      ? Promise.resolve({ stage, status: "skipped" as const, detail: "Skipped in pre-game refresh." })
+      : logStageRaw(stage, fn);
   const def = SPORTS[sport];
   const year = season ?? currentSeasonYear(sport);
   const results: SportSyncStageResult[] = [];
@@ -459,7 +471,7 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
       // Newest games first: props are projected from each player's most
       // recent games, so those matter most. Older games fill in over later runs.
       // Larger for NHL/MLB while last season's box scores backfill (starters need them).
-      const PER_RUN_CAP = sport === "nhl" || sport === "mlb" ? 900 : 300;
+      const PER_RUN_CAP = sport === "nhl" || sport === "mlb" || sport === "ncaaf" ? 900 : 300;
       const kickoffById = new Map(
         (
           await db
@@ -493,20 +505,36 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
             continue;
           }
           gamesWithStats++;
+          // One row per player per game. ESPN lists a player once per stat
+          // group (a college QB under passing AND rushing), so every group
+          // is kept under stats.groups, with the first group's numbers also
+          // at the top level as before.
+          const merged = new Map<
+            string,
+            { team: string; player: string; position: string | null; stats: Record<string, unknown>; groups: Record<string, Record<string, string>> }
+          >();
+          for (const l of lines) {
+            const groupName = l.stats.group ?? "main";
+            const plain: Record<string, string> = { ...l.stats };
+            delete plain.group;
+            const cur = merged.get(l.player);
+            if (!cur) {
+              merged.set(l.player, { team: l.team, player: l.player, position: l.position, stats: { ...l.stats }, groups: { [groupName]: plain } });
+            } else if (!cur.groups[groupName]) {
+              cur.groups[groupName] = plain;
+            }
+          }
           // One insert per game (a box score can be 80+ players).
-          const seen = new Set<string>();
-          const values = lines
-            .filter((l) => (seen.has(l.player) ? false : (seen.add(l.player), true)))
-            .map((line) => ({
-              sport,
-              gameId: g.id,
-              season: g.season,
-              week: g.week,
-              team: line.team,
-              player: line.player,
-              position: line.position,
-              stats: line.stats,
-            }));
+          const values = Array.from(merged.values()).map((line) => ({
+            sport,
+            gameId: g.id,
+            season: g.season,
+            week: g.week,
+            team: line.team,
+            player: line.player,
+            position: line.position,
+            stats: { ...line.stats, groups: line.groups } as unknown as Record<string, string>,
+          }));
           await db
             .insert(sportPlayerGameStats)
             .values(values)
@@ -1024,12 +1052,13 @@ export async function runSportSync(sport: SportKey, season?: number): Promise<Sp
 }
 
 export async function runAllSportsSync(
-  sports: SportKey[] = ["nba", "wnba", "nhl", "mlb", "ncaaf", "ncaab"]
+  sports: SportKey[] = ["nba", "wnba", "nhl", "mlb", "ncaaf", "ncaab"],
+  opts: { refresh?: boolean } = {}
 ): Promise<SportSyncStageResult[]> {
   const all: SportSyncStageResult[] = [];
   for (const sport of sports) {
     try {
-      all.push(...(await runSportSync(sport)));
+      all.push(...(await runSportSync(sport, undefined, opts)));
     } catch (err) {
       all.push({
         stage: `${sport}:fatal`,

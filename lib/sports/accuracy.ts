@@ -21,6 +21,10 @@ export interface ScoreLine {
   brier: number | null; // lower is better; 0.25 = coin flip
   bookCorrect: number; // book favorite's record on games that had a line
   bookGraded: number;
+  /** Closing-line check: games where our model disagreed with the opening line by 2+ points. */
+  clvGames: number;
+  clvToward: number; // closing line moved toward our side
+  clvAvgPts: number | null; // average move toward our side, in win-chance points
 }
 
 export interface SportAccuracy {
@@ -38,6 +42,7 @@ const OTHER_SPORTS: SportKey[] = ["nba", "wnba", "nhl", "mlb", "ncaaf", "ncaab"]
 type Row = typeof sportGames.$inferSelect;
 interface Extra {
   locked?: { pct: number; market: number | null };
+  opening?: { market: number | null; modelOnly: number | null };
   odds?: { fanduel?: { mlHome: number | null; mlAway: number | null }; betmgm?: { mlHome: number | null; mlAway: number | null } };
   oddsUpdatedAt?: string;
   preview?: { espnOdds?: { mlHome: number; mlAway: number } | null; espnOddsAt?: string | null };
@@ -68,7 +73,23 @@ export function scoreGames(rows: Row[]): ScoreLine {
   let brier = 0;
   let bookCorrect = 0;
   let bookGraded = 0;
+  let clvGames = 0;
+  let clvToward = 0;
+  let clvSum = 0;
   for (const g of rows) {
+    // Closing-line value doesn't need a result, only the open and close.
+    const ex = (g.extra ?? {}) as Extra;
+    const open = ex.opening;
+    const close = ex.locked?.market;
+    if (open?.market != null && open.modelOnly != null && close != null) {
+      const lean = open.modelOnly - open.market; // + = we liked the home side more than the book
+      if (Math.abs(lean) >= 0.02) {
+        const move = (close - open.market) * Math.sign(lean);
+        clvGames++;
+        if (move > 0) clvToward++;
+        clvSum += move;
+      }
+    }
     if (g.homeScore === null || g.awayScore === null || g.homeScore === g.awayScore) continue;
     const p = pregamePct(g);
     if (p === null) continue;
@@ -89,6 +110,9 @@ export function scoreGames(rows: Row[]): ScoreLine {
     brier: graded ? brier / graded : null,
     bookCorrect,
     bookGraded,
+    clvGames,
+    clvToward,
+    clvAvgPts: clvGames ? (clvSum / clvGames) * 100 : null,
   };
 }
 

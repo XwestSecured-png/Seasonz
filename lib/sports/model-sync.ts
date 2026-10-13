@@ -27,6 +27,7 @@ import {
   type Calibration,
 } from "./game-model";
 import { geocodeCity, forecastAt, type GameWeather } from "./weather";
+import { statGroup } from "./stat-extract";
 
 type StageResult = { stage: string; status: "ok" | "error" | "skipped"; detail: string };
 type LogStage = (stage: string, fn: () => Promise<string>) => Promise<StageResult>;
@@ -183,6 +184,7 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
       let matched = 0;
       const nowMs = Date.now();
       let live = 0;
+      const unmatched: string[] = [];
       for (const ev of board) {
         const t = Date.parse(ev.commenceTime);
         // Games already under way carry live in-game prices — never let
@@ -195,8 +197,27 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
         const cands = new Set(near.flatMap((x) => [x.homeTeam, x.awayTeam]));
         const home = resolve(ev.homeTeam, cands);
         const away = resolve(ev.awayTeam, cands);
-        const g = near.find((x) => x.homeTeam === home && x.awayTeam === away);
-        if (!g) continue;
+        // Books sometimes list a neutral-site game with home/away swapped.
+        const g =
+          near.find((x) => x.homeTeam === home && x.awayTeam === away) ??
+          near.find((x) => x.homeTeam === away && x.awayTeam === home);
+        if (!g) {
+          unmatched.push(`${ev.awayTeam} @ ${ev.homeTeam}${home && away ? "" : ` [${home ?? "?"}/${away ?? "?"}]`}`);
+          continue;
+        }
+        if (g.homeTeam !== home) {
+          // Swapped: flip every line to our home/away.
+          const flip = (b: typeof ev.books.fanduel) =>
+            b && {
+              ...b,
+              mlHome: b.mlAway,
+              mlAway: b.mlHome,
+              spreadHome: b.spreadHome == null ? null : -b.spreadHome,
+              spreadHomePrice: b.spreadAwayPrice,
+              spreadAwayPrice: b.spreadHomePrice,
+            };
+          ev.books = { fanduel: flip(ev.books.fanduel), betmgm: flip(ev.books.betmgm) };
+        }
         const main = ev.books.fanduel ?? ev.books.betmgm;
         const book = ev.books.fanduel ? "FanDuel" : "BetMGM";
         await db
@@ -218,7 +239,10 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
           .where(eq(sportGames.id, g.id));
         matched++;
       }
-      return `FanDuel/BetMGM odds matched to ${matched} of ${board.length - live} upcoming board game(s)${live ? ` (${live} already started, skipped)` : ""}.`;
+      return (
+        `FanDuel/BetMGM odds matched to ${matched} of ${board.length - live} upcoming board game(s)${live ? ` (${live} already started, skipped)` : ""}.` +
+        (unmatched.length ? ` Unmatched: ${unmatched.slice(0, 8).join("; ")}.` : "")
+      );
     })
   );
 
@@ -399,8 +423,8 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
     a.pts += N(s.PTS);
     a.ga += N(s.G) + N(s.A);
     a.runs += (N(s.R) + N(s.RBI)) / 2;
-    if (s.group === "passing") a.pass += N(s.YDS);
-    if (s.group === "rushing" || s.group === "receiving") a.skill += N(s.YDS);
+    a.pass += N(statGroup(s, "passing")?.YDS);
+    a.skill += N(statGroup(s, "rushing")?.YDS) + N(statGroup(s, "receiving")?.YDS);
     if ("IP" in s) a.pitcher = true;
     if (s.group === "goalies") a.goalie = true;
     perPlayer.set(r.player, a);
@@ -448,6 +472,7 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
     id: number;
     pct: number;
     upcoming: boolean;
+    hasOpening: boolean;
     model: Record<string, unknown>;
     homeWon: number | null;
   }[] = [];
@@ -554,6 +579,7 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
       id: g.id,
       pct: blended,
       upcoming,
+      hasOpening: !!(ex as { opening?: unknown }).opening,
       homeWon: g.isFinal && g.homeScore !== null && g.awayScore !== null && g.homeScore !== g.awayScore ? (g.homeScore > g.awayScore ? 1 : 0) : null,
       model: {
         eloPct,
@@ -610,6 +636,18 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
     out
       .filter((o) => !finalById.get(o.id) && (kickById.get(o.id) ?? 0) > now)
       .map((o) => ({ id: o.id, value: { pct: o.pct, at: new Date(now).toISOString(), market: o.model.marketPct ?? null } }))
+  );
+  // Opening snapshot: the first time a game has a line, record the line
+  // and the model's own number. Comparing it with the closing line (the
+  // locked market) shows whether the market moved toward our side.
+  await mergeExtra(
+    "opening",
+    out
+      .filter((o) => !o.hasOpening && !finalById.get(o.id) && (kickById.get(o.id) ?? 0) > now && o.model.marketPct != null)
+      .map((o) => ({
+        id: o.id,
+        value: { market: o.model.marketPct, modelOnly: o.model.modelOnlyPct, at: new Date(now).toISOString() },
+      }))
   );
   await mergeExtra(
     "calibration",

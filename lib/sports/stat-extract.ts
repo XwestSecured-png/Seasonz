@@ -112,11 +112,21 @@ const MLB_STATS: StatExtractor[] = [
 // NCAAF: same passing/rushing/receiving group shape NFL's own nflverse-fed
 // model already uses the labels for — stats.group disambiguates the
 // repeated "YDS" key across the three groups.
+/** One stat group of a college box-score row (rows saved since the multi-group fix carry every group under stats.groups). */
+export function statGroup(s: Record<string, unknown>, name: string): Record<string, string> | null {
+  const groups = s.groups as Record<string, Record<string, string>> | undefined;
+  if (groups && groups[name]) return groups[name];
+  return s.group === name ? (s as Record<string, string>) : null;
+}
+const fromGroup = (name: string, key: string) => (s: Record<string, string>) => {
+  const g = statGroup(s, name);
+  return g ? firstNumber(g[key]) : null;
+};
 const NCAAF_STATS: StatExtractor[] = [
-  { statType: "Pass Yds", extract: (s) => (s.group === "passing" ? firstNumber(s.YDS) : null) },
-  { statType: "Rush Yds", extract: (s) => (s.group === "rushing" ? firstNumber(s.YDS) : null) },
-  { statType: "Rec Yds", extract: (s) => (s.group === "receiving" ? firstNumber(s.YDS) : null) },
-  { statType: "Receptions", extract: (s) => (s.group === "receiving" ? firstNumber(s.REC) : null) },
+  { statType: "Pass Yds", extract: fromGroup("passing", "YDS") },
+  { statType: "Rush Yds", extract: fromGroup("rushing", "YDS") },
+  { statType: "Rec Yds", extract: fromGroup("receiving", "YDS") },
+  { statType: "Receptions", extract: fromGroup("receiving", "REC") },
 ];
 
 export const STAT_EXTRACTORS: Record<SportKey, StatExtractor[]> = {
