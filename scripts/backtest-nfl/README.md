@@ -14,3 +14,21 @@ moneyline (vig removed) from the same file.
 
 The factor nudges (weather, referee, FPI/QBR, NGS, injuries) sit on top of
 Elo in the app; they aren't in this file's history, so they're untested here.
+
+## EPA rating (1.7.0)
+
+    node epa.mjs   # nflverse weekly player stats 2012-25 + games.csv
+
+Net EPA (own offensive passing + rushing EPA minus the opponent's, last 10
+games, last season at half weight), added on top of Elo v2. Fit 2013-22,
+tested 2023-25 (932 games with EPA history):
+
+| model | log loss | picked winner |
+|---|---|---|
+| Elo v2 | .6343 | 64.1% |
+| Elo v2 + EPA (shipped in model-only) | .6334 | 64.8% |
+| closing moneyline | .6113 | 67.6% |
+| best blend with the line | .6113 | 67.6% (model weight still 0) |
+
+So EPA sharpens the model-only number (and the value edges built on it);
+the final number still follows the line.

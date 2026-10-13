@@ -12,6 +12,17 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { SPORTS, type SportKey } from "./types";
 import { fetchScoreboardPreview, fetchEspnEventMoneyline, type PreviewEvent } from "./espn";
 import { fetchGameOddsForSport } from "./game-odds";
+import { simulateGame } from "./game-sim";
+
+const BOOK_LABEL: Record<string, string> = {
+  fanduel: "FanDuel",
+  betmgm: "BetMGM",
+  draftkings: "DraftKings",
+  williamhill_us: "Caesars",
+  pinnacle: "Pinnacle",
+  betonlineag: "BetOnline",
+  lowvig: "LowVig",
+};
 import { makeTeamResolver } from "./team-match";
 import { formBefore, nbaWinProb, type FormRow } from "./nba-model";
 import {
@@ -20,6 +31,8 @@ import {
   injuryShift,
   blendWithMarket,
   noVigHome,
+  consensusHome,
+  SHARP_BOOKS,
   calibrate,
   applyCalibration,
   pitcherRuns9,
@@ -78,9 +91,18 @@ export interface PreviewExtra {
   updatedAt: string;
 }
 
-type BookLine = { mlHome: number | null; mlAway: number | null };
+type BookLine = {
+  mlHome: number | null;
+  mlAway: number | null;
+  spreadHome?: number | null;
+  spreadHomePrice?: number | null;
+  spreadAwayPrice?: number | null;
+  total?: number | null;
+  overPrice?: number | null;
+  underPrice?: number | null;
+};
 interface GameExtra {
-  odds?: { fanduel?: BookLine; betmgm?: BookLine };
+  odds?: Record<string, BookLine | undefined>;
   oddsUpdatedAt?: string;
   preview?: PreviewExtra;
   weather?: GameWeather;
@@ -176,12 +198,13 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
       const teamRows = await db.select().from(sportTeams).where(eq(sportTeams.sport, sport));
       const resolve = makeTeamResolver(teamRows);
       const board = await fetchGameOddsForSport(sport);
-      if (board.length === 0) return "No FanDuel/BetMGM board posted (or no odds key).";
+      if (board.length === 0) return "No odds board posted (or no odds key).";
       const upcoming = await db
         .select()
         .from(sportGames)
         .where(and(eq(sportGames.sport, sport), eq(sportGames.season, year), eq(sportGames.isFinal, false)));
       let matched = 0;
+      let withSharp = 0;
       const nowMs = Date.now();
       let live = 0;
       const unmatched: string[] = [];
@@ -219,8 +242,10 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
         }
         if (g.homeTeam !== home) {
           // Swapped: flip every line to our home/away.
-          const flip = (b: typeof ev.books.fanduel) =>
-            b && {
+          for (const k of Object.keys(ev.books) as (keyof typeof ev.books)[]) {
+            const b = ev.books[k];
+            if (!b) continue;
+            ev.books[k] = {
               ...b,
               mlHome: b.mlAway,
               mlAway: b.mlHome,
@@ -228,10 +253,12 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
               spreadHomePrice: b.spreadAwayPrice,
               spreadAwayPrice: b.spreadHomePrice,
             };
-          ev.books = { fanduel: flip(ev.books.fanduel), betmgm: flip(ev.books.betmgm) };
+          }
         }
-        const main = ev.books.fanduel ?? ev.books.betmgm;
-        const book = ev.books.fanduel ? "FanDuel" : "BetMGM";
+        // Shown/linked line: the first main US book that posted one.
+        const mainKey = (["fanduel", "betmgm", "draftkings", "williamhill_us"] as const).find((k) => ev.books[k]?.mlHome != null);
+        const main = mainKey ? ev.books[mainKey] : undefined;
+        const book = mainKey ? BOOK_LABEL[mainKey] : "";
         await db
           .update(sportGames)
           .set({
@@ -250,9 +277,10 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
           })
           .where(eq(sportGames.id, g.id));
         matched++;
+        if (Object.keys(ev.books).some((k) => SHARP_BOOKS.has(k))) withSharp++;
       }
       return (
-        `FanDuel/BetMGM odds matched to ${matched} of ${board.length - live} upcoming board game(s)${live ? ` (${live} already started, skipped)` : ""}.` +
+        `Odds matched to ${matched} of ${board.length - live} upcoming board game(s)${live ? ` (${live} already started, skipped)` : ""}; ${withSharp} with a sharp-book line (Pinnacle/BetOnline/LowVig).` +
         (unmatched.length ? ` Unmatched: ${unmatched.slice(0, 8).join("; ")}.` : "")
       );
     })
@@ -566,19 +594,18 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
     }
     const modelOnly = pModel + injShift;
 
-    // Market: FanDuel, then BetMGM, then ESPN's line.
+    // Market: the consensus of every book's no-vig line (sharp books
+    // count double), else ESPN's line.
     let marketPct: number | null = null;
     let marketSource: string | null = null;
     // Only lines captured before the game started count.
     const preGame = (at: string | null | undefined) => !!at && Date.parse(at) < t;
-    for (const [k, label] of [["fanduel", "FanDuel"], ["betmgm", "BetMGM"]] as const) {
-      if (!preGame(ex.oddsUpdatedAt)) break;
-      const b = ex.odds?.[k];
-      const p = b ? noVigHome(b.mlHome, b.mlAway) : null;
-      if (p !== null) {
-        marketPct = p;
-        marketSource = label;
-        break;
+    if (preGame(ex.oddsUpdatedAt) && ex.odds) {
+      const c = consensusHome(ex.odds);
+      if (c) {
+        marketPct = c.pct;
+        marketSource =
+          c.books.length === 1 ? (BOOK_LABEL[c.books[0]] ?? c.books[0]) : `${c.books.length}-book consensus${c.sharp ? " incl. Pinnacle-style sharp books" : ""}`;
       }
     }
     if (marketPct === null && ex.preview?.espnOdds && preGame(ex.preview.espnOddsAt)) {
@@ -621,6 +648,23 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
     const before = o.pct;
     o.pct = applyCalibration(o.pct, cal);
     o.model.calibrationShift = o.pct - before;
+  }
+
+  // Score simulation for the next week's games: projected score, fair
+  // spread, and the chance of covering / going over the book's numbers.
+  const byId = new Map(games.map((g) => [g.id, g]));
+  for (const o of out) {
+    const g = byId.get(o.id)!;
+    if (!o.upcoming || ms(g) > now + 7 * DAY) continue;
+    o.model.sim = simulateGame(sport, {
+      homePct: o.pct,
+      spreadHome: g.spreadHomeLine,
+      spreadHomePrice: g.spreadHomePriceAmerican,
+      spreadAwayPrice: g.spreadAwayPriceAmerican,
+      total: g.totalLine,
+      overPrice: g.totalOverPriceAmerican,
+      underPrice: g.totalUnderPriceAmerican,
+    });
   }
 
   // Write: every game's number; the full breakdown for upcoming and recent games.

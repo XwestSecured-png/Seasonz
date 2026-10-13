@@ -1,6 +1,7 @@
 import type { PlayerWeekStats, DefensivePlayerWeekStats, ScheduleGame } from "./nflverse";
 import type { PropOutcome } from "./odds";
 import { MIN_MODEL_WIN_PCT } from "./confidence";
+import { projectProp, propChance, type PropModelConfig, type Projection } from "./prop-dist";
 
 // A one- or two-game season average is too small a sample to trust over a
 // book's own (much larger) model — require a few games first.
@@ -9,14 +10,25 @@ const MIN_GAMES_FOR_PROJECTION = 3;
 // the most recent of those — recent form, not a flat season-long average.
 const RECENT_GAMES_WINDOW = 5;
 // A player's own game-to-game std dev floor, so a tiny real sample (e.g. 3
-// nearly-identical games) never reads as near-certain. Absolute floor per
-// stat type (yards are a bigger number than receptions) plus a
-// percent-of-mean floor, whichever is larger.
-const STDDEV_FLOOR_PCT = 0.12;
+// nearly-identical games) never reads as near-certain: an absolute floor
+// per stat type (yards are a bigger number than receptions) or 12% of the
+// mean, whichever is larger (applied in lib/prop-dist.ts).
 // From the prop calibration check (lib/prop-calibration.ts) on 2024-2026
 // weekly stats: the old spread said 81-84% on 70%+ picks that hit 74-77%.
 // Wider spreads bring predicted and actual together (e.g. Rec Yds 78.1% / 78.2%).
 const NFL_SD_MULT: Record<string, number> = { "Pass Yds": 1.3, "Rush Yds": 1.3, "Rec Yds": 1.4, Receptions: 1.3 };
+
+// Per-stat model, chosen on 2021-25 weekly stats (lib/prop-dist.ts; log loss,
+// lower is better, old -> new): yardage stays a bell curve but the last 5
+// games are pulled toward the 20-game average (Pass .612 -> .602, Rush
+// .613 -> .609, Rec .618 -> .610); receptions are a count, so Poisson
+// (.602 -> .582), with a small calibration pull toward 50%.
+export const NFL_PROP_MODEL: Record<string, PropModelConfig> = {
+  "Pass Yds": { dist: "normal", sdMult: 1.3, shrinkK: 5, useMinutes: false, temper: 0.94 },
+  "Rush Yds": { dist: "normal", sdMult: 1.3, shrinkK: 5, useMinutes: false, temper: 0.94 },
+  "Rec Yds": { dist: "normal", sdMult: 1.4, shrinkK: 5, useMinutes: false },
+  Receptions: { dist: "poisson", sdMult: 1.3, shrinkK: 5, useMinutes: false, temper: 0.88 },
+};
 
 /** A prop is only picked when the model's chance beats the price's implied chance by at least this much. */
 export const MIN_PROP_EDGE = 0.03;
@@ -56,6 +68,9 @@ export interface PlayerSeasonAverage {
   // an actual statistical win chance, instead of just comparing two numbers.
   stdDev: number;
   games: number;
+  /** Full projection (distribution shape) and the stat's model settings. */
+  proj?: Projection;
+  cfg?: PropModelConfig;
 }
 
 /**
@@ -168,27 +183,22 @@ export function computeSeasonAverages(
   for (const [key, list] of byKey) {
     const [player, statType] = key.split("|");
     const sorted = [...list].sort((a, b) => b.week - a.week);
-    const windowed = sorted.slice(0, RECENT_GAMES_WINDOW);
-    const n = windowed.length;
-
-    // Linear recency weights: the most recent game in the window counts n
-    // times as much as the oldest, the next-most-recent n-1 times, etc.
-    const weights = windowed.map((_, i) => n - i);
-    const weightSum = weights.reduce((a, b) => a + b, 0);
-    const weightedMean = windowed.reduce((acc, g, i) => acc + g.value * weights[i], 0) / weightSum;
-
-    const rawMean = windowed.reduce((a, g) => a + g.value, 0) / n;
-    const variance =
-      n > 1 ? windowed.reduce((a, g) => a + (g.value - rawMean) ** 2, 0) / (n - 1) : 0;
-    const floor = Math.max(weightedMean * STDDEV_FLOOR_PCT, NFL_STDDEV_FLOOR_ABS[statType] ?? 5);
-    const stdDev = Math.max(Math.sqrt(variance), floor) * (NFL_SD_MULT[statType] ?? 1.3);
+    const cfg = NFL_PROP_MODEL[statType] ?? { dist: "normal", sdMult: NFL_SD_MULT[statType] ?? 1.3, shrinkK: 5, useMinutes: false };
+    const proj = projectProp(
+      [...sorted].reverse().map((g) => g.value),
+      cfg,
+      NFL_STDDEV_FLOOR_ABS[statType] ?? 5
+    );
+    if (!proj) continue;
+    const n = Math.min(sorted.length, RECENT_GAMES_WINDOW);
+    const stdDev = proj.sd;
 
     const team = sorted[0].team;
     const opponent = opponentThisWeek.get(team);
     const oppFactor = opponent ? (opponentFactors.get(opponent)?.get(statType) ?? 1) : 1;
-    const projection = weightedMean * oppFactor;
+    const projection = proj.mean * oppFactor;
 
-    out.set(key, { player, team, statType, average: projection, stdDev, games: n });
+    out.set(key, { player, team, statType, average: projection, stdDev, games: n, proj: { ...proj, mean: projection }, cfg });
   }
   return out;
 }
@@ -287,8 +297,12 @@ export function buildPropPicks(
 
     const projection = avg.average;
     const edgePct = (projection - g.line) / g.line;
-    const side: "Over" | "Under" = edgePct >= 0 ? "Over" : "Under";
-    const modelWinPct = winProbability(avg.average, avg.stdDev, g.line, side);
+    // With a count distribution the likelier side isn't always the side the
+    // average is on (skew), so take whichever side the model rates higher.
+    const pOver =
+      avg.proj && avg.cfg ? propChance(avg.proj, g.line, avg.cfg, "Over") : winProbability(avg.average, avg.stdDev, g.line, "Over");
+    const side: "Over" | "Under" = pOver >= 0.5 ? "Over" : "Under";
+    const modelWinPct = side === "Over" ? pOver : 1 - pOver;
     if (modelWinPct < MIN_MODEL_WIN_PCT) continue;
 
     const price = side === "Over" ? g.overPrice : g.underPrice;

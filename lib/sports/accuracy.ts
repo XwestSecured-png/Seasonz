@@ -12,7 +12,7 @@ import { and, eq } from "drizzle-orm";
 import { SPORTS, type SportKey } from "./types";
 import { currentSeasonYear } from "./espn";
 import { etWeekWindow, inWindow } from "../week-window";
-import { noVigHome } from "./game-model";
+import { noVigHome, consensusHome } from "./game-model";
 
 export interface ScoreLine {
   correct: number;
@@ -43,7 +43,7 @@ type Row = typeof sportGames.$inferSelect;
 interface Extra {
   locked?: { pct: number; market: number | null };
   opening?: { market: number | null; modelOnly: number | null };
-  odds?: { fanduel?: { mlHome: number | null; mlAway: number | null }; betmgm?: { mlHome: number | null; mlAway: number | null } };
+  odds?: Record<string, { mlHome: number | null; mlAway: number | null } | undefined>;
   oddsUpdatedAt?: string;
   preview?: { espnOdds?: { mlHome: number; mlAway: number } | null; espnOddsAt?: string | null };
 }
@@ -60,9 +60,9 @@ function bookPct(g: Row): number | null {
   // Only lines captured before the game started.
   const start = g.kickoffAt?.getTime() ?? 0;
   const pre = (at: string | null | undefined) => !!at && Date.parse(at) < start;
-  const b = pre(ex.oddsUpdatedAt) ? (ex.odds?.fanduel ?? ex.odds?.betmgm) : undefined;
+  const c = pre(ex.oddsUpdatedAt) && ex.odds ? consensusHome(ex.odds) : null;
   return (
-    noVigHome(b?.mlHome ?? null, b?.mlAway ?? null) ??
+    c?.pct ??
     (pre(ex.preview?.espnOddsAt) ? noVigHome(ex.preview?.espnOdds?.mlHome, ex.preview?.espnOdds?.mlAway) : null)
   );
 }

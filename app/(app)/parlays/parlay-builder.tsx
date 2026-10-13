@@ -2,13 +2,16 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { LegPicker, type LegPickerGame, type LegPickerProp } from "./leg-picker";
+import { LegPicker, type LegMeta, type LegPickerGame, type LegPickerProp } from "./leg-picker";
 import { PayoutCalc } from "./payout-calc";
+import { SameGamePanel } from "./same-game-panel";
+import type { SgpSport } from "@/lib/sgp";
 
 interface LegDraft {
   label: string;
   priceAmerican: string;
   mode: "picker" | "manual";
+  meta?: LegMeta;
 }
 
 function emptyLeg(hasDropdownData: boolean): LegDraft {
@@ -27,10 +30,12 @@ export function ParlayBuilder({
   games,
   propOptions,
   otherSportsPicks = [],
+  sgpSport = "football",
 }: {
   games: LegPickerGame[];
   propOptions: LegPickerProp[];
   otherSportsPicks?: OtherSportPick[];
+  sgpSport?: SgpSport;
 }) {
   const hasDropdownData = games.length > 0 || propOptions.length > 0;
   const [title, setTitle] = useState("");
@@ -388,7 +393,7 @@ export function ParlayBuilder({
                 <LegPicker
                   games={games}
                   propOptions={propOptions}
-                  onChange={(patch) => updateLeg(i, patch)}
+                  onChange={(patch) => updateLeg(i, { meta: undefined, ...patch })}
                   onUseManual={() => updateLeg(i, { mode: "manual" })}
                 />
               ) : (
@@ -396,7 +401,7 @@ export function ParlayBuilder({
                   <input
                     type="text"
                     value={leg.label}
-                    onChange={(e) => updateLeg(i, { label: e.target.value })}
+                    onChange={(e) => updateLeg(i, { label: e.target.value, meta: undefined })}
                     placeholder={`Leg ${i + 1} — e.g. "Chiefs -3.5" or "Mahomes Over 275.5 Pass Yds"`}
                     className="flex-1 rounded-md bg-neutral-900 border border-neutral-800 px-3 py-1.5 text-sm text-neutral-100 placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-600"
                   />
@@ -469,6 +474,7 @@ export function ParlayBuilder({
       {previewLegs.length >= 2 && (
         <div className="rounded-md bg-neutral-900/50 border border-neutral-800 px-3 py-2">
           <PayoutCalc legs={previewLegs} />
+          <SameGamePanel sport={sgpSport} legs={legs} />
         </div>
       )}
       {error && <p className="text-sm text-red-400">{error}</p>}

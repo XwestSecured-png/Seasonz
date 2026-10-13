@@ -7,7 +7,8 @@
 // field name (winProbability / americanToImpliedProb) are imported from
 // lib/props-model.ts rather than duplicated.
 import type { PropOutcome } from "../odds";
-import { winProbability, americanToImpliedProb, MIN_PROP_EDGE } from "../props-model";
+import { winProbability, americanToImpliedProb, MIN_PROP_EDGE, NFL_PROP_MODEL } from "../props-model";
+import { projectProp, propChance, LEGACY_PROP_MODEL, type PropModelConfig, type Projection } from "../prop-dist";
 import { MIN_MODEL_WIN_PCT } from "../confidence";
 import { STAT_EXTRACTORS } from "./stat-extract";
 import type { SportKey } from "./types";
@@ -25,7 +26,6 @@ export interface SportScheduleGame {
 
 const MIN_GAMES_FOR_PROJECTION = 3;
 const RECENT_GAMES_WINDOW = 5;
-const STDDEV_FLOOR_PCT = 0.12;
 const OPPONENT_FACTOR_CLAMP: [number, number] = [0.8, 1.25];
 const MIN_DEFENSE_GAMES_FOR_FACTOR = 2;
 
@@ -88,6 +88,57 @@ export const PROP_SD_MULT: Record<SportKey, Record<string, number>> = {
   ncaaf: { "Pass Yds": 1.3, "Rush Yds": 1.3, "Rec Yds": 1.4, Receptions: 1.3 },
 };
 
+// Per-stat model (lib/prop-dist.ts), chosen on every NBA (2,627) and WNBA
+// (656) game of 2025-26. Log loss old -> new (lower is better) and the
+// 70%+ picks' predicted/actual hit rate:
+//   Points    .596 -> .575  (80.8% / 80.5%)  negative binomial
+//   Rebounds  .580 -> .552  (82.6% / 81.7%)  Poisson
+//   Assists   .590 -> .562  (81.4% / 81.6%)  Poisson
+//   Threes    .608 -> .575  (81.1% / 80.2%)  Poisson
+//   Steals    .629 -> .596, Blocks .629 -> .595, Turnovers .613 -> .575
+// All use per-minute rate x expected minutes and pull the last 5 games
+// hard toward the 20-game average; "temper" pulls chances toward 50%
+// where the count model ran a little overconfident. Combos (P+R+A etc.)
+// weren't separately tested and use the Points model.
+const BB_POINTS: PropModelConfig = { dist: "negbin", sdMult: 1.2, shrinkK: 40, useMinutes: true, temper: 0.8 };
+const BASKETBALL_PROP_MODEL: Record<string, PropModelConfig> = {
+  Points: BB_POINTS,
+  Rebounds: { dist: "poisson", sdMult: 1.1, shrinkK: 40, useMinutes: true, temper: 0.8 },
+  Assists: { dist: "poisson", sdMult: 1.1, shrinkK: 40, useMinutes: true, temper: 0.8 },
+  "3-Pointers Made": { dist: "poisson", sdMult: 1.3, shrinkK: 40, useMinutes: true, temper: 0.88 },
+  Steals: { dist: "poisson", sdMult: 1.5, shrinkK: 40, useMinutes: true, temper: 0.88 },
+  Blocks: { dist: "poisson", sdMult: 1.5, shrinkK: 40, useMinutes: true, temper: 0.88 },
+  Turnovers: { dist: "poisson", sdMult: 1.4, shrinkK: 40, useMinutes: true, temper: 0.88 },
+  "Pts+Reb+Ast": BB_POINTS,
+  "Pts+Reb": BB_POINTS,
+  "Reb+Ast": BB_POINTS,
+};
+/** The model per sport and stat; anything not listed keeps the original bell-curve model. */
+export const PROP_MODEL: Record<SportKey, Record<string, PropModelConfig>> = {
+  nba: BASKETBALL_PROP_MODEL,
+  wnba: BASKETBALL_PROP_MODEL,
+  ncaab: BASKETBALL_PROP_MODEL,
+  ncaaf: NFL_PROP_MODEL,
+  nhl: {},
+  mlb: {},
+};
+export function propModelFor(sport: SportKey, statType: string): PropModelConfig {
+  return PROP_MODEL[sport][statType] ?? LEGACY_PROP_MODEL(PROP_SD_MULT[sport][statType] ?? 1.3);
+}
+
+/** Minutes played, where the box score has them (basketball "MIN", hockey "TOI" as mm:ss). */
+export function minutesOf(stats: Record<string, string>): number | null {
+  if (stats.MIN != null) {
+    const n = Number(stats.MIN);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (stats.TOI != null) {
+    const [m, sec] = String(stats.TOI).split(":").map(Number);
+    return Number.isFinite(m) ? m + (sec || 0) / 60 : null;
+  }
+  return null;
+}
+
 export const STDDEV_FLOOR_ABS: Record<SportKey, Record<string, number>> = {
   nba: BASKETBALL_FLOORS,
   wnba: BASKETBALL_FLOORS,
@@ -125,6 +176,8 @@ export interface SportBoxScoreRow {
   player: string;
   team: string;
   week: number;
+  /** Kickoff time (ms), to order several games in one week. */
+  t?: number;
   stats: Record<string, string>;
 }
 
@@ -135,6 +188,8 @@ export interface SportPlayerSeasonAverage {
   average: number; // recency-weighted, opponent-adjusted projection — see lib/props-model.ts's identical field for the full reasoning
   stdDev: number;
   games: number;
+  proj?: Projection;
+  cfg?: PropModelConfig;
 }
 
 /** Same reasoning as lib/props-model.ts's computeOpponentAllowedFactors, generalized over this sport's STAT_EXTRACTORS instead of a fixed NFL field list. */
@@ -204,14 +259,15 @@ export function computeSportSeasonAverages(
   const extractors = STAT_EXTRACTORS[sport];
   const floors = STDDEV_FLOOR_ABS[sport];
 
-  const byKey = new Map<string, { team: string; week: number; value: number }[]>();
+  const byKey = new Map<string, { team: string; week: number; t: number; value: number; min: number | null }[]>();
   for (const row of rows) {
+    const min = minutesOf(row.stats);
     for (const { statType, extract } of extractors) {
       const value = extract(row.stats);
       if (value === null || value < 0) continue;
       const key = `${row.player}|${statType}`;
       const list = byKey.get(key) ?? [];
-      list.push({ team: row.team, week: row.week, value });
+      list.push({ team: row.team, week: row.week, t: row.t ?? 0, value, min });
       byKey.set(key, list);
     }
   }
@@ -227,25 +283,25 @@ export function computeSportSeasonAverages(
   const out = new Map<string, SportPlayerSeasonAverage>();
   for (const [key, list] of byKey) {
     const [player, statType] = key.split("|");
-    const sorted = [...list].sort((a, b) => b.week - a.week);
-    const windowed = sorted.slice(0, RECENT_GAMES_WINDOW);
-    const n = windowed.length;
-
-    const weights = windowed.map((_, i) => n - i);
-    const weightSum = weights.reduce((a, b) => a + b, 0);
-    const weightedMean = windowed.reduce((acc, g, i) => acc + g.value * weights[i], 0) / weightSum;
-
-    const rawMean = windowed.reduce((a, g) => a + g.value, 0) / n;
-    const variance = n > 1 ? windowed.reduce((a, g) => a + (g.value - rawMean) ** 2, 0) / (n - 1) : 0;
-    const floor = Math.max(weightedMean * STDDEV_FLOOR_PCT, floors[statType] ?? 1);
-    const stdDev = Math.max(Math.sqrt(variance), floor) * (PROP_SD_MULT[sport][statType] ?? 1.3);
+    const sorted = [...list].sort((a, b) => b.week - a.week || b.t - a.t);
+    const cfg = propModelFor(sport, statType);
+    const chrono = [...sorted].reverse();
+    const proj = projectProp(
+      chrono.map((g) => g.value),
+      cfg,
+      floors[statType] ?? 1,
+      cfg.useMinutes && chrono.every((g) => g.min !== null) ? chrono.map((g) => g.min) : undefined
+    );
+    if (!proj) continue;
+    const n = Math.min(proj.games, RECENT_GAMES_WINDOW);
+    const stdDev = proj.sd;
 
     const team = sorted[0].team;
     const opponent = opponentThisWeek.get(team);
     const oppFactor = opponent ? (opponentFactors.get(opponent)?.get(statType) ?? 1) : 1;
-    const projection = weightedMean * oppFactor;
+    const projection = proj.mean * oppFactor;
 
-    out.set(key, { player, team, statType, average: projection, stdDev, games: n });
+    out.set(key, { player, team, statType, average: projection, stdDev, games: n, proj: { ...proj, mean: projection }, cfg });
   }
   return out;
 }
@@ -301,8 +357,11 @@ export function buildSportPropPicks(
 
     const projection = avg.average;
     const edgePct = (projection - g.line) / g.line;
-    const side: "Over" | "Under" = edgePct >= 0 ? "Over" : "Under";
-    const modelWinPct = winProbability(avg.average, avg.stdDev, g.line, side);
+    // Count distributions are skewed, so take whichever side the model rates higher.
+    const pOver =
+      avg.proj && avg.cfg ? propChance(avg.proj, g.line, avg.cfg, "Over") : winProbability(avg.average, avg.stdDev, g.line, "Over");
+    const side: "Over" | "Under" = pOver >= 0.5 ? "Over" : "Under";
+    const modelWinPct = side === "Over" ? pOver : 1 - pOver;
     if (modelWinPct < MIN_MODEL_WIN_PCT) continue;
 
     const price = side === "Over" ? g.overPrice : g.underPrice;

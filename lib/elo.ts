@@ -201,3 +201,58 @@ export function replayNflElo<G extends EloInputGame>(
  * the model's own number still drives value picks and is shown alongside.
  */
 export const NFL_MODEL_WEIGHT = 0;
+
+/**
+ * EPA rating (expected points added, from nflverse play-by-play): each
+ * team's offensive EPA minus its opponent's in each of its last 10 games,
+ * with last season's games carried in at half weight. Backtest (fit
+ * 2013-22, tested 2023-25, 932 games): Elo alone .6343 log loss / 64.1%
+ * picked; Elo + EPA .6334 / 64.8%. The closing line (.6113 / 67.6%) still
+ * beats both, so this sharpens the model-only number (and its "value"
+ * edges), not the final blended number. See scripts/backtest-nfl/README.md.
+ */
+export const NFL_EPA = { weight: 0.0814, sd: 8.41, games: 10, minGames: 3, carry: 0.5 };
+
+export interface TeamEpaGame {
+  season: number;
+  week: number;
+  team: string;
+  opponentTeam: string;
+  playEpa: number;
+}
+
+/** Net-EPA differential (home minus away) entering a game, or null when either team has under 3 games. */
+export function makeNflEpaLookup(rows: TeamEpaGame[]) {
+  const code = (t: string) => NFL_CODE[t] ?? t;
+  const key = (r: { season: number; week: number; team: string }) => `${r.season}|${r.week}|${code(r.team)}`;
+  const byKey = new Map(rows.map((r) => [key(r), r]));
+  const perTeam = new Map<string, { season: number; week: number; net: number }[]>();
+  for (const r of rows) {
+    const opp = byKey.get(`${r.season}|${r.week}|${code(r.opponentTeam)}`);
+    if (!opp) continue;
+    const t = code(r.team);
+    perTeam.set(t, [...(perTeam.get(t) ?? []), { season: r.season, week: r.week, net: r.playEpa - opp.playEpa }]);
+  }
+  for (const l of perTeam.values()) l.sort((a, b) => a.season - b.season || a.week - b.week);
+  const avg = (team: string, season: number, week: number): number | null => {
+    const prior = (perTeam.get(code(team)) ?? [])
+      .filter((x) => x.season < season || (x.season === season && x.week < week))
+      .slice(-NFL_EPA.games)
+      .map((x) => (x.season < season ? x.net * NFL_EPA.carry : x.net));
+    if (prior.length < NFL_EPA.minGames) return null;
+    return prior.reduce((a, b) => a + b, 0) / prior.length;
+  };
+  return (season: number, week: number, home: string, away: string): number | null => {
+    const h = avg(home, season, week);
+    const a = avg(away, season, week);
+    return h === null || a === null ? null : h - a;
+  };
+}
+
+/** Win-chance shift from the EPA differential, on top of Elo's chance. */
+export function nflEpaAdjPct(eloPct: number, epaDiff: number | null): number {
+  if (epaDiff === null) return 0;
+  const p = Math.min(0.995, Math.max(0.005, eloPct));
+  const z = Math.log(p / (1 - p)) + (NFL_EPA.weight * epaDiff) / NFL_EPA.sd;
+  return 1 / (1 + Math.exp(-z)) - eloPct;
+}

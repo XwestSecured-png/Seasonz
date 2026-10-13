@@ -13,8 +13,8 @@ import { currentSeasonYear } from "@/lib/sports/espn";
 import { etWeekWindow, inWindow } from "@/lib/week-window";
 import { calibrateStat } from "@/lib/prop-calibration";
 import { STAT_EXTRACTORS } from "@/lib/sports/stat-extract";
-import { STDDEV_FLOOR_ABS } from "@/lib/sports/props-model";
-import { NFL_STDDEV_FLOOR_ABS } from "@/lib/props-model";
+import { STDDEV_FLOOR_ABS, propModelFor, minutesOf } from "@/lib/sports/props-model";
+import { NFL_STDDEV_FLOOR_ABS, NFL_PROP_MODEL } from "@/lib/props-model";
 import { fetchPlayerWeekStats } from "@/lib/nflverse";
 
 export const dynamic = "force-dynamic";
@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
           .map(([player, values]) => ({ player, values: values.sort((a, b) => a.t - b.t) }))
           // Players who actually carry this stat (a QB's receiving yards aren't a market).
           .filter((x) => x.values.filter((v) => v.v > 0).length >= x.values.length * 0.5);
-        out[stat] = calibrateStat(series, NFL_STDDEV_FLOOR_ABS[stat] ?? 5);
+        out[stat] = calibrateStat(series, NFL_STDDEV_FLOOR_ABS[stat] ?? 5, NFL_PROP_MODEL[stat], stat === "Receptions");
       }
       return NextResponse.json(out);
     }
@@ -66,19 +66,24 @@ export async function GET(req: NextRequest) {
       .from(sportPlayerGameStats)
       .innerJoin(sportGames, eq(sportGames.id, sportPlayerGameStats.gameId))
       .where(and(eq(sportPlayerGameStats.sport, sport), inArray(sportPlayerGameStats.season, [season - 1, season])));
+    const only = req.nextUrl.searchParams.get("stat");
     for (const { statType, extract } of STAT_EXTRACTORS[sport]) {
-      const byPlayer = new Map<string, { t: number; v: number }[]>();
+      if (only && only !== statType) continue;
+      const byPlayer = new Map<string, { t: number; v: number; min: number | null }[]>();
       for (const r of rows) {
-        const v = extract(r.stats as Record<string, string>);
+        const st = r.stats as Record<string, string>;
+        const v = extract(st);
         if (v === null) continue;
         const list = byPlayer.get(r.player) ?? [];
-        list.push({ t: r.kickoffAt?.getTime() ?? 0, v });
+        list.push({ t: r.kickoffAt?.getTime() ?? 0, v, min: minutesOf(st) });
         byPlayer.set(r.player, list);
       }
       const series = [...byPlayer.entries()]
         .map(([player, values]) => ({ player, values: values.sort((a, b) => a.t - b.t) }))
         .filter((x) => x.values.filter((v) => v.v > 0).length >= x.values.length * 0.5);
-      out[statType] = calibrateStat(series, STDDEV_FLOOR_ABS[sport][statType] ?? 1);
+      // Yardage-type stats are continuous; everything else is a count.
+      const isCount = !/Yds/.test(statType);
+      out[statType] = calibrateStat(series, STDDEV_FLOOR_ABS[sport][statType] ?? 1, propModelFor(sport, statType), isCount);
     }
     return NextResponse.json(out);
   }

@@ -1,6 +1,9 @@
-// Game lines (moneyline, spread, total) from FanDuel and BetMGM, through
-// the same rotating odds-key pool as everything else (lib/odds-provider.ts).
-// One request per sport covers the whole board.
+// Game lines (moneyline, spread, total) from the main US books plus the
+// sharp, low-margin books (Pinnacle, BetOnline, LowVig) through the same
+// rotating odds-key pool as everything else (lib/odds-provider.ts). One
+// request per sport covers the whole board; up to 10 books cost the same as
+// one. FanDuel/BetMGM stay the books shown and linked; every book feeds the
+// market consensus the model blends with (lib/sports/game-model.ts).
 import { oddsApiGet, hasOddsApiKey } from "../odds-provider";
 import { ODDS_API_SPORT_KEY } from "./odds";
 import type { SportKey } from "./types";
@@ -20,8 +23,12 @@ export interface BoardGame {
   homeTeam: string; // full name, as the book lists it
   awayTeam: string;
   commenceTime: string;
-  books: { fanduel?: BookLine; betmgm?: BookLine };
+  books: Partial<Record<GameBook, BookLine>>;
 }
+
+export const GAME_BOOKS = ["fanduel", "betmgm", "draftkings", "williamhill_us", "pinnacle", "betonlineag", "lowvig"] as const;
+export type GameBook = (typeof GAME_BOOKS)[number];
+const isGameBook = (k: string): k is GameBook => (GAME_BOOKS as readonly string[]).includes(k);
 
 interface Raw {
   home_team: string;
@@ -36,20 +43,27 @@ interface Raw {
 export async function fetchGameOddsForSport(sport: SportKey): Promise<BoardGame[]> {
   if (!hasOddsApiKey()) return [];
   let data: Raw[];
-  try {
-    data = await oddsApiGet<Raw[]>(`/sports/${ODDS_API_SPORT_KEY[sport]}/odds`, {
+  const get = (bookmakers: string) =>
+    oddsApiGet<Raw[]>(`/sports/${ODDS_API_SPORT_KEY[sport]}/odds`, {
       regions: "us",
       markets: "h2h,spreads,totals",
-      bookmakers: "fanduel,betmgm",
+      bookmakers,
       oddsFormat: "american",
     });
+  try {
+    data = await get(GAME_BOOKS.join(","));
   } catch {
-    return [];
+    // A provider that doesn't carry one of the extra books: fall back to the two main ones.
+    try {
+      data = await get("fanduel,betmgm");
+    } catch {
+      return [];
+    }
   }
   return data.map((e) => {
     const books: BoardGame["books"] = {};
     for (const b of e.bookmakers ?? []) {
-      if (b.key !== "fanduel" && b.key !== "betmgm") continue;
+      if (!isGameBook(b.key)) continue;
       const line: BookLine = {
         mlHome: null,
         mlAway: null,

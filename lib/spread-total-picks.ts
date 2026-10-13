@@ -1,35 +1,15 @@
 import { americanToImpliedProb } from "./props-model";
+import { SIM, PhiInv } from "./sports/game-sim";
 
 // Same bar as moneyline/props (lib/game-picks.ts, lib/props-model.ts) —
 // below this, the model's lean is just noise around the book's own number.
 const MIN_EDGE_PCT = 0.06;
 
-// How many Elo rating points equal 1 point of expected scoring margin, and
-// the logistic divisor behind the win-probability formula itself — both are
-// FiveThirtyEight's own published NFL Elo methodology (confirmed: 25 Elo
-// points per point of margin, Pr(home) = 1 / (1 + 10^(-eloDiff/400)), and a
-// 65-Elo-point home-field edge — which is exactly this app's own
-// HOME_ADVANTAGE constant in lib/elo.ts, so this app's Elo model already
-// matches that calibration). Inverting the win-probability formula algebraically
-// turns games.homeWinPctPre — the model's FINAL pre-game number, with every
-// adjustment already baked in (weather, injuries, FPI/QBR, etc.) — into an
-// equivalent predicted scoring margin, rather than reverting to raw Elo.
-const ELO_POINTS_PER_MARGIN_POINT = 25;
-const ELO_LOGISTIC_DIVISOR = 400;
-
-// The observed standard deviation of NFL final-score margins, used to turn a
-// predicted margin into a probability of covering a given spread (assuming
-// margins are roughly normally distributed around the prediction) — a
-// commonly cited empirical figure (~13.45) from public NFL betting-market
-// modeling writeups. Game totals don't have an equally well-documented
-// public figure, so this app uses the SAME stdev for totals too, under the
-// explicit simplifying assumption that the two teams' scores are
-// uncorrelated (if so, Var(total) = Var(home) + Var(away) = Var(margin)
-// exactly, since Var(margin) = Var(home) + Var(away) - 2*Cov and
-// Var(total) = Var(home) + Var(away) + 2*Cov collapse to the same value
-// when Cov ≈ 0). Treat totalAiEdgePct as a rougher estimate than the
-// spread/moneyline edges for that reason.
-const MARGIN_STDEV = 13.45;
+// Spread of final margins and totals around expectation, measured on the
+// 2024-25 NFL closing lines (scripts/backtest-game-model/README.md): margin
+// 12.2 points, total 13.0 points. (Previously one assumed 13.45 for both.)
+const MARGIN_STDEV = SIM.nfl.sdMargin;
+const TOTAL_STDEV = SIM.nfl.sdTotal;
 
 /** Standard normal CDF via the Abramowitz & Stegun 7.1.26 approximation (accurate to ~1e-7) — a standard numerical method, not a sports-specific figure. */
 function normalCdf(z: number): number {
@@ -44,11 +24,15 @@ function normalCdf(z: number): number {
   return 0.5 * (1 + sign * y);
 }
 
-/** Converts the model's final pre-game home win% into an equivalent predicted home-perspective scoring margin (positive = home favored). */
+/**
+ * Converts the model's final pre-game home win% into the expected home
+ * scoring margin that gives exactly that win chance under the game
+ * simulation's margin distribution (lib/sports/game-sim.ts: normal, with
+ * the spread measured on 2024-25 closing lines), so the moneyline, spread
+ * and total views of a game always agree with each other.
+ */
 export function predictedMarginFromWinPct(homeWinPctPre: number): number {
-  const clamped = Math.min(0.999, Math.max(0.001, homeWinPctPre));
-  const eloDiff = ELO_LOGISTIC_DIVISOR * Math.log10(clamped / (1 - clamped));
-  return eloDiff / ELO_POINTS_PER_MARGIN_POINT;
+  return SIM.nfl.sdMargin * PhiInv(homeWinPctPre);
 }
 
 export interface SpreadEdge {
@@ -103,7 +87,7 @@ export function computeTotalEdge(
   overPriceAmerican: number,
   underPriceAmerican: number
 ): TotalEdge {
-  const modelProbOver = 1 - normalCdf((totalLine - predictedTotal) / MARGIN_STDEV);
+  const modelProbOver = 1 - normalCdf((totalLine - predictedTotal) / TOTAL_STDEV);
   const impliedOver = americanToImpliedProb(overPriceAmerican);
   const impliedUnder = americanToImpliedProb(underPriceAmerican);
   const overEdge = modelProbOver - impliedOver;

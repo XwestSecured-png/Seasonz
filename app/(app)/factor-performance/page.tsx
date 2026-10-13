@@ -25,6 +25,7 @@ const FACTOR_LABELS: Record<string, string> = {
   INJURY: "Injury report",
   NGS_SEPARATION: "Next Gen Stats: receiver separation",
   PRESSURE: "Pass-rush pressure (PFR)",
+  EPA: "EPA per play (nflverse)",
 };
 
 // Below this many graded predictions, a hit rate is still mostly noise —

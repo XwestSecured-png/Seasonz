@@ -9,6 +9,7 @@
 // fallback is purely additive: if SPORTSGAMEODDS_API_KEY isn't set either,
 // behavior is unchanged from before this provider existed (the original
 // error is thrown, and sync.ts's existing stage-skip logic handles it).
+import { consensusHome } from "./sports/game-model";
 import {
   hasSportsGameOddsKey,
   fetchSgoEvents,
@@ -78,6 +79,8 @@ export interface MoneylineOdds {
   book: string;
   homePriceAmerican: number;
   awayPriceAmerican: number;
+  /** Market consensus home chance across every book (no-vig, sharp books double); see lib/sports/game-model.ts. */
+  consensusHomePct?: number | null;
 }
 
 export interface SpreadOdds {
@@ -108,6 +111,7 @@ interface RawOddsListResponse {
   home_team: string;
   away_team: string;
   bookmakers?: {
+    key?: string;
     title: string;
     markets?: {
       key: string;
@@ -115,6 +119,10 @@ interface RawOddsListResponse {
     }[];
   }[];
 }
+
+// Main US books plus the sharp, low-margin ones (Pinnacle, BetOnline,
+// LowVig) for the market consensus. Ten books cost the same as one region.
+const NFL_GAME_BOOKS = "draftkings,fanduel,betmgm,williamhill_us,espnbet,betrivers,pinnacle,betonlineag,lowvig,bovada";
 
 // Preferred book when more than one has a line posted — keeps the stored
 // line consistent week to week rather than picking whichever book happened
@@ -131,11 +139,15 @@ const PREFERRED_BOOK = "DraftKings";
 export async function fetchGameOdds(): Promise<GameOdds> {
   if (hasOddsApiKey()) {
     try {
-      const data = await oddsApiGet<RawOddsListResponse[]>(`/sports/${SPORT}/odds`, {
-        regions: "us",
-        markets: "h2h,spreads,totals",
-        oddsFormat: "american",
-      });
+      const get = (extra: Record<string, string>) =>
+        oddsApiGet<RawOddsListResponse[]>(`/sports/${SPORT}/odds`, {
+          regions: "us",
+          markets: "h2h,spreads,totals",
+          oddsFormat: "american",
+          ...extra,
+        });
+      // A provider that rejects the book list falls back to every US book.
+      const data = await get({ bookmakers: NFL_GAME_BOOKS }).catch(() => get({}));
 
       const moneylines: MoneylineOdds[] = [];
       const spreads: SpreadOdds[] = [];
@@ -150,12 +162,20 @@ export async function fetchGameOdds(): Promise<GameOdds> {
         const homeMl = h2h?.outcomes?.find((o) => o.name === event.home_team);
         const awayMl = h2h?.outcomes?.find((o) => o.name === event.away_team);
         if (homeMl && awayMl) {
+          const perBook: Record<string, { mlHome: number | null; mlAway: number | null }> = {};
+          for (const b of books) {
+            const m = b.markets?.find((x) => x.key === "h2h");
+            const h = m?.outcomes?.find((o) => o.name === event.home_team)?.price ?? null;
+            const a = m?.outcomes?.find((o) => o.name === event.away_team)?.price ?? null;
+            perBook[b.key ?? b.title.toLowerCase()] = { mlHome: h, mlAway: a };
+          }
           moneylines.push({
             homeTeam: event.home_team,
             awayTeam: event.away_team,
             book: chosen.title,
             homePriceAmerican: homeMl.price,
             awayPriceAmerican: awayMl.price,
+            consensusHomePct: consensusHome(perBook)?.pct ?? null,
           });
         }
 

@@ -2,6 +2,15 @@
 
 import { useMemo, useState } from "react";
 import { FOOTBALL_ALL_MARKETS, propLegLabel } from "@/lib/football-markets";
+import type { SgpLeg } from "@/lib/sgp";
+
+/** What the same-game math needs to know about a picked leg. */
+export type LegMeta = Omit<SgpLeg, "prob"> & { fairPrice: boolean };
+export interface PickedLeg {
+  label: string;
+  priceAmerican: string;
+  meta?: LegMeta;
+}
 
 export interface LegPickerGame {
   id: number;
@@ -83,7 +92,7 @@ export function LegPicker({
 }: {
   games: LegPickerGame[];
   propOptions: LegPickerProp[];
-  onChange: (leg: { label: string; priceAmerican: string }) => void;
+  onChange: (leg: PickedLeg) => void;
   onUseManual: () => void;
 }) {
   const teamOptions = useMemo(() => {
@@ -191,15 +200,30 @@ export function LegPicker({
       propOptions.filter((p) => p.team === teamEntry?.team && p.player === player && p.statType === st)
     )[0];
     if (match) {
-      onChange({ label: propLegLabel(player, match.statType, match.side, match.line), priceAmerican: String(match.priceAmerican) });
+      onChange({ label: propLegLabel(player, match.statType, match.side, match.line), priceAmerican: String(match.priceAmerican), meta: propMeta(match) });
     }
   };
+
+  const propMeta = (c: LegPickerProp): LegMeta | undefined =>
+    game && teamEntry
+      ? {
+          gameKey: String(game.id),
+          kind: "prop",
+          team: teamEntry.team,
+          player,
+          statType: c.statType,
+          side: c.side,
+          homeTeam: game.homeTeam,
+          awayTeam: game.awayTeam,
+          fairPrice: isModelPrice(c),
+        }
+      : undefined;
 
   const chooseCombo = (idx: number) => {
     setComboIdx(idx);
     const c = combos[idx];
     if (c) {
-      onChange({ label: propLegLabel(player, c.statType, c.side, c.line), priceAmerican: String(c.priceAmerican) });
+      onChange({ label: propLegLabel(player, c.statType, c.side, c.line), priceAmerican: String(c.priceAmerican), meta: propMeta(c) });
     }
   };
 
@@ -213,11 +237,16 @@ export function LegPicker({
     setSide(s);
     if (prefill && game) {
       const price = prefill.priceFor(s);
-      if (price !== null && price !== undefined) {
-        onChange({ label: prefill.labelFor(s), priceAmerican: String(price) });
-      } else {
-        onChange({ label: prefill.labelFor(s), priceAmerican: "" });
-      }
+      const meta: LegMeta = {
+        gameKey: String(game.id),
+        kind: market === "ML" ? "ml" : market === "SPREAD" ? "spread" : "total",
+        team: market === "TOTAL" ? undefined : s,
+        side: market === "TOTAL" ? (s === "OVER" ? "Over" : "Under") : undefined,
+        homeTeam: game.homeTeam,
+        awayTeam: game.awayTeam,
+        fairPrice: false,
+      };
+      onChange({ label: prefill.labelFor(s), priceAmerican: price !== null && price !== undefined ? String(price) : "", meta });
     }
   };
 

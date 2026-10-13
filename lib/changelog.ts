@@ -33,6 +33,65 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.7.0",
+    date: "2026-10-13",
+    title: "Sharper lines, smarter props and same-game parlay odds",
+    summary:
+      "The model now reads the market from every major book (including sharp ones like Pinnacle), simulates each game's final score, prices player props with better math, and shows how same-game parlay legs move together. Each change was tested on past seasons first.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Props: better math for every stat",
+        whatChanged:
+          "Rebounds, assists, threes, receptions and other count stats now use a counting model instead of a bell curve. Projections lean on a player's longer track record, not just his last 5 games, and basketball projections use his scoring rate per minute times his expected minutes.",
+        whatItMeans:
+          "In a replay of every NBA, WNBA and NFL game of the last few seasons, prop chances were clearly more accurate for every stat tested. When the model says 80%, those props hit about 80% of the time.",
+        href: "/props",
+      },
+      {
+        kind: "new",
+        title: "Same-game parlay odds",
+        whatChanged:
+          "When two or more legs in the parlay builder come from the same game, it shows the real chance all of them hit, using how those stats actually move together (for example, a QB's passing yards and his top receiver's yards).",
+        whatItMeans:
+          "Legs that tend to hit together are more likely to cash than plain multiplication says, and legs that work against each other are less likely. Books price same-game parlays this way, so you can compare their payout with the real chance.",
+        href: "/parlays",
+      },
+      {
+        kind: "improved",
+        title: "Every book's line, not just one",
+        whatChanged:
+          "The betting line the model blends with is now the consensus of FanDuel, BetMGM, DraftKings, Caesars and the sharp books (Pinnacle, BetOnline, LowVig, counted double), with the book's margin removed by a better method (Shin's).",
+        whatItMeans:
+          "Sharp books set lines for professional bettors, so the consensus is a more accurate starting point. The better margin removal was more accurate on 10,000+ past games, mostly for big favorites and underdogs.",
+      },
+      {
+        kind: "new",
+        title: "Projected score, spread and total for every game",
+        whatChanged:
+          "Each game's Why panel now shows a projected final score, a fair spread, and the chance each side covers the book's spread and goes over the total.",
+        whatItMeans:
+          "The win chance, spread and total now all come from one consistent picture of the game. Totals follow the book's own price: our own total didn't beat it in testing, so we don't claim an edge there.",
+      },
+      {
+        kind: "improved",
+        title: "NFL: team efficiency (EPA) added",
+        whatChanged:
+          "The NFL model now includes each team's expected points added per play over its last 10 games, on top of its team rating.",
+        whatItMeans:
+          "On 2023-25 games it picked more winners (64.8% vs 64.1%). The betting line is still the strongest single predictor, so this mainly sharpens the model's own view and its value edges.",
+      },
+      {
+        kind: "improved",
+        title: "Basketball injuries weighted from real results",
+        whatChanged:
+          "Missing players are still valued by their scoring, but NBA absences now move a team's chance about a third as much as before.",
+        whatItMeans:
+          "Replaying the 2025-26 NBA season showed teammates absorb most of a missing scorer's points, so the old adjustment was too big. A plus-minus rating was also tested and didn't add anything.",
+      },
+    ],
+  },
+  {
     version: "1.6.0",
     date: "2026-10-13",
     title: "More accurate NFL picks and honest prop percentages",

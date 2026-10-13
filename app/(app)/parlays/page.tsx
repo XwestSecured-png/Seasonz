@@ -303,6 +303,7 @@ export default async function ParlaysPage({ searchParams }: { searchParams: Prom
           games={builderGames}
           propOptions={builderProps}
           otherSportsPicks={otherSportsPicks}
+          sgpSport={filter === "nba" || filter === "wnba" || filter === "ncaab" ? "basketball" : filter === "nhl" || filter === "mlb" ? "other" : "football"}
         />
         {myParlays.length === 0 ? (
           <p className="text-sm text-neutral-500">

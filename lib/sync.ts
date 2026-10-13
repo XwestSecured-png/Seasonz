@@ -21,7 +21,7 @@ import {
   fetchAllRegSeasonGames,
   fetchTeamWeekStats,
 } from "./nflverse";
-import { replayNflElo, NFL_MODEL_WEIGHT, type EloGameResult } from "./elo";
+import { replayNflElo, NFL_MODEL_WEIGHT, makeNflEpaLookup, nflEpaAdjPct, type EloGameResult } from "./elo";
 import { noVigHome, logit, sigmoid } from "./sports/game-model";
 import type { ScheduleGame } from "./nflverse";
 import { computeInjuryImpact, type InjuryImpactRow } from "./injury-impact";
@@ -171,6 +171,7 @@ async function applyNflLineBlend(season: number): Promise<{ blended: number; loc
       homeWinPctPre: games.homeWinPctPre,
       mlHome: games.moneylineHomeOdds,
       mlAway: games.moneylineAwayOdds,
+      consensus: games.marketPct,
     })
     .from(games)
     .where(and(eq(games.season, season), eq(games.isFinal, false), gt(games.kickoffAt, now)));
@@ -178,7 +179,8 @@ async function applyNflLineBlend(season: number): Promise<{ blended: number; loc
   for (const r of rows) {
     const model = r.modelOnlyPct ?? r.homeWinPctPre;
     if (model === null) continue;
-    const market = noVigHome(r.mlHome, r.mlAway);
+    // The every-book consensus saved by the gameOdds stage, else the one book's line.
+    const market = r.consensus ?? noVigHome(r.mlHome, r.mlAway);
     const final =
       market === null ? model : sigmoid(NFL_MODEL_WEIGHT * logit(model) + (1 - NFL_MODEL_WEIGHT) * logit(market));
     if (market !== null) blended++;
@@ -349,12 +351,15 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
       // needs the full historical record, not just this season; the six
       // team-factor adjustments need the team-week stats file; injuries need
       // this week's report — all free nflverse data, no odds key required.
-      const [playerStats, historicalGames, teamWeekStats, injuries] = await Promise.all([
+      const [playerStats, historicalGames, teamWeekStats, injuries, lastSeasonTeamWeeks] = await Promise.all([
         fetchPlayerWeekStats(season),
         fetchAllRegSeasonGames(),
         fetchTeamWeekStats(season),
         fetchInjuries(season),
+        fetchTeamWeekStats(season - 1).catch(() => []),
       ]);
+      const epaDiffFor = makeNflEpaLookup([...lastSeasonTeamWeeks, ...teamWeekStats]);
+      let epaAdjusted = 0;
       // Ratings carry over from the last three seasons (lib/elo.ts NFL_ELO).
       const { results, finalRatings } = replayNflElo(historicalGames, schedule);
       eloResults = results;
@@ -482,6 +487,11 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         if (factors.totalAdjPct !== 0) factorsAdjusted++;
         if (espn.totalAdjPct !== 0) espnAdjusted++;
         if (injuryAdjPct !== 0) injuryAdjusted++;
+        const epaAdjPct = nflEpaAdjPct(
+          r.homeWinProbPre,
+          epaDiffFor(r.game.season, r.game.week, r.game.homeTeam, r.game.awayTeam)
+        );
+        if (epaAdjPct !== 0) epaAdjusted++;
 
         const finalHomeWinPct = Math.max(
           0.02,
@@ -494,7 +504,8 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
               factors.totalAdjPct +
               espn.totalAdjPct +
               ngs.totalAdjPct +
-              injuryAdjPct
+              injuryAdjPct +
+              epaAdjPct
           )
         );
         finalHomeWinPctByGame.set(
@@ -558,6 +569,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
             { factor: "INJURY", adjPct: injuryAdjPct },
             { factor: "NGS_SEPARATION", adjPct: ngs.ngsSeparationAdjPct },
             { factor: "PRESSURE", adjPct: ngs.pressureAdjPct },
+            { factor: "EPA", adjPct: epaAdjPct },
           ];
           for (const nf of namedFactors) {
             if (nf.adjPct === 0) continue;
@@ -614,7 +626,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
           : `${espnAdjusted} ESPN-adjusted (FPI for ${espnFpiMap.size} team(s)${qbrFailures > 0 ? `, QBR fetch failed for ${qbrFailures} week(s)` : ""}).`;
 
       const blend = await applyNflLineBlend(season);
-      return `Line blend: ${blend.blended} of ${blend.locked} upcoming game(s) had a line. Elo replayed: ${eloResults.length} game(s), ${finalRatings.size} team(s) rated (${weatherAdjusted} weather-adjusted, ${restTravelAdjusted} rest/travel-adjusted, ${refAdjusted} referee-adjusted, ${factorsAdjusted} team-factor-adjusted, ${injuryAdjusted} injury-adjusted, ${ngsAdjusted} Next Gen Stats/pressure-adjusted${ngsError ? ` — NGS unavailable: ${ngsError}` : ""}). ${espnDetail} ${snapshotsWritten} factor snapshot(s) recorded for calibration tracking.`;
+      return `Line blend: ${blend.blended} of ${blend.locked} upcoming game(s) had a line. Elo replayed: ${eloResults.length} game(s), ${finalRatings.size} team(s) rated (${weatherAdjusted} weather-adjusted, ${restTravelAdjusted} rest/travel-adjusted, ${refAdjusted} referee-adjusted, ${factorsAdjusted} team-factor-adjusted, ${injuryAdjusted} injury-adjusted, ${epaAdjusted} EPA-adjusted, ${ngsAdjusted} Next Gen Stats/pressure-adjusted${ngsError ? ` — NGS unavailable: ${ngsError}` : ""}). ${espnDetail} ${snapshotsWritten} factor snapshot(s) recorded for calibration tracking.`;
     })
   );
 
@@ -1000,6 +1012,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
               moneylineHomeOdds: line.homePriceAmerican,
               moneylineAwayOdds: line.awayPriceAmerican,
               moneylineBook: line.book,
+              marketPct: line.consensusHomePct ?? noVigHome(line.homePriceAmerican, line.awayPriceAmerican),
               aiEdgePct: mlEdgePct,
               aiPickTeam,
               // Set once, on whichever sync run first sees a line for this

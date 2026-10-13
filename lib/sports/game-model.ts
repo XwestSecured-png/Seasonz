@@ -40,9 +40,14 @@ export interface GameModelParams {
 // scripts/backtest-game-model:
 export const GAME_MODEL: Record<SportKey, GameModelParams> = {
   // 2025-26: Elo .6005 / 67.9% -> + form .5983 / 68.3% -> blended with the line .5761 / 68.5%
-  nba: { formN: 20, form: [0.0481, 0.761, 0.2239], formSd: 9.5589, modelWeight: 0.06, logitPerPoint: 0.115, replacement: 8, injuryCap: 0.1 },
+  // Injuries (2025-26, 1,312 games, absences of regulars valued by points per game above 8):
+  // form-only .6103 -> + absences .6041. Fitted weight is 1/3 of the old one (teammates
+  // absorb most of a missing scorer's points). A plus-minus "impact" rating was also
+  // tested and added nothing (.6102), so scoring stays the measure.
+  nba: { formN: 20, form: [0.0481, 0.761, 0.2239], formSd: 9.5589, modelWeight: 0.06, logitPerPoint: 0.037, replacement: 8, injuryCap: 0.1 },
   // 2026: .5949 / 68.0% -> .592 / 68.3% -> blended .5794 / 70.0% (line alone .5820)
-  wnba: { formN: 20, form: [0.0014, 0.8812, 0.1594], formSd: 9.3908, modelWeight: 0.17, logitPerPoint: 0.115, replacement: 6, injuryCap: 0.1 },
+  // Injuries (2026, 335 games): + absences .6016 -> .5970; fitted weight 0.073 per point.
+  wnba: { formN: 20, form: [0.0014, 0.8812, 0.1594], formSd: 9.3908, modelWeight: 0.17, logitPerPoint: 0.073, replacement: 8, injuryCap: 0.1 },
   // 2025-26: Elo .6952 / 53.0% -> + backup-goalie flag .6928 / 54.6%; games with a line: line alone .6854 / 54.7% -> blended .6834 / 55.2%
   nhl: { formN: 20, form: [0.0104, 1.1077, 0], formSd: 1, starter: [0.0104, 1.1077, 0, 0, 0.1654], starterSd: 1, modelWeight: 0.17, logitPerPoint: 0.6, replacement: 0.35, injuryCap: 0.06 },
   // 2026: Elo .6846 / 56.1% -> + form & starting pitchers .6833 / 56.5%; games with a line: line alone .6828 / 55.6% -> blended .6822 / 56.5%
@@ -62,13 +67,74 @@ export function impliedProb(american: number): number {
   return american < 0 ? -american / (-american + 100) : 100 / (american + 100);
 }
 
+/**
+ * Shin's method for removing the book's margin. Books build more of their
+ * margin into longshots (bettors overpay for them), so instead of shaving
+ * every side by the same share, Shin's model takes a bigger cut from the
+ * underdog. On 10,000+ closing lines (2024-26) it scored better than the
+ * plain proportional method in the NBA, NFL and college football and tied
+ * in MLB/NHL — see scripts/backtest-game-model/README.md.
+ */
+export function shinNoVig(prices: number[]): number[] | null {
+  const q = prices.map(impliedProb);
+  if (q.some((x) => !(x > 0 && x < 1))) return null;
+  const B = q.reduce((a, b) => a + b, 0);
+  if (B <= 1) return q.map((x) => x / B); // no margin to remove
+  const probs = (z: number) => q.map((qi) => (Math.sqrt(z * z + 4 * (1 - z) * (qi * qi) / B) - z) / (2 * (1 - z)));
+  // Sum of probabilities falls as z rises; bisect for the z where it is 1.
+  let lo = 0;
+  let hi = 0.5;
+  for (let i = 0; i < 50; i++) {
+    const z = (lo + hi) / 2;
+    const s = probs(z).reduce((a, b) => a + b, 0);
+    if (s > 1) lo = z;
+    else hi = z;
+  }
+  const p = probs((lo + hi) / 2);
+  const s = p.reduce((a, b) => a + b, 0);
+  return p.map((x) => x / s);
+}
+
+/** First side's chance from a two-way price pair (moneyline, spread or total), margin removed with Shin's method. */
+export function noVigPair(a: number | null | undefined, b: number | null | undefined): number | null {
+  if (a == null || b == null || a === 0 || b === 0) return null;
+  return shinNoVig([a, b])?.[0] ?? null;
+}
+
 /** Home team's chance from a two-way moneyline, with the vig removed. */
 export function noVigHome(mlHome: number | null | undefined, mlAway: number | null | undefined): number | null {
-  if (mlHome == null || mlAway == null || mlHome === 0 || mlAway === 0) return null;
-  const h = impliedProb(mlHome);
-  const a = impliedProb(mlAway);
-  if (!(h > 0 && a > 0)) return null;
-  return h / (h + a);
+  return noVigPair(mlHome, mlAway);
+}
+
+/** Pinnacle (and other low-margin books) set lines for professional bettors, so they count double in the consensus. */
+export const SHARP_BOOKS = new Set(["pinnacle", "betonlineag", "lowvig"]);
+
+export interface Consensus {
+  pct: number;
+  books: string[];
+  sharp: boolean;
+}
+
+/**
+ * The market's chance for the home team: each book's no-vig chance,
+ * averaged in log-odds with the sharp books weighted double. One book's
+ * stale or shaded price moves the consensus far less than it moves that
+ * book alone.
+ */
+export function consensusHome(books: Record<string, { mlHome: number | null; mlAway: number | null } | undefined>): Consensus | null {
+  let sw = 0;
+  let sz = 0;
+  const used: string[] = [];
+  for (const [key, b] of Object.entries(books)) {
+    const p = b ? noVigHome(b.mlHome, b.mlAway) : null;
+    if (p == null) continue;
+    const w = SHARP_BOOKS.has(key) ? 2 : 1;
+    sw += w;
+    sz += w * logit(p);
+    used.push(key);
+  }
+  if (sw === 0) return null;
+  return { pct: sigmoid(sz / sw), books: used, sharp: used.some((k) => SHARP_BOOKS.has(k)) };
 }
 
 export interface ModelInputs {

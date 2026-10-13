@@ -879,10 +879,10 @@ export async function runSportSync(
           .filter((r) => r.season === year - 1 && (currentCount.get(r.player) ?? 0) < 3)
           .sort((a, b) => (a.kickoffAt?.getTime() ?? 0) - (b.kickoffAt?.getTime() ?? 0));
         const statRows = [
-          ...prior.map((r, i) => ({ player: r.player, team: r.team, week: i - prior.length - 1000, stats: r.stats as Record<string, string> })),
+          ...prior.map((r, i) => ({ player: r.player, team: r.team, week: i - prior.length - 1000, t: r.kickoffAt?.getTime() ?? 0, stats: r.stats as Record<string, string> })),
           ...rawStatRows
             .filter((r) => r.season === year)
-            .map((r) => ({ player: r.player, team: r.team, week: r.week, stats: r.stats as Record<string, string> })),
+            .map((r) => ({ player: r.player, team: r.team, week: r.week, t: r.kickoffAt?.getTime() ?? 0, stats: r.stats as Record<string, string> })),
         ];
 
         const averages = computeSportSeasonAverages(sport, statRows, schedule, week);

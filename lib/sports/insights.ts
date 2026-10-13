@@ -2,6 +2,7 @@
 // Everything here is computed from synced data: ESPN schedules, scores, box
 // scores, injury report and officiating crews, plus FanDuel and BetMGM
 // lines. No columnist or expert opinion is used anywhere.
+import type { GameSim } from "./game-sim";
 import { db } from "@/db";
 import { sportGames, sportInjuryReports, sportPlayerGameStats, sportTeamGameStats } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
@@ -76,6 +77,7 @@ interface ModelExtra {
   marketSource?: string | null;
   marketShift?: number;
   calibrationShift?: number;
+  sim?: GameSim;
 }
 interface Extra {
   officials?: string[];
@@ -268,7 +270,7 @@ export async function getGameInsights(sport: SportKey, upcoming: GameRow[]): Pro
         `Betting line (${m.marketSource}): ${pick} ${pctStr(book)} after removing the book's margin. Our model alone: ${pctStr(mine)}. The final number blends both — the line gets most of the weight because in testing it was the most accurate single predictor in every sport.`
       );
     } else if (m && m.modelOnlyPct != null) {
-      reasons.push("No betting line posted yet, so this is the model alone. It will blend in FanDuel/BetMGM/ESPN lines once they're up.");
+      reasons.push("No betting line posted yet, so this is the model alone. It will blend in the books' lines once they're up.");
     }
     if (m?.calibrationShift && Math.abs(m.calibrationShift) >= 0.005) {
       reasons.push(`Calibration: this season's graded games show the model running ${m.calibrationShift * sideSign > 0 ? "a bit cautious" : "a bit overconfident"}, so it's adjusted ${signed(m.calibrationShift * 100 * sideSign)} points.`);
@@ -285,6 +287,21 @@ export async function getGameInsights(sport: SportKey, upcoming: GameRow[]): Pro
       }
     }
     reasons.push(`Final model chance: ${pick} ${pctStr(pickPct)}.`);
+    const sim = m?.sim;
+    if (sim) {
+      const fair = sim.fairSpreadHome;
+      const fairTxt = fair === 0 ? "pick'em" : fair < 0 ? `${g.homeTeam} -${Math.abs(fair)}` : `${g.awayTeam} -${fair}`;
+      let line = `Score simulation: projected ${g.awayTeam} ${sim.projAway} – ${g.homeTeam} ${sim.projHome} (fair line ${fairTxt}).`;
+      if (sim.spreadHome != null && sim.coverHome != null) {
+        const homeSide = homePick;
+        const sp = homeSide ? sim.spreadHome : -sim.spreadHome;
+        const c = homeSide ? sim.coverHome : 1 - sim.coverHome;
+        const b = sim.bookCoverHome == null ? null : homeSide ? sim.bookCoverHome : 1 - sim.bookCoverHome;
+        line += ` ${pick} ${sp > 0 ? "+" : ""}${sp} covers ${pctStr(c)}${b != null ? ` (book's price: ${pctStr(b)})` : ""}.`;
+      }
+      if (sim.total != null && sim.over != null) line += ` Total ${sim.total}: over ${pctStr(sim.over)} — totals follow the book's price, since our own total didn't beat it in testing.`;
+      reasons.push(line);
+    }
 
     // --- Team stat comparison (this season; last season until 5 games are in)
     const compare: CompareRow[] = [];
@@ -417,9 +434,17 @@ export async function getGameInsights(sport: SportKey, upcoming: GameRow[]): Pro
     };
     const schedule = [sched(g.awayTeam, g.restDaysAway), sched(g.homeTeam, g.restDaysHome)];
 
-    // FanDuel / BetMGM
+    // Every book with a line: the main US books, then the sharp ones.
     const oddsRows: Insight["odds"] = [];
-    for (const [key, label] of [["fanduel", "FanDuel"], ["betmgm", "BetMGM"]] as const) {
+    for (const [key, label] of [
+      ["fanduel", "FanDuel"],
+      ["betmgm", "BetMGM"],
+      ["draftkings", "DraftKings"],
+      ["williamhill_us", "Caesars"],
+      ["pinnacle", "Pinnacle (sharp)"],
+      ["betonlineag", "BetOnline (sharp)"],
+      ["lowvig", "LowVig (sharp)"],
+    ] as const) {
       const b = ex.odds?.[key];
       if (!b) continue;
       const ml = homePick ? b.mlHome : b.mlAway;

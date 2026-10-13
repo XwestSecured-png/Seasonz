@@ -289,6 +289,8 @@ export interface TeamWeekStats {
   team: string;
   opponentTeam: string;
   offEpa: number; // this team's own offensive output that week (passing+rushing+receiving EPA)
+  /** Offensive EPA counted once per play (passing + rushing; receiving EPA repeats the passing plays). */
+  playEpa: number;
   giveaways: number; // interceptions thrown + fumbles lost
   takeaways: number; // interceptions + opponent fumbles recovered
   penalties: number;
@@ -308,6 +310,7 @@ export async function fetchTeamWeekStats(season: number): Promise<TeamWeekStats[
       team: r.team,
       opponentTeam: r.opponent_team,
       offEpa: Number(r.passing_epa || 0) + Number(r.rushing_epa || 0) + Number(r.receiving_epa || 0),
+      playEpa: Number(r.passing_epa || 0) + Number(r.rushing_epa || 0),
       giveaways: Number(r.passing_interceptions || 0) + Number(r.fumbles_lost_total || 0),
       takeaways: Number(r.def_interceptions || 0) + Number(r.fumble_recovery_opp || 0),
       penalties: Number(r.penalties || 0),
