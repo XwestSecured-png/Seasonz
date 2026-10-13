@@ -61,7 +61,7 @@ export function currentSeasonYear(sport: SportKey): number {
 
 /** Every team in this sport/league, with ESPN's internal numeric team id — what the schedule endpoint below keys on. */
 export async function fetchTeams(def: SportDef): Promise<GenericTeam[]> {
-  const url = `${ESPN_BASE}/${def.espnSport}/${def.espnLeague}/teams?limit=500`;
+  const url = `${ESPN_BASE}/${def.espnSport}/${def.espnLeague}/teams?limit=2000`;
   const data = await fetchJson(url);
   const out: GenericTeam[] = [];
 
