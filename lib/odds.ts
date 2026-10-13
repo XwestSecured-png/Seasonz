@@ -127,6 +127,8 @@ interface RawOddsListResponse {
 // LowVig) for the market consensus. Ten books cost the same as one region.
 const NFL_GAME_BOOKS = GAME_BOOKS.join(",");
 
+const SHARP = new Set(["pinnacle", "betonlineag", "lowvig"]);
+
 // Preferred book when more than one has a line posted — keeps the stored
 // line consistent week to week rather than picking whichever book happened
 // to respond first.
@@ -159,7 +161,20 @@ export async function fetchGameOdds(): Promise<GameOdds> {
 
       for (const event of data) {
         const books = event.bookmakers ?? [];
-        const chosen = books.find((b) => b.title === PREFERRED_BOOK) ?? books[0];
+        // Preferred book first, then the other main books, then anything —
+        // but only a book that actually posted a moneyline for both sides
+        // (some feeds list a book with only spreads/totals).
+        const hasMl = (b: (typeof books)[number]) => {
+          const m = b.markets?.find((x) => x.key === "h2h");
+          return !!m?.outcomes?.some((o) => o.name === event.home_team) && !!m?.outcomes?.some((o) => o.name === event.away_team);
+        };
+        const order = [PREFERRED_BOOK, "FanDuel", "BetMGM", "Caesars"];
+        const ranked = [...books].filter(hasMl).sort((x, y) => {
+          const rx = order.indexOf(x.title);
+          const ry = order.indexOf(y.title);
+          return (rx === -1 ? 99 : rx) - (ry === -1 ? 99 : ry);
+        });
+        const chosen = ranked.find((b) => !SHARP.has(b.key ?? "")) ?? ranked[0];
         if (!chosen) continue;
 
         const h2h = chosen.markets?.find((m) => m.key === "h2h");
