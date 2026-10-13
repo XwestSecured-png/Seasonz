@@ -40,6 +40,39 @@ interface Raw {
   }[];
 }
 
+type Outcome = { name: string; price: number; point?: number };
+const impl = (a: number) => (a < 0 ? -a / (-a + 100) : 100 / (a + 100));
+
+/**
+ * Some feeds list alternate spreads in the same market as the main one.
+ * The main line is the matching pair (home -x / away +x) priced closest
+ * to even, which is how books set it.
+ */
+export function mainSpread(outs: Outcome[], home: string, away: string): { home: number; homePrice: number; awayPrice: number } | null {
+  let best: { home: number; homePrice: number; awayPrice: number; gap: number } | null = null;
+  for (const h of outs) {
+    if (h.name !== home || h.point == null) continue;
+    const a = outs.find((o) => o.name === away && o.point != null && Math.abs(o.point + h.point!) < 1e-9);
+    if (!a) continue;
+    const gap = Math.abs(impl(h.price) - impl(a.price));
+    if (!best || gap < best.gap) best = { home: h.point, homePrice: h.price, awayPrice: a.price, gap };
+  }
+  return best && { home: best.home, homePrice: best.homePrice, awayPrice: best.awayPrice };
+}
+
+/** Same for totals: the Over/Under pair at one number priced closest to even. */
+export function mainTotal(outs: Outcome[]): { line: number; overPrice: number; underPrice: number } | null {
+  let best: { line: number; overPrice: number; underPrice: number; gap: number } | null = null;
+  for (const o of outs) {
+    if (o.name !== "Over" || o.point == null) continue;
+    const u = outs.find((x) => x.name === "Under" && x.point === o.point);
+    if (!u) continue;
+    const gap = Math.abs(impl(o.price) - impl(u.price));
+    if (!best || gap < best.gap) best = { line: o.point, overPrice: o.price, underPrice: u.price, gap };
+  }
+  return best && { line: best.line, overPrice: best.overPrice, underPrice: best.underPrice };
+}
+
 export async function fetchGameOddsForSport(sport: SportKey): Promise<BoardGame[]> {
   if (!hasOddsApiKey()) return [];
   let data: Raw[];
@@ -75,21 +108,25 @@ export async function fetchGameOddsForSport(sport: SportKey): Promise<BoardGame[
         underPrice: null,
       };
       for (const m of b.markets ?? []) {
-        for (const o of m.outcomes ?? []) {
-          const isHome = o.name === e.home_team;
-          if (m.key === "h2h") {
-            if (isHome) line.mlHome = o.price;
+        const outs = m.outcomes ?? [];
+        if (m.key === "h2h") {
+          for (const o of outs) {
+            if (o.name === e.home_team) line.mlHome = o.price;
             else if (o.name === e.away_team) line.mlAway = o.price;
-          } else if (m.key === "spreads") {
-            if (isHome) {
-              line.spreadHome = o.point ?? null;
-              line.spreadHomePrice = o.price;
-            } else if (o.name === e.away_team) line.spreadAwayPrice = o.price;
-          } else if (m.key === "totals") {
-            if (o.name === "Over") {
-              line.total = o.point ?? null;
-              line.overPrice = o.price;
-            } else if (o.name === "Under") line.underPrice = o.price;
+          }
+        } else if (m.key === "spreads") {
+          const sp = mainSpread(outs, e.home_team, e.away_team);
+          if (sp) {
+            line.spreadHome = sp.home;
+            line.spreadHomePrice = sp.homePrice;
+            line.spreadAwayPrice = sp.awayPrice;
+          }
+        } else if (m.key === "totals") {
+          const t = mainTotal(outs);
+          if (t) {
+            line.total = t.line;
+            line.overPrice = t.overPrice;
+            line.underPrice = t.underPrice;
           }
         }
       }

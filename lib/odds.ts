@@ -10,6 +10,7 @@
 // behavior is unchanged from before this provider existed (the original
 // error is thrown, and sync.ts's existing stage-skip logic handles it).
 import { consensusHome } from "./sports/game-model";
+import { mainSpread, mainTotal } from "./sports/game-odds";
 import {
   hasSportsGameOddsKey,
   fetchSgoEvents,
@@ -179,31 +180,31 @@ export async function fetchGameOdds(): Promise<GameOdds> {
           });
         }
 
+        // Alternate lines can share the market with the main one; take the
+        // pair priced closest to even (lib/sports/game-odds.ts).
         const spread = chosen.markets?.find((m) => m.key === "spreads");
-        const homeSp = spread?.outcomes?.find((o) => o.name === event.home_team);
-        const awaySp = spread?.outcomes?.find((o) => o.name === event.away_team);
-        if (homeSp?.point != null && awaySp) {
+        const sp = mainSpread(spread?.outcomes ?? [], event.home_team, event.away_team);
+        if (sp) {
           spreads.push({
             homeTeam: event.home_team,
             awayTeam: event.away_team,
             book: chosen.title,
-            spreadHomeLine: homeSp.point,
-            homePriceAmerican: homeSp.price,
-            awayPriceAmerican: awaySp.price,
+            spreadHomeLine: sp.home,
+            homePriceAmerican: sp.homePrice,
+            awayPriceAmerican: sp.awayPrice,
           });
         }
 
         const total = chosen.markets?.find((m) => m.key === "totals");
-        const overOutcome = total?.outcomes?.find((o) => o.name === "Over");
-        const underOutcome = total?.outcomes?.find((o) => o.name === "Under");
-        if (overOutcome?.point != null && underOutcome) {
+        const tl = mainTotal(total?.outcomes ?? []);
+        if (tl) {
           totals.push({
             homeTeam: event.home_team,
             awayTeam: event.away_team,
             book: chosen.title,
-            totalLine: overOutcome.point,
-            overPriceAmerican: overOutcome.price,
-            underPriceAmerican: underOutcome.price,
+            totalLine: tl.line,
+            overPriceAmerican: tl.overPrice,
+            underPriceAmerican: tl.underPrice,
           });
         }
       }
