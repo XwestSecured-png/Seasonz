@@ -395,8 +395,10 @@ export function buildSportPropPicks(
   for (const p of props) {
     const key = `${p.player}|${p.statType}|${p.book}|${p.line}`;
     const g = grouped.get(key) ?? { player: p.player, statType: p.statType, book: p.book, line: p.line };
-    if (p.side === "Over") g.overPrice = p.priceAmerican;
-    else g.underPrice = p.priceAmerican;
+    // "Yes" (e.g. anytime goal / home run) is the Over 0.5, "No" the Under.
+    // Treating "Yes" as the Under listed +1000 longshots as 85% Unders.
+    if (p.side === "Over" || p.side === "Yes") g.overPrice = p.priceAmerican;
+    else if (p.side === "Under" || p.side === "No") g.underPrice = p.priceAmerican;
     grouped.set(key, g);
   }
 
