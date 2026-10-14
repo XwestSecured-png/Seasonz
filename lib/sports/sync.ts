@@ -70,6 +70,7 @@ async function upsertSportGames(games: Awaited<ReturnType<typeof fetchFullSeason
         isFinal: g.isFinal,
         neutralSite: g.neutralSite,
         seasonType: g.seasonType ?? 2,
+        extra: g.espnStatus ? { espnStatus: g.espnStatus } : undefined,
       })
       .onConflictDoUpdate({
         target: [sportGames.sport, sportGames.espnEventId],
@@ -82,6 +83,8 @@ async function upsertSportGames(games: Awaited<ReturnType<typeof fetchFullSeason
           isFinal: g.isFinal,
           neutralSite: g.neutralSite,
           seasonType: g.seasonType ?? 2,
+          // ESPN's status (canceled / postponed games never go final).
+          ...(g.espnStatus ? { extra: sql`coalesce(${sportGames.extra}, '{}'::jsonb) || ${JSON.stringify({ espnStatus: g.espnStatus })}::jsonb` } : {}),
           // Playoff opponents ESPN lists as "TBD" until a series is decided:
           // take the real team once ESPN posts it, never overwrite one with TBD.
           ...(TBD_RE.test(g.homeTeam) ? {} : { homeTeam: g.homeTeam }),

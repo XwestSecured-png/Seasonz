@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { games, sportGames, sportUserPicks, userPicks, userPropPicks } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { pregamePct } from "./sports/accuracy";
-import { SPORTS, type SportKey } from "./sports/types";
+import { SPORTS, isCalledOff, type SportKey } from "./sports/types";
 
 export type PickStatus = "pending" | "won" | "lost" | "push" | "void";
 
@@ -82,7 +82,9 @@ export async function getMyPicks(userId: number): Promise<MyPick[]> {
   }
 
   for (const { pick, game } of other) {
-    const s = gameStatus(pick.team, game.homeTeam, game.awayTeam, game.homeScore, game.awayScore, game.isFinal);
+    const s = isCalledOff(game.extra, game.kickoffAt) && !game.isFinal
+      ? { status: "void" as PickStatus, result: "Canceled" }
+      : gameStatus(pick.team, game.homeTeam, game.awayTeam, game.homeScore, game.awayScore, game.isFinal);
     out.push({
       key: `game-${pick.id}`,
       sport: game.sport,

@@ -5,7 +5,7 @@
 import { db } from "@/db";
 import { appSettings, games, sportGames, syncRuns, users } from "@/db/schema";
 import { and, desc, eq, gt, gte, lt, sql } from "drizzle-orm";
-import { SPORTS, type SportKey } from "./sports/types";
+import { SPORTS, isCalledOff, type SportKey } from "./sports/types";
 import { sendAlert } from "./push";
 
 export interface HealthIssue {
@@ -109,11 +109,17 @@ export async function runHealthChecks(now = new Date()): Promise<HealthReport> {
   // 6. Games that started 8+ hours ago and still aren't final.
   checked++;
   const stuckCut = new Date(now.getTime() - 8 * HOUR);
-  const stuck = await db
-    .select({ sport: sportGames.sport, n: sql<number>`count(*)::int` })
+  const stuckRows = await db
+    .select({ sport: sportGames.sport, extra: sportGames.extra, kickoffAt: sportGames.kickoffAt })
     .from(sportGames)
-    .where(and(eq(sportGames.isFinal, false), lt(sportGames.kickoffAt, stuckCut), gt(sportGames.kickoffAt, new Date(now.getTime() - 4 * 24 * HOUR))))
-    .groupBy(sportGames.sport);
+    .where(and(eq(sportGames.isFinal, false), lt(sportGames.kickoffAt, stuckCut), gt(sportGames.kickoffAt, new Date(now.getTime() - 4 * 24 * HOUR))));
+  const stuckBy = new Map<string, number>();
+  for (const r of stuckRows) {
+    // Canceled / postponed games never go final; not a sync problem.
+    if (isCalledOff(r.extra, r.kickoffAt, now.getTime())) continue;
+    stuckBy.set(r.sport, (stuckBy.get(r.sport) ?? 0) + 1);
+  }
+  const stuck = [...stuckBy].map(([sport, n]) => ({ sport, n }));
   const nflStuck = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(games)

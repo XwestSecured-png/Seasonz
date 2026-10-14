@@ -20,7 +20,7 @@ import { americanToDecimalOdds } from "./stake-sizing";
 import { noVigPair } from "./sports/game-model";
 import { SIM, Phi, PhiInv } from "./sports/game-sim";
 import { STAT_EXTRACTORS } from "./sports/stat-extract";
-import type { SportKey } from "./sports/types";
+import { isCalledOff, type SportKey } from "./sports/types";
 import type { PlayerWeekStats } from "./nflverse";
 
 export type BetRow = typeof userBets.$inferSelect;
@@ -137,6 +137,15 @@ export async function settlePendingBets(opts: { sport?: string; nflWeekStats?: P
       const ng = bet.gameId != null ? nflGames.get(bet.gameId) : undefined;
       const sg = bet.sportGameId != null ? otherGames.get(bet.sportGameId) : undefined;
       const g = ng ?? sg;
+      // Canceled / postponed and never played: void, like the books.
+      if (sg && !sg.isFinal && isCalledOff(sg.extra, sg.kickoffAt)) {
+        await db
+          .update(userBets)
+          .set({ result: "VOID", payoutUsd: 0, gradedAt: new Date() })
+          .where(and(eq(userBets.id, bet.id), eq(userBets.result, "PENDING")));
+        voided++;
+        continue;
+      }
       if (!g || !g.isFinal || g.homeScore === null || g.awayScore === null) {
         waiting++;
         continue;

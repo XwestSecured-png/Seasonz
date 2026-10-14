@@ -54,6 +54,8 @@ export interface GenericGame {
   neutralSite: boolean;
   /** ESPN season type: 1 preseason, 2 regular season, 3 postseason. */
   seasonType?: 1 | 2 | 3;
+  /** ESPN status name, e.g. STATUS_SCHEDULED, STATUS_FINAL, STATUS_CANCELED, STATUS_POSTPONED. */
+  espnStatus?: string;
 }
 
 /** Sports whose preseason games are synced (shown with lines and picks, kept out of ratings and the scorecard). */
@@ -69,4 +71,17 @@ export interface GenericTeam {
   primaryColor: string | null;
   secondaryColor: string | null;
   espnTeamId: string;
+}
+
+/** ESPN statuses for games that won't be played as scheduled. */
+const CALLED_OFF = new Set(["STATUS_CANCELED", "STATUS_CANCELLED", "STATUS_POSTPONED", "STATUS_FORFEIT"]);
+
+/**
+ * True when ESPN lists a game as canceled or postponed and its start time is
+ * a day past, so it will never go final as scheduled (bets and picks on it
+ * are void; health checks skip it).
+ */
+export function isCalledOff(extra: unknown, kickoffAt: Date | null, now = Date.now()): boolean {
+  const s = (extra as { espnStatus?: string } | null)?.espnStatus;
+  return !!s && CALLED_OFF.has(s) && !!kickoffAt && kickoffAt.getTime() < now - 24 * 3600_000;
 }

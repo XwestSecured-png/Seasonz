@@ -147,6 +147,7 @@ export async function fetchTeamSchedule(
         isFinal,
         neutralSite: Boolean(competition?.neutralSite),
         seasonType: seasonType ?? 2,
+        espnStatus: typeof competition?.status?.type?.name === "string" ? competition.status.type.name : undefined,
       });
     } catch {
       continue;
