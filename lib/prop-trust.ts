@@ -118,7 +118,7 @@ export const TRUST_HIGH = 0.78;
 export const TRUST_MEDIUM = 0.72;
 export const BOOK_GAP_CAP = 0.15;
 
-/** The trust score for one prop pick. `implied` is the book price's chance for the side (null for model-only props). */
+/** The trust score for one prop pick. `implied` is the market's no-vig chance for the side (else the price's; null for model-only props). */
 export function propTrust(sport: string, p: number, f: TrustFeatures, implied: number | null): Trust {
   const adj = adjustedChance(sport, p, f);
   let tier: TrustTier = adj >= TRUST_HIGH && f.n >= 5 ? "High" : adj >= TRUST_MEDIUM ? "Medium" : "Low";
@@ -131,7 +131,7 @@ export function propTrust(sport: string, p: number, f: TrustFeatures, implied: n
   if (f.minutesCv !== null && f.minutesCv > 0.25) reasons.push("Minutes have moved around");
   if (implied !== null && p - implied >= BOOK_GAP_CAP) {
     if (tier === "High") tier = "Medium";
-    reasons.push(`Our chance is ${Math.round((p - implied) * 100)} pts above the book's price; gaps that big often mean news the model hasn't seen`);
+    reasons.push(`Our chance is ${Math.round((p - implied) * 100)} pts above the betting market's; gaps that big often mean news the model hasn't seen`);
   }
   return { adj, tier, hits: f.hits, of: f.of, games: f.n, reasons };
 }

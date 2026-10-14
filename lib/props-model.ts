@@ -153,10 +153,24 @@ function computeOpponentAllowedFactors(
 export function computeSeasonAverages(
   rows: PlayerWeekStats[],
   schedule: ScheduleGame[],
-  upcomingWeek: number
+  upcomingWeek: number,
+  /**
+   * Last season's weekly rows. They feed each player's projection (the
+   * 20-game long window) but never the opponent adjustments. Backtest on
+   * 2025-26 games 4-8 of a season: with only this season's games, 70%+
+   * Rec Yds picks said 75% and hit 66%; with last season added they said
+   * 73% and hit 73% (Receptions 79% -> 73% vs 79% -> 76%; Pass Yds
+   * 76% -> 62% vs 72% -> 74%).
+   */
+  prior: PlayerWeekStats[] = []
 ): Map<string, PlayerSeasonAverage> {
   const byKey = new Map<string, { team: string; week: number; value: number }[]>();
-  for (const row of rows) {
+  const currentGames = new Map<string, number>();
+  for (const row of rows) currentGames.set(row.player, (currentGames.get(row.player) ?? 0) + 1);
+  // Last season's games sort before this season's (week - 100); only for
+  // players who've played this season.
+  const priorRows = prior.filter((r) => currentGames.has(r.player)).map((r) => ({ ...r, week: r.week - 100 }));
+  for (const row of [...priorRows, ...rows]) {
     for (const { statType, field } of STAT_FIELDS) {
       const value = Number(row[field]) || 0;
       // Zero games count: a receiver held without a catch is a real
@@ -207,7 +221,8 @@ export function computeSeasonAverages(
       statType,
       average: projection,
       stdDev,
-      games: n,
+      // This season's games (the 3-game minimum is on these).
+      games: Math.min(currentGames.get(player) ?? 0, RECENT_GAMES_WINDOW),
       proj: { ...proj, mean: projection },
       cfg,
       values: [...sorted].reverse().map((g) => g.value),
@@ -246,6 +261,54 @@ export function winProbability(mean: number, stdDev: number, line: number, side:
   }
   const pUnderOrEqual = normalCdf((line - mean) / stdDev);
   return side === "Over" ? 1 - pUnderOrEqual : pUnderOrEqual;
+}
+
+// Pick'em / DFS apps: their "prices" are entry multipliers or flat +100
+// placeholders, not odds a single prop can be bet at (PrizePicks and
+// DraftKings Pick6 list every line at +100 / +100). They made 70% picks
+// look like 20-38 point edges, so they're never a pick's price and never
+// part of the market consensus.
+export const PICKEM_BOOKS = new Set([
+  "PrizePicks",
+  "DraftKings Pick6",
+  "Underdog Fantasy",
+  "Sleeper",
+  "Dabble",
+  "ParlayPlay",
+  "Betr Picks",
+  "Chalkboard",
+  "Boom Fantasy",
+  "OwnersBox",
+]);
+
+/** A book line that can't be used as a real price: pick'em apps, or both sides at even money. */
+export function isPlaceholderLine(book: string, overPrice?: number, underPrice?: number): boolean {
+  if (PICKEM_BOOKS.has(book) || book.startsWith("Seasonz model")) return true;
+  return overPrice !== undefined && underPrice !== undefined && Math.abs(overPrice) === 100 && Math.abs(underPrice) === 100;
+}
+
+/**
+ * The market's no-vig chance of the Over, per player|stat|line: the average
+ * across real books that post both sides. What the trust score's "far from
+ * the market" check compares against (one book's price, especially an alt
+ * line or a pick'em app, isn't the market).
+ */
+export function marketOverChances(
+  groups: Iterable<{ player: string; statType: string; book: string; line: number; overPrice?: number; underPrice?: number }>
+): Map<string, number> {
+  const acc = new Map<string, { s: number; n: number }>();
+  for (const g of groups) {
+    if (g.overPrice === undefined || g.underPrice === undefined || isPlaceholderLine(g.book, g.overPrice, g.underPrice)) continue;
+    const o = americanToImpliedProb(g.overPrice);
+    const u = americanToImpliedProb(g.underPrice);
+    if (o + u < 0.98 || o + u > 1.3) continue; // stale or one-sided board
+    const k = `${g.player}|${g.statType}|${g.line}`;
+    const a = acc.get(k) ?? { s: 0, n: 0 };
+    a.s += o / (o + u);
+    a.n++;
+    acc.set(k, a);
+  }
+  return new Map([...acc].map(([k, a]) => [k, a.s / a.n]));
 }
 
 export interface PropPick {
@@ -302,8 +365,10 @@ export function buildPropPicks(
     grouped.set(key, g);
   }
 
+  const market = marketOverChances(grouped.values());
   const picks: PropPick[] = [];
   for (const g of grouped.values()) {
+    if (isPlaceholderLine(g.book, g.overPrice, g.underPrice)) continue;
     const avg = averages.get(`${g.player}|${g.statType}`);
     if (!avg || avg.games < MIN_GAMES_FOR_PROJECTION) continue;
     if (g.line <= 0) continue;
@@ -325,7 +390,9 @@ export function buildPropPicks(
     if (modelWinPct - americanToImpliedProb(price) < MIN_PROP_EDGE) continue;
 
     const matchup = opponentThisWeek.get(avg.team);
-    const trust = avg.values ? propTrust("nfl", modelWinPct, trustFeatures(avg.values, g.line, side), americanToImpliedProb(price)) : undefined;
+    const mk = market.get(`${g.player}|${g.statType}|${g.line}`);
+    const marketSide = mk === undefined ? americanToImpliedProb(price) : side === "Over" ? mk : 1 - mk;
+    const trust = avg.values ? propTrust("nfl", modelWinPct, trustFeatures(avg.values, g.line, side), marketSide) : undefined;
 
     picks.push({
       player: g.player,

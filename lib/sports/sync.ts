@@ -882,9 +882,7 @@ export async function runSportSync(
         );
         const allProps = propsByEvent.flat();
 
-        // This season's games, plus last season's for any player with fewer
-        // than 3 games so far (start of a season), so opening-week props
-        // still get a real projection. Last season's games sort before this
+        // This season's games plus last season's. Last season's games sort before this
         // season's (negative week numbers) and never count toward opponent
         // adjustments.
         const rawStatRows = await db
@@ -899,10 +897,12 @@ export async function runSportSync(
           .from(sportPlayerGameStats)
           .innerJoin(sportGames, eq(sportGames.id, sportPlayerGameStats.gameId))
           .where(and(eq(sportPlayerGameStats.sport, sport), inArray(sportPlayerGameStats.season, [year - 1, year])));
-        const currentCount = new Map<string, number>();
-        for (const r of rawStatRows) if (r.season === year) currentCount.set(r.player, (currentCount.get(r.player) ?? 0) + 1);
+        // Every player gets last season's games too (the projection's
+        // 20-game long window; opening-week props still get a projection):
+        // early-season projections from a handful of games ran
+        // overconfident (see lib/props-model.ts computeSeasonAverages).
         const prior = rawStatRows
-          .filter((r) => r.season === year - 1 && (currentCount.get(r.player) ?? 0) < 3)
+          .filter((r) => r.season === year - 1)
           .sort((a, b) => (a.kickoffAt?.getTime() ?? 0) - (b.kickoffAt?.getTime() ?? 0));
         const statRows = [
           ...prior.map((r, i) => ({ player: r.player, team: r.team, week: i - prior.length - 1000, t: r.kickoffAt?.getTime() ?? 0, stats: r.stats as Record<string, string> })),

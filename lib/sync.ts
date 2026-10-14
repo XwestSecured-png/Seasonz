@@ -1113,7 +1113,8 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         const allProps = propsByEvent.flat();
 
         const playerStats = await fetchPlayerWeekStats(season);
-        const averages = computeSeasonAverages(playerStats, schedule, week);
+        const priorStats = await fetchPlayerWeekStats(season - 1).catch(() => []);
+        const averages = computeSeasonAverages(playerStats, schedule, week, priorStats);
 
         // A player marked OUT or DOUBTFUL for this game shouldn't get a prop
         // pick at all — their season stats say nothing about a game they

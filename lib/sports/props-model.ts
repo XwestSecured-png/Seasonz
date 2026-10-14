@@ -8,7 +8,7 @@
 // lib/props-model.ts rather than duplicated.
 import { propTrust, trustFeatures, type Trust } from "../prop-trust";
 import type { PropOutcome } from "../odds";
-import { winProbability, americanToImpliedProb, MIN_PROP_EDGE, NFL_PROP_MODEL } from "../props-model";
+import { winProbability, americanToImpliedProb, MIN_PROP_EDGE, NFL_PROP_MODEL, isPlaceholderLine, marketOverChances } from "../props-model";
 import { projectProp, propChance, LEGACY_PROP_MODEL, type PropModelConfig, type Projection } from "../prop-dist";
 import { MIN_MODEL_WIN_PCT } from "../confidence";
 import { STAT_EXTRACTORS } from "./stat-extract";
@@ -395,8 +395,10 @@ export function buildSportPropPicks(
     grouped.set(key, g);
   }
 
+  const market = marketOverChances(grouped.values());
   const picks: SportPropPick[] = [];
   for (const g of grouped.values()) {
+    if (isPlaceholderLine(g.book, g.overPrice, g.underPrice)) continue;
     const avg = averages.get(`${g.player}|${g.statType}`);
     if (!avg || avg.games < MIN_GAMES_FOR_PROJECTION) continue;
     if (g.line <= 0) continue;
@@ -418,11 +420,13 @@ export function buildSportPropPicks(
     if (modelWinPct - americanToImpliedProb(price) < MIN_PROP_EDGE) continue;
 
     const matchup = opponentThisWeek.get(avg.team);
+    const mk = market.get(`${g.player}|${g.statType}|${g.line}`);
+    const marketSide = mk === undefined ? americanToImpliedProb(price) : side === "Over" ? mk : 1 - mk;
     // Same minutes filter as the projection: games he didn't play don't count.
     const played = avg.values?.map((v, i) => ({ v, m: avg.minutes?.[i] ?? null })).filter((x) => !avg.cfg?.useMinutes || x.m === null || x.m > 0);
     const trust =
       played && avg.sport
-        ? propTrust(avg.sport, modelWinPct, trustFeatures(played.map((x) => x.v), g.line, side, played.map((x) => x.m)), americanToImpliedProb(price))
+        ? propTrust(avg.sport, modelWinPct, trustFeatures(played.map((x) => x.v), g.line, side, played.map((x) => x.m)), marketSide)
         : undefined;
 
     picks.push({
