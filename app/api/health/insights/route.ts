@@ -16,6 +16,7 @@ import { STAT_EXTRACTORS } from "@/lib/sports/stat-extract";
 import { STDDEV_FLOOR_ABS, propModelFor, minutesOf } from "@/lib/sports/props-model";
 import { NFL_STDDEV_FLOOR_ABS, NFL_PROP_MODEL } from "@/lib/props-model";
 import { fetchPlayerWeekStats } from "@/lib/nflverse";
+import { trustSamples, trustBacktest, type TrustSample } from "@/lib/prop-trust";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -26,6 +27,58 @@ export async function GET(req: NextRequest) {
   }
   // Prop-model calibration check (lib/prop-calibration.ts) on this and last
   // season's box scores: ?propcal=nba (or nfl).
+  // Prop trust-score fit (lib/prop-trust.ts): ?trustcal=nba (or nfl).
+  const trustcal = req.nextUrl.searchParams.get("trustcal");
+  if (trustcal) {
+    const all: TrustSample[] = [];
+    if (trustcal === "nfl") {
+      const now = new Date();
+      const season = now.getMonth() >= 1 ? now.getFullYear() : now.getFullYear() - 1;
+      const rows = [...(await fetchPlayerWeekStats(season - 2)), ...(await fetchPlayerWeekStats(season - 1)), ...(await fetchPlayerWeekStats(season))];
+      const fields: [string, "passYds" | "rushYds" | "recYds" | "receptions"][] = [
+        ["Pass Yds", "passYds"],
+        ["Rush Yds", "rushYds"],
+        ["Rec Yds", "recYds"],
+        ["Receptions", "receptions"],
+      ];
+      for (const [stat, field] of fields) {
+        const by = new Map<string, { t: number; v: number }[]>();
+        for (const r of rows) {
+          const l = by.get(r.player) ?? [];
+          l.push({ t: r.season * 100 + r.week, v: Number(r[field]) || 0 });
+          by.set(r.player, l);
+        }
+        const series = [...by.values()]
+          .map((v) => ({ values: v.sort((a, b) => a.t - b.t) }))
+          .filter((x) => x.values.filter((v) => v.v > 0).length >= x.values.length * 0.5);
+        all.push(...trustSamples(series, NFL_PROP_MODEL[stat], NFL_STDDEV_FLOOR_ABS[stat] ?? 5));
+      }
+    } else {
+      const sport = trustcal as SportKey;
+      const season = currentSeasonYear(sport);
+      const rows = await db
+        .select({ player: sportPlayerGameStats.player, stats: sportPlayerGameStats.stats, kickoffAt: sportGames.kickoffAt })
+        .from(sportPlayerGameStats)
+        .innerJoin(sportGames, eq(sportGames.id, sportPlayerGameStats.gameId))
+        .where(and(eq(sportPlayerGameStats.sport, sport), inArray(sportPlayerGameStats.season, [season - 1, season])));
+      for (const { statType, extract } of STAT_EXTRACTORS[sport]) {
+        const by = new Map<string, { t: number; v: number; min: number | null }[]>();
+        for (const r of rows) {
+          const st = r.stats as Record<string, string>;
+          const v = extract(st);
+          if (v === null) continue;
+          const l = by.get(r.player) ?? [];
+          l.push({ t: r.kickoffAt?.getTime() ?? 0, v, min: minutesOf(st) });
+          by.set(r.player, l);
+        }
+        const series = [...by.values()]
+          .map((v) => ({ values: v.sort((a, b) => a.t - b.t) }))
+          .filter((x) => x.values.filter((v) => v.v > 0).length >= x.values.length * 0.5);
+        all.push(...trustSamples(series, propModelFor(sport, statType), STDDEV_FLOOR_ABS[sport][statType] ?? 1));
+      }
+    }
+    return NextResponse.json(trustBacktest(all) ?? { error: "not enough samples", n: all.length });
+  }
   const propcal = req.nextUrl.searchParams.get("propcal");
   if (propcal) {
     const out: Record<string, unknown> = {};
