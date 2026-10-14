@@ -213,6 +213,13 @@ export async function runSportSync(
           await db.delete(sportGames).where(inArray(sportGames.id, ids));
           removed = ids.length;
         }
+        // Games ESPN dropped that someone picked (e.g. an "if necessary"
+        // playoff game that wasn't needed): kept, but marked removed so
+        // picks and bets on them are voided.
+        await db.execute(sql`
+          update ${sportGames} set extra = coalesce(extra, '{}'::jsonb) || '{"espnStatus":"STATUS_REMOVED"}'::jsonb
+          where ${sportGames.sport} = ${sport} and ${sportGames.season} = ${year} and ${sportGames.isFinal} = false
+            and ${notInArray(sportGames.espnEventId, keep)}`);
       }
 
       // Last season's results, once, so ratings carry over into this season

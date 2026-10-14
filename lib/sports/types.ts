@@ -74,7 +74,7 @@ export interface GenericTeam {
 }
 
 /** ESPN statuses for games that won't be played as scheduled. */
-const CALLED_OFF = new Set(["STATUS_CANCELED", "STATUS_CANCELLED", "STATUS_POSTPONED", "STATUS_FORFEIT"]);
+const CALLED_OFF = new Set(["STATUS_CANCELED", "STATUS_CANCELLED", "STATUS_POSTPONED", "STATUS_FORFEIT", "STATUS_REMOVED"]);
 
 /**
  * True when ESPN lists a game as canceled or postponed and its start time is
