@@ -8,7 +8,7 @@
 // lib/props-model.ts rather than duplicated.
 import { propTrust, trustFeatures, type Trust } from "../prop-trust";
 import type { PropOutcome } from "../odds";
-import { winProbability, americanToImpliedProb, MIN_PROP_EDGE, NFL_PROP_MODEL, isPlaceholderLine, marketOverChances, blendPropChance, PROP_MODEL_WEIGHT_DEFAULT } from "../props-model";
+import { winProbability, americanToImpliedProb, MIN_PROP_EDGE, NFL_PROP_MODEL, isPlaceholderLine, marketOverChances, blendPropChance, oneSidedMarket, PROP_MODEL_WEIGHT_DEFAULT } from "../props-model";
 import { projectProp, propChance, LEGACY_PROP_MODEL, type PropModelConfig, type Projection } from "../prop-dist";
 import { MIN_MODEL_WIN_PCT } from "../confidence";
 import { STAT_EXTRACTORS } from "./stat-extract";
@@ -416,7 +416,9 @@ export function buildSportPropPicks(
       avg.proj && avg.cfg ? propChance(avg.proj, g.line, avg.cfg, "Over") : winProbability(avg.average, avg.stdDev, g.line, "Over");
     // The final chance blends the model with the market's no-vig chance for
     // this line (see blendPropChance); no market, model alone.
-    const mk = market.get(`${g.player}|${g.statType}|${g.line}`);
+    // No book posts both sides of this line (often an alt line): estimate
+    // the market from this book's one price, less a typical 4.5% margin.
+    const mk = market.get(`${g.player}|${g.statType}|${g.line}`) ?? oneSidedMarket(g.overPrice, g.underPrice);
     const pOver = mk === undefined ? pOverModel : blendPropChance(pOverModel, mk, modelWeight);
     const side: "Over" | "Under" = pOver >= 0.5 ? "Over" : "Under";
     const modelWinPct = side === "Over" ? pOver : 1 - pOver;

@@ -321,6 +321,14 @@ export function marketOverChances(
  */
 export const PROP_MODEL_WEIGHT_DEFAULT = 0.5;
 
+/** Market's Over chance from a single posted price (no opposite side), less a typical 4.5% margin. */
+export function oneSidedMarket(overPrice?: number, underPrice?: number): number | undefined {
+  const c = (p: number) => Math.min(0.97, Math.max(0.03, p));
+  if (overPrice !== undefined) return c(americanToImpliedProb(overPrice) / 1.045);
+  if (underPrice !== undefined) return c(1 - americanToImpliedProb(underPrice) / 1.045);
+  return undefined;
+}
+
 export function blendPropChance(model: number, market: number, modelWeight: number): number {
   const c = (p: number) => Math.min(0.995, Math.max(0.005, p));
   const lg = (p: number) => Math.log(c(p) / (1 - c(p)));
@@ -403,7 +411,9 @@ export function buildPropPicks(
       avg.proj && avg.cfg ? propChance(avg.proj, g.line, avg.cfg, "Over") : winProbability(avg.average, avg.stdDev, g.line, "Over");
     // The final chance blends the model with the market's no-vig chance for
     // this line (see blendPropChance); no market, model alone.
-    const mk = market.get(`${g.player}|${g.statType}|${g.line}`);
+    // No book posts both sides of this line (often an alt line): estimate
+    // the market from this book's one price, less a typical 4.5% margin.
+    const mk = market.get(`${g.player}|${g.statType}|${g.line}`) ?? oneSidedMarket(g.overPrice, g.underPrice);
     const pOver = mk === undefined ? pOverModel : blendPropChance(pOverModel, mk, modelWeight);
     const side: "Over" | "Under" = pOver >= 0.5 ? "Over" : "Under";
     const modelWinPct = side === "Over" ? pOver : 1 - pOver;
