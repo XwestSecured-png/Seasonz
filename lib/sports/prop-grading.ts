@@ -4,7 +4,7 @@
 // lib/sports/sync.ts, right after the playerStats stage populates
 // sportPlayerGameStats. See db/schema.ts's userPropPicks comment for why
 // this exists instead of a real model projection.
-import { COMBO_STATS, comboStat } from "./stat-extract";
+import { COMBO_KEYS, comboStat } from "./stat-extract";
 import { db } from "@/db";
 import { userPropPicks, sportGames, sportPlayerGameStats } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -77,7 +77,7 @@ export async function gradePendingPropPicks(sport: SportKey): Promise<string> {
       const actualValue =
         rawValue !== undefined
           ? parseStatValue(rawValue)
-          : statsObj && COMBO_STATS[pick.statLabel.trim().toUpperCase()]
+          : statsObj && COMBO_KEYS.has(pick.statLabel.trim().toUpperCase())
             ? comboStat(statsObj, pick.statLabel.trim().toUpperCase())
             : null;
 

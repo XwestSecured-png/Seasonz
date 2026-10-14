@@ -51,6 +51,21 @@ export const NFL_STDDEV_FLOOR_ABS: Record<string, number> = {
 // swing a projection wildly on a small sample.
 const OPPONENT_FACTOR_CLAMP: [number, number] = [0.8, 1.25];
 const MIN_DEFENSE_GAMES_FOR_FACTOR = 2;
+// Per stat, from a backtest on 2025-26 weekly stats (log loss on lines at
+// the projection +/- 0.5 sd; lower is better): the defense's factor is pulled
+// toward 1 by 4 games' worth (a defense with 4 games counts half), then
+// clamped. Passing gains the most (.6409 with no adjustment -> .6266 old
+// -> .6202); rushing yards do best with none (.6355 vs .6427 old); the
+// receiving stats prefer a narrower range (Rec Yds .6373 -> .6346,
+// Receptions .6072 -> .6051, Rush + Rec .6404 -> .6378).
+const OPPONENT_SHRINK_GAMES = 4;
+const OPPONENT_CLAMP_BY_STAT: Record<string, [number, number] | null> = {
+  "Pass Yds": [0.8, 1.25],
+  "Rush Yds": null,
+  "Rec Yds": [0.9, 1.12],
+  Receptions: [0.9, 1.12],
+  "Rush + Rec Yds": [0.9, 1.12],
+};
 
 const STAT_FIELDS: { statType: string; field: keyof PlayerWeekStats }[] = [
   { statType: "Pass Yds", field: "passYds" },
@@ -142,7 +157,10 @@ function computeOpponentAllowedFactors(
       const leagueAvg = leagueAvgPerGame.get(statType);
       if (!leagueAvg) continue;
       const raw = sum / weeks.size / leagueAvg;
-      teamFactors.set(statType, Math.min(OPPONENT_FACTOR_CLAMP[1], Math.max(OPPONENT_FACTOR_CLAMP[0], raw)));
+      const clamp = statType in OPPONENT_CLAMP_BY_STAT ? OPPONENT_CLAMP_BY_STAT[statType] : OPPONENT_FACTOR_CLAMP;
+      if (!clamp) continue; // no adjustment for this stat
+      const shrunk = 1 + ((raw - 1) * weeks.size) / (weeks.size + OPPONENT_SHRINK_GAMES);
+      teamFactors.set(statType, Math.min(clamp[1], Math.max(clamp[0], shrunk)));
     }
     factors.set(team, teamFactors);
   }

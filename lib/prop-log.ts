@@ -26,12 +26,19 @@ export interface LoggablePick {
 /** Saves this sync's picks (one row per player/stat/line/side). Rows already graded are never touched. */
 export async function logPropPicks(sport: string, season: number, week: number, picks: LoggablePick[]): Promise<number> {
   const seen = new Set<string>();
-  let n = 0;
+  const rows = [];
   for (const p of picks) {
     const k = `${p.player}|${p.statType}|${p.line}|${p.side}`;
     if (seen.has(k)) continue;
     seen.add(k);
-    const v = {
+    rows.push({
+      sport,
+      season,
+      week,
+      player: p.player,
+      statType: p.statType,
+      line: p.line,
+      side: p.side,
       book: p.book,
       priceAmerican: p.priceAmerican,
       modelOnly: p.modelOnly ?? p.modelWinPct,
@@ -40,19 +47,29 @@ export async function logPropPicks(sport: string, season: number, week: number, 
       gameDate: p.gameDate,
       team: p.team,
       loggedAt: new Date(),
-    };
+    });
+  }
+  // Batched; closing numbers keep updating until the pick is graded.
+  for (let i = 0; i < rows.length; i += 300) {
     await db
       .insert(propPickLog)
-      .values({ sport, season, week, player: p.player, statType: p.statType, line: p.line, side: p.side, ...v })
+      .values(rows.slice(i, i + 300))
       .onConflictDoUpdate({
         target: [propPickLog.sport, propPickLog.season, propPickLog.week, propPickLog.player, propPickLog.statType, propPickLog.line, propPickLog.side],
-        set: v,
-        // Closing numbers: keep updating until graded.
+        set: {
+          book: sql`excluded.book`,
+          priceAmerican: sql`excluded.price_american`,
+          modelOnly: sql`excluded.model_only`,
+          market: sql`excluded.market`,
+          final: sql`excluded.final`,
+          gameDate: sql`excluded.game_date`,
+          team: sql`excluded.team`,
+          loggedAt: sql`excluded.logged_at`,
+        },
         setWhere: isNull(propPickLog.result),
       });
-    n++;
   }
-  return n;
+  return rows.length;
 }
 
 function outcome(side: string, line: number, actual: number): "hit" | "miss" | "push" {

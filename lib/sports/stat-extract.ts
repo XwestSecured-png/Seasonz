@@ -33,8 +33,21 @@ export const COMBO_STATS: Record<string, string[]> = {
   RA: ["REB", "AST"],
 };
 
-/** A box-score value by key, adding up combo keys (PRA, PR, RA). Null when any part is missing. */
+/** Every combined key: the basketball sums plus college football's rushing + receiving yards. */
+export const COMBO_KEYS = new Set([...Object.keys(COMBO_STATS), "RRY"]);
+
+/** Rushing + receiving yards from a college row's stat groups; null when neither was recorded. */
+function rushRecYards(s: Record<string, unknown>): number | null {
+  const r = statGroup(s, "rushing");
+  const c = statGroup(s, "receiving");
+  const rv = r ? firstNumber(r.YDS) : null;
+  const cv = c ? firstNumber(c.YDS) : null;
+  return rv === null && cv === null ? null : (rv ?? 0) + (cv ?? 0);
+}
+
+/** A box-score value by key, adding up combo keys (PRA, PR, RA, RRY). Null when any part is missing. */
 export function comboStat(s: Record<string, string>, key: string): number | null {
+  if (key.toUpperCase() === "RRY") return rushRecYards(s);
   const parts = COMBO_STATS[key.toUpperCase()];
   if (!parts) return firstNumber(s[key]);
   let sum = 0;
@@ -127,15 +140,8 @@ const NCAAF_STATS: StatExtractor[] = [
   { statType: "Rush Yds", extract: fromGroup("rushing", "YDS") },
   { statType: "Rec Yds", extract: fromGroup("receiving", "YDS") },
   { statType: "Receptions", extract: fromGroup("receiving", "REC") },
-  {
-    // Rushing + receiving yards; a player with neither line didn't record it.
-    statType: "Rush + Rec Yds",
-    extract: (s) => {
-      const r = fromGroup("rushing", "YDS")(s);
-      const c = fromGroup("receiving", "YDS")(s);
-      return r === null && c === null ? null : (r ?? 0) + (c ?? 0);
-    },
-  },
+  // Rushing + receiving yards; a player with neither line didn't record it.
+  { statType: "Rush + Rec Yds", extract: (s) => rushRecYards(s) },
 ];
 
 export const STAT_EXTRACTORS: Record<SportKey, StatExtractor[]> = {

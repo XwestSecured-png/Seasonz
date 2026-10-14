@@ -53,45 +53,51 @@ interface EloInputGameWithId extends SportEloGame {
 }
 
 /** Upserts a season's games; returns the ESPN event ids that were written. */
-const TBD_RE = /^(TBD|TBA)$/i;
 
 async function upsertSportGames(games: Awaited<ReturnType<typeof fetchFullSeasonSchedule>>) {
-  for (const g of games) {
+  // One row per event (a team schedule fetch lists each game twice).
+  const unique = [...new Map(games.map((g) => [g.espnEventId, g])).values()];
+  // Batched: one statement per 300 games instead of one per game (college
+  // schedules run to thousands of games).
+  for (let i = 0; i < unique.length; i += 300) {
+    const chunk = unique.slice(i, i + 300);
     await db
       .insert(sportGames)
-      .values({
-        sport: g.sport,
-        espnEventId: g.espnEventId,
-        season: g.season,
-        week: g.week,
-        gameDate: g.gameDate,
-        kickoffAt: g.kickoffAt,
-        homeTeam: g.homeTeam,
-        awayTeam: g.awayTeam,
-        homeScore: g.homeScore,
-        awayScore: g.awayScore,
-        isFinal: g.isFinal,
-        neutralSite: g.neutralSite,
-        seasonType: g.seasonType ?? 2,
-        extra: g.espnStatus ? { espnStatus: g.espnStatus } : undefined,
-      })
-      .onConflictDoUpdate({
-        target: [sportGames.sport, sportGames.espnEventId],
-        set: {
+      .values(
+        chunk.map((g) => ({
+          sport: g.sport,
+          espnEventId: g.espnEventId,
+          season: g.season,
           week: g.week,
           gameDate: g.gameDate,
           kickoffAt: g.kickoffAt,
+          homeTeam: g.homeTeam,
+          awayTeam: g.awayTeam,
           homeScore: g.homeScore,
           awayScore: g.awayScore,
           isFinal: g.isFinal,
           neutralSite: g.neutralSite,
           seasonType: g.seasonType ?? 2,
-          // ESPN's status (canceled / postponed games never go final).
-          ...(g.espnStatus ? { extra: sql`coalesce(${sportGames.extra}, '{}'::jsonb) || ${JSON.stringify({ espnStatus: g.espnStatus })}::jsonb` } : {}),
+          extra: g.espnStatus ? { espnStatus: g.espnStatus } : null,
+        }))
+      )
+      .onConflictDoUpdate({
+        target: [sportGames.sport, sportGames.espnEventId],
+        set: {
+          week: sql`excluded.week`,
+          gameDate: sql`excluded.game_date`,
+          kickoffAt: sql`excluded.kickoff_at`,
+          homeScore: sql`excluded.home_score`,
+          awayScore: sql`excluded.away_score`,
+          isFinal: sql`excluded.is_final`,
+          neutralSite: sql`excluded.neutral_site`,
+          seasonType: sql`excluded.season_type`,
+          // ESPN's status (canceled / postponed games never go final), merged into extra.
+          extra: sql`case when excluded.extra is null then ${sportGames.extra} else coalesce(${sportGames.extra}, '{}'::jsonb) || excluded.extra end`,
           // Playoff opponents ESPN lists as "TBD" until a series is decided:
           // take the real team once ESPN posts it, never overwrite one with TBD.
-          ...(TBD_RE.test(g.homeTeam) ? {} : { homeTeam: g.homeTeam }),
-          ...(TBD_RE.test(g.awayTeam) ? {} : { awayTeam: g.awayTeam }),
+          homeTeam: sql`case when excluded.home_team ~* '^(TBD|TBA)$' then ${sportGames.homeTeam} else excluded.home_team end`,
+          awayTeam: sql`case when excluded.away_team ~* '^(TBD|TBA)$' then ${sportGames.awayTeam} else excluded.away_team end`,
         },
       });
   }
@@ -957,51 +963,35 @@ export async function runSportSync(
           .where(
             sql`${sportOddsLines.sport} = ${sport} AND ${sportOddsLines.season} = ${year} AND ${sportOddsLines.week} = ${week}`
           );
-        for (const p of picks) {
-          const impliedProbPct = americanToImpliedProb(p.priceAmerican) * 100;
-          await db
-            .insert(sportOddsLines)
-            .values({
-              sport,
-              season: year,
-              week,
-              player: p.player,
-              team: p.team,
-              statType: p.statType,
-              line: p.line,
-              side: p.side,
-              book: p.book,
-              priceAmerican: p.priceAmerican,
-              impliedProbPct,
-              projection: p.projection,
-              edgePct: p.edgePct,
-              modelWinPct: p.modelWinPct,
-              trust: p.trust ?? null,
-              source: "LIVE",
-            })
-            .onConflictDoUpdate({
-              target: [
-                sportOddsLines.sport,
-                sportOddsLines.season,
-                sportOddsLines.week,
-                sportOddsLines.player,
-                sportOddsLines.statType,
-                sportOddsLines.book,
-              ],
-              set: {
-                team: p.team,
-                line: p.line,
-                side: p.side,
-                priceAmerican: p.priceAmerican,
-                impliedProbPct,
-                projection: p.projection,
-                edgePct: p.edgePct,
-                modelWinPct: p.modelWinPct,
-                trust: p.trust ?? null,
-                source: "LIVE",
-                fetchedAt: new Date(),
-              },
-            });
+        // One row per player/stat/book (alt lines: keep the strongest), batched.
+        const seenPick = new Set<string>();
+        const pickRows = picks
+          .filter((p) => {
+            const k = `${p.player}|${p.statType}|${p.book}`;
+            if (seenPick.has(k)) return false;
+            seenPick.add(k);
+            return true;
+          })
+          .map((p) => ({
+            sport,
+            season: year,
+            week,
+            player: p.player,
+            team: p.team,
+            statType: p.statType,
+            line: p.line,
+            side: p.side,
+            book: p.book,
+            priceAmerican: p.priceAmerican,
+            impliedProbPct: americanToImpliedProb(p.priceAmerican) * 100,
+            projection: p.projection,
+            edgePct: p.edgePct,
+            modelWinPct: p.modelWinPct,
+            trust: p.trust ?? null,
+            source: "LIVE",
+          }));
+        for (let i = 0; i < pickRows.length; i += 300) {
+          await db.insert(sportOddsLines).values(pickRows.slice(i, i + 300)).onConflictDoNothing();
         }
 
         // Each player's team for every line, including props the model

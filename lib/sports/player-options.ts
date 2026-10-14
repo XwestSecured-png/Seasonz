@@ -53,6 +53,7 @@ export const STAT_CHOICES: Record<SportKey, [string, string][]> = {
   ],
   ncaaf: [
     ["YDS", "Yards"],
+    ["RRY", "Rush + Rec yards"],
     ["TD", "Touchdowns"],
     ["REC", "Receptions"],
     ["CAR", "Carries"],
@@ -95,6 +96,7 @@ const BOOK_TO_KEY: Record<string, { key: string; role?: Role }> = {
   Receptions: { key: "REC", role: "receiving" },
   "Rec Yds": { key: "YDS", role: "receiving" },
   "Rush Yds": { key: "YDS", role: "rushing" },
+  "Rush + Rec Yds": { key: "RRY" },
   "Pass Yds": { key: "YDS", role: "passing" },
 };
 
@@ -236,7 +238,7 @@ export async function getPlayerOptions(sport: SportKey, teams: string[]): Promis
         last5: vals.slice(0, 5),
         bookLine:
           bookLines.get(`${player}|${key}|${role ?? ""}`) ??
-          (sport === "nba" || sport === "wnba" || sport === "ncaab" || sport === "nhl"
+          (sport === "nba" || sport === "wnba" || sport === "ncaab" || sport === "nhl" || key === "RRY"
             ? (bookLines.get(`${player}|${key}|`) ?? null)
             : null),
       });

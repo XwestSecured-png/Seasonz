@@ -33,6 +33,44 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.11.2",
+    date: "2026-10-14",
+    title: "Sharper prop projections, faster syncs",
+    summary: "Smarter opponent adjustments for NFL props, Rush + Rec yards in Make your own pick, a TD Props fix and faster syncs.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Smarter opponent adjustments",
+        whatChanged:
+          "How much a defense moves an NFL prop projection was re-tested stat by stat. Pass yards keep the full adjustment, receiving stats use a narrower range, rushing yards drop it (it didn't help), and a defense with only a few games counts less.",
+        whatItMeans: "Every NFL yardage and receptions projection scored better in testing on 2025-26 games, passing yards the most.",
+        href: "/props",
+      },
+      {
+        kind: "new",
+        title: "Rush + Rec yards in Make your own pick",
+        whatChanged: "College football's Make your own pick has Rush + Rec yards, with the posted line, and grades itself after the game.",
+        whatItMeans: "You can track the combo props you play.",
+        href: "/props",
+      },
+      {
+        kind: "fixed",
+        title: "TD Props and model-only props were being wiped",
+        whatChanged:
+          "The NFL props sync was deleting the model's own anytime-TD, turnover and defensive props right after writing them, so TD Props and those parlay legs came up empty. Fixed.",
+        whatItMeans: "TD Props, turnover props and those parlay legs show again.",
+        href: "/td-props",
+      },
+      {
+        kind: "improved",
+        title: "Faster syncs",
+        whatChanged: "Schedules, prop picks and the prop log now save in batches instead of one row at a time.",
+        whatItMeans: "Fresher numbers sooner, and less risk of a sync timing out.",
+        audience: "admin",
+      },
+    ],
+  },
+  {
     version: "1.11.1",
     date: "2026-10-14",
     title: "Rushing + receiving yards props",

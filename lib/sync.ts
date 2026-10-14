@@ -1139,52 +1139,40 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         const propWeight = weightFor(await getModelWeights().catch(() => ({})), "prop:nfl");
         const picks = buildPropPicks(allProps, averages, schedule, week, unavailable, propWeight);
 
+        // This week's book-line picks only: the model-only rows (anytime TD,
+        // turnovers, defense) written by the modelProps stage stay. Deleting
+        // them here emptied TD Props every sync.
         await db
           .delete(oddsLines)
-          .where(sql`${oddsLines.season} = ${season} AND ${oddsLines.week} = ${week}`);
-        for (const p of picks) {
-          const impliedProbPct = americanToImpliedProb(p.priceAmerican) * 100;
-          await db
-            .insert(oddsLines)
-            .values({
-              season,
-              week,
-              player: p.player,
-              team: p.team,
-              statType: p.statType,
-              line: p.line,
-              side: p.side,
-              book: p.book,
-              priceAmerican: p.priceAmerican,
-              impliedProbPct,
-              projection: p.projection,
-              edgePct: p.edgePct,
-              modelWinPct: p.modelWinPct,
-              trust: p.trust ?? null,
-              source: "LIVE",
-            })
-            .onConflictDoUpdate({
-              target: [
-                oddsLines.season,
-                oddsLines.week,
-                oddsLines.player,
-                oddsLines.statType,
-                oddsLines.book,
-              ],
-              set: {
-                team: p.team,
-                line: p.line,
-                side: p.side,
-                priceAmerican: p.priceAmerican,
-                impliedProbPct,
-                projection: p.projection,
-                edgePct: p.edgePct,
-                modelWinPct: p.modelWinPct,
-                trust: p.trust ?? null,
-                source: "LIVE",
-                fetchedAt: new Date(),
-              },
-            });
+          .where(sql`${oddsLines.season} = ${season} AND ${oddsLines.week} = ${week} AND ${oddsLines.book} <> 'Model (no book line)'`);
+        // One row per player/stat/book (alt lines: keep the strongest), batched.
+        const seenPick = new Set<string>();
+        const pickRows = picks
+          .filter((p) => {
+            const k = `${p.player}|${p.statType}|${p.book}`;
+            if (seenPick.has(k)) return false;
+            seenPick.add(k);
+            return true;
+          })
+          .map((p) => ({
+            season,
+            week,
+            player: p.player,
+            team: p.team,
+            statType: p.statType,
+            line: p.line,
+            side: p.side,
+            book: p.book,
+            priceAmerican: p.priceAmerican,
+            impliedProbPct: americanToImpliedProb(p.priceAmerican) * 100,
+            projection: p.projection,
+            edgePct: p.edgePct,
+            modelWinPct: p.modelWinPct,
+            trust: p.trust ?? null,
+            source: "LIVE",
+          }));
+        for (let i = 0; i < pickRows.length; i += 300) {
+          await db.insert(oddsLines).values(pickRows.slice(i, i + 300)).onConflictDoNothing();
         }
 
         // Every raw book line, win or lose on edge — not just the picks
