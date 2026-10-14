@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { TrustBadge, type TrustView } from "../trust-badge";
 
 export interface SportPropRow {
   id: number;
@@ -14,6 +15,7 @@ export interface SportPropRow {
   projection: number | null;
   edgePct: number | null;
   modelWinPct: number | null;
+  trust?: TrustView | null;
   // Every sportsbook's price for this exact player/stat/line/side, best
   // price first (includes the one already shown as `book`/`priceAmerican`).
   otherBooks?: { book: string; priceAmerican: number }[];
@@ -157,6 +159,12 @@ export function SportPropsExplorer({
                                       {(r.modelWinPct * 100).toFixed(0)}%
                                     </span>{" "}
                                     model win
+                                  </>
+                                )}
+                                {r.trust && (
+                                  <>
+                                    {" "}
+                                    <TrustBadge trust={r.trust} compact />
                                   </>
                                 )}
                               </span>

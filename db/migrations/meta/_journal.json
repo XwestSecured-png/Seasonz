@@ -218,6 +218,13 @@
       "when": 1791960000000,
       "tag": "0030_seasonz_bets_alerts_results",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791960001000,
+      "tag": "0031_seasonz_prop_trust",
+      "breakpoints": true
     }
   ]
 }

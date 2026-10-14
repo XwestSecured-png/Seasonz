@@ -2,6 +2,7 @@ import type { PlayerWeekStats, DefensivePlayerWeekStats, ScheduleGame } from "./
 import type { PropOutcome } from "./odds";
 import { MIN_MODEL_WIN_PCT } from "./confidence";
 import { projectProp, propChance, type PropModelConfig, type Projection } from "./prop-dist";
+import { propTrust, trustFeatures, type Trust } from "./prop-trust";
 
 // A one- or two-game season average is too small a sample to trust over a
 // book's own (much larger) model — require a few games first.
@@ -71,6 +72,8 @@ export interface PlayerSeasonAverage {
   /** Full projection (distribution shape) and the stat's model settings. */
   proj?: Projection;
   cfg?: PropModelConfig;
+  /** Every game's value, oldest first (for the trust score). */
+  values?: number[];
 }
 
 /**
@@ -198,7 +201,17 @@ export function computeSeasonAverages(
     const oppFactor = opponent ? (opponentFactors.get(opponent)?.get(statType) ?? 1) : 1;
     const projection = proj.mean * oppFactor;
 
-    out.set(key, { player, team, statType, average: projection, stdDev, games: n, proj: { ...proj, mean: projection }, cfg });
+    out.set(key, {
+      player,
+      team,
+      statType,
+      average: projection,
+      stdDev,
+      games: n,
+      proj: { ...proj, mean: projection },
+      cfg,
+      values: [...sorted].reverse().map((g) => g.value),
+    });
   }
   return out;
 }
@@ -250,6 +263,7 @@ export interface PropPick {
   modelWinPct: number;
   opponent: string | null;
   gameDate: string | null; // this player's team's game date for the upcoming week (YYYY-MM-DD), for "Parlay for Today"
+  trust?: Trust;
 }
 
 /**
@@ -311,6 +325,7 @@ export function buildPropPicks(
     if (modelWinPct - americanToImpliedProb(price) < MIN_PROP_EDGE) continue;
 
     const matchup = opponentThisWeek.get(avg.team);
+    const trust = avg.values ? propTrust("nfl", modelWinPct, trustFeatures(avg.values, g.line, side), americanToImpliedProb(price)) : undefined;
 
     picks.push({
       player: g.player,
@@ -325,6 +340,7 @@ export function buildPropPicks(
       modelWinPct,
       opponent: matchup?.opponent ?? null,
       gameDate: matchup?.gameDate ?? null,
+      trust,
     });
   }
 

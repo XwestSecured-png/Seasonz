@@ -972,6 +972,7 @@ export async function runSportSync(
               projection: p.projection,
               edgePct: p.edgePct,
               modelWinPct: p.modelWinPct,
+              trust: p.trust ?? null,
               source: "LIVE",
             })
             .onConflictDoUpdate({
@@ -992,6 +993,7 @@ export async function runSportSync(
                 projection: p.projection,
                 edgePct: p.edgePct,
                 modelWinPct: p.modelWinPct,
+                trust: p.trust ?? null,
                 source: "LIVE",
                 fetchedAt: new Date(),
               },

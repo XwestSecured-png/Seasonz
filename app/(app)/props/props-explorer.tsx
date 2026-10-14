@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { TrustBadge, type TrustView } from "../trust-badge";
 
 export interface PropRow {
   id: number;
@@ -18,6 +19,7 @@ export interface PropRow {
   // the 70% bar at sync time, so this is shown as confirmation, not as a
   // further filter.
   modelWinPct: number | null;
+  trust?: TrustView | null;
   // Every sportsbook's price for this exact player/stat/line/side, best
   // price first (includes the one already shown as `book`/`priceAmerican`
   // above). Empty for model-only stat types, which have no book line at all.
@@ -262,6 +264,12 @@ export function PropsExplorer({
                                             {(r.modelWinPct * 100).toFixed(0)}%
                                           </span>{" "}
                                           model win
+                                        </>
+                                      )}
+                                      {r.trust && (
+                                        <>
+                                          {" "}
+                                          <TrustBadge trust={r.trust} compact />
                                         </>
                                       )}
                                     </span>

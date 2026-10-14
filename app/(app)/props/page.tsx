@@ -1,3 +1,4 @@
+import type { TrustView } from "../trust-badge";
 import Link from "next/link";
 import { db } from "@/db";
 import {
@@ -108,6 +109,14 @@ async function NflProps() {
           or player at a time. Use the filters above to narrow it down to one team or one stat.
         </p>
         <p>
+          <strong>Trust</strong> (High / Medium / Low) says how much to believe a pick&rsquo;s chance. Every pick here is
+          70%+, so trust looks at what the chance leaves out: how many games of data there are, how often the player has
+          cleared this exact line lately, how up-and-down the stat is, and (in basketball and hockey) whether his minutes
+          have been steady. It was tested on past games in every sport: High-trust picks hit about 85&ndash;88% of the
+          time, Medium about 75%, Low about 70%. If our chance is 15+ points above the book&rsquo;s price, trust tops out
+          at Medium, since gaps that big often mean news the model hasn&rsquo;t seen. Tap a badge to see why.
+        </p>
+        <p>
           For yardage and reception stats: the projection behind each pick is a recency-weighted
           average of the player&rsquo;s last few games (not a flat season average), adjusted up
           or down for how much of that stat the upcoming opponent has actually allowed this
@@ -183,6 +192,7 @@ async function NflProps() {
                 projection: p.projection,
                 edgePct: p.edgePct,
                 modelWinPct: p.modelWinPct,
+                trust: (p.trust as TrustView | null) ?? null,
                 otherBooks,
               };
             })}
@@ -361,6 +371,7 @@ async function OtherSportPropsSection({ sport, userId }: { sport: SportKey; user
                   projection: p.projection,
                   edgePct: p.edgePct,
                   modelWinPct: p.modelWinPct,
+                  trust: (p.trust as TrustView | null) ?? null,
                   otherBooks,
                 };
               })}

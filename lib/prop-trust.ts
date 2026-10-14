@@ -42,8 +42,27 @@ const sigmoid = (z: number) => 1 / (1 + Math.exp(-z));
 
 // Fitted per sport by trustBacktest (see the header). DEFAULT is the NFL fit,
 // used for any sport without its own.
+//
+// Held-out check (latest 25% of each sport's replayed games; hit rate of
+// High / Medium / Low tiers, and log loss raw model -> with trust adjustment):
+//   NFL   84.6 / 74.8 / 68.4%   .4551 -> .4521
+//   NBA   85.3 / 74.6 / 69.5%   .4506 -> .4475
+//   WNBA  85.7 / 76.0 / 72.3%   .4420 -> .4394
+//   NHL   87.0 / 74.2 / 70.5%   .4292 -> .4288
+//   MLB   87.8 / 75.7 / 72.5%   .4182 -> .4170
+//   NCAAF 84.5 / 83.5 / 67.2%   .4541 -> .4498 with its own fit (unstable; uses NFL's, below)
 export const TRUST_COEF: Record<string, TrustCoef> = {
-  DEFAULT: [0.3, 0.78, -0.3, -0.13, -0.25, 0.09, 0, 0],
+  nfl: [-0.2529, 0.7487, -0.4326, -0.1494, -0.3048, -0.1803, 0.968, 0],
+  nba: [0.2196, 0.737, -0.2389, -0.0957, -0.2991, -0.3545, 0.6754, -0.246],
+  wnba: [-0.0265, 0.703, -0.4776, -0.1186, -0.264, -0.2978, 0.9681, -0.2386],
+  nhl: [0.5875, 0.979, -0.2652, -0.0708, -0.3548, -0.5086, 0.0308, -0.4705],
+  mlb: [0.3822, 0.97, -0.2133, -0.1725, -0.1966, -0.4682, 0.1014, 0],
+  // NCAAF's own fit (-0.9608, 0.5953, 0.5756, 0.6592, -0.5976, 0.0073, 1.0318) is
+  // unstable: few players have 8+ games, so it pushed steady veterans under
+  // 55%. College football uses the NFL fit.
+  ncaaf: [-0.2529, 0.7487, -0.4326, -0.1494, -0.3048, -0.1803, 0.968, 0],
+  // NCAAB has no box scores synced yet: NBA's fit.
+  DEFAULT: [0.2196, 0.737, -0.2389, -0.0957, -0.2991, -0.3545, 0.6754, -0.246],
 };
 
 export interface TrustFeatures {
@@ -127,6 +146,18 @@ export function gameTrust(p: number, hasLine: boolean): Trust {
     of: null,
     games: 0,
     reasons: hasLine ? ["Model blended with the betting line"] : ["No betting line yet: model only"],
+  };
+}
+
+/** Trust for a model-only prop (no book line, e.g. anytime TD): never High, nothing to check it against. */
+export function modelOnlyTrust(p: number): Trust {
+  return {
+    adj: p,
+    tier: p >= 0.75 ? "Medium" : "Low",
+    hits: null,
+    of: null,
+    games: 0,
+    reasons: ["Model-only prop: no sportsbook line to check it against"],
   };
 }
 

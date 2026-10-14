@@ -1149,6 +1149,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
               projection: p.projection,
               edgePct: p.edgePct,
               modelWinPct: p.modelWinPct,
+              trust: p.trust ?? null,
               source: "LIVE",
             })
             .onConflictDoUpdate({
@@ -1168,6 +1169,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
                 projection: p.projection,
                 edgePct: p.edgePct,
                 modelWinPct: p.modelWinPct,
+                trust: p.trust ?? null,
                 source: "LIVE",
                 fetchedAt: new Date(),
               },

@@ -32,6 +32,8 @@ export interface FeedItem {
   preseason: boolean;
   href: string;
   bet: BetOption;
+  /** Props: trust score (lib/prop-trust.ts). */
+  trust?: { tier: "High" | "Medium" | "Low"; adj?: number; reasons?: string[]; hits?: number | null; of?: number | null } | null;
 }
 
 const implied = (a: number) => (a < 0 ? -a / (-a + 100) : 100 / (a + 100));
@@ -190,6 +192,7 @@ export async function getBestBetsFeed(windowHours = 36): Promise<FeedItem[]> {
         edge,
         preseason: g.seasonType === 1,
         href: "/props",
+        trust: (p.trust as FeedItem["trust"]) ?? null,
         bet: {
           label: `${p.player} ${side} ${p.line} ${p.statType} ${fmt(best.price)} (${best.book})`,
           sport,
@@ -250,6 +253,7 @@ export async function getBestBetsFeed(windowHours = 36): Promise<FeedItem[]> {
         edge,
         preseason: false,
         href: "/props",
+        trust: (p.trust as FeedItem["trust"]) ?? null,
         bet: {
           label: `${p.player} ${side} ${p.line} ${p.statType} ${fmt(best.price)} (${best.book})`,
           sport: "nfl",

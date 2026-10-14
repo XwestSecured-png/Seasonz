@@ -1,5 +1,6 @@
 "use client";
 
+import { TrustBadge } from "../trust-badge";
 import { useState } from "react";
 import type { Build, BuildSet } from "@/lib/auto-builds";
 import type { Sportsbook, SportsbookCategory } from "@/lib/sportsbooks";
@@ -45,6 +46,9 @@ function BuildCard({
         <div className="text-right">
           <div className="text-xs text-neutral-500">Model chance all hit</div>
           <div className="text-lg font-semibold text-emerald-300">{pct(build.combinedProb)}</div>
+          <div className="mt-0.5">
+            <TrustBadge trust={{ tier: build.trust.tier, reasons: [build.trust.reason] }} label="trust overall" />
+          </div>
         </div>
       </div>
 
@@ -75,6 +79,9 @@ function BuildCard({
                     {leg.priceSource === "fair" && <span className="ml-1 text-[10px] text-neutral-500">fair</span>}
                   </span>
                   <span className="block text-xs text-emerald-400">{pct(leg.prob)}</span>
+                  <span className="block">
+                    <TrustBadge trust={leg.trust} compact />
+                  </span>
                   <span className="block text-[10px] text-neutral-500">{isOpen ? "Hide why ▴" : "Why ▾"}</span>
                 </span>
               </button>

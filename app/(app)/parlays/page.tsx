@@ -216,7 +216,10 @@ export default async function ParlaysPage({ searchParams }: { searchParams: Prom
             <strong>Auto Parlays</strong> are built by the model for today or this week, in every size from 2
             to 8 legs, from game picks and from player props, one leg per game (one prop per team).
             &ldquo;Model chance all hit&rdquo; is the chance every leg wins. These are for reference,
-            not tied to your account.
+            not tied to your account.{" "}
+            Each leg has a <strong>trust</strong> badge (how much to believe its chance; tap it for why), and the parlay
+            gets an overall trust that&rsquo;s only as good as its weakest leg. Long parlays (5+ legs) or ones under a 30%
+            combined chance can&rsquo;t be High, and under 8% they&rsquo;re Low.
           </p>
           <p>
             <strong>Your Parlays</strong> are ones you build yourself, from any bet you want.

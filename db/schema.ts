@@ -351,6 +351,8 @@ export const oddsLines = pgTable(
     // app's 70%-confidence filter actually checks. Null for rows written
     // before this column existed.
     modelWinPct: real("model_win_pct"),
+    // Trust score for the pick (lib/prop-trust.ts): tier, backtested chance, reasons.
+    trust: jsonb("trust"),
     source: text("source"), // "LIVE" | "MANUAL"
     fetchedAt: timestamp("fetched_at").notNull().defaultNow(),
   },
@@ -935,6 +937,8 @@ export const sportOddsLines = pgTable(
     // lib/sports/props-model.ts's reuse of lib/props-model.ts's
     // winProbability) — what this app's 70%-confidence filter checks.
     modelWinPct: real("model_win_pct"),
+    // Trust score for the pick (lib/prop-trust.ts): tier, backtested chance, reasons.
+    trust: jsonb("trust"),
     source: text("source"), // "LIVE"
     fetchedAt: timestamp("fetched_at").notNull().defaultNow(),
   },

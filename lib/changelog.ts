@@ -33,6 +33,31 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.10.0",
+    date: "2026-10-14",
+    title: "Trust scores on props and parlays",
+    summary: "Every prop pick and every model parlay leg now has a High / Medium / Low trust badge, and each parlay gets an overall rating.",
+    changes: [
+      {
+        kind: "new",
+        title: "Trust badge on every prop",
+        whatChanged:
+          "Props, Best Bets and parlay legs show High, Medium or Low trust. It weighs games of data, how often the player cleared that exact line lately, how up-and-down the stat is, and steady minutes. Tap a badge to see why.",
+        whatItMeans:
+          "Every pick is already 70%+, so trust separates them: in testing on past games, High-trust picks hit about 85-88%, Medium about 75%, Low about 70%.",
+        href: "/props",
+      },
+      {
+        kind: "new",
+        title: "Overall parlay trust",
+        whatChanged:
+          "Each model parlay gets an overall trust that's only as good as its weakest leg. Long parlays (5+ legs) or ones under a 30% combined chance can't be High.",
+        whatItMeans: "One shaky leg is easy to spot, so you can swap it before you bet.",
+        href: "/parlays",
+      },
+    ],
+  },
+  {
     version: "1.9.0",
     date: "2026-10-14",
     title: "Results, best bets, alerts and a smarter TD model",

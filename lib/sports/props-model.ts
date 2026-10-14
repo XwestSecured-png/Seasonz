@@ -6,6 +6,7 @@
 // bar. The two math primitives that don't depend on any sport-specific
 // field name (winProbability / americanToImpliedProb) are imported from
 // lib/props-model.ts rather than duplicated.
+import { propTrust, trustFeatures, type Trust } from "../prop-trust";
 import type { PropOutcome } from "../odds";
 import { winProbability, americanToImpliedProb, MIN_PROP_EDGE, NFL_PROP_MODEL } from "../props-model";
 import { projectProp, propChance, LEGACY_PROP_MODEL, type PropModelConfig, type Projection } from "../prop-dist";
@@ -219,6 +220,10 @@ export interface SportPlayerSeasonAverage {
   games: number;
   proj?: Projection;
   cfg?: PropModelConfig;
+  sport?: SportKey;
+  /** Every game's value and minutes, oldest first (for the trust score). */
+  values?: number[];
+  minutes?: (number | null)[];
 }
 
 /** Same reasoning as lib/props-model.ts's computeOpponentAllowedFactors, generalized over this sport's STAT_EXTRACTORS instead of a fixed NFL field list. */
@@ -330,7 +335,19 @@ export function computeSportSeasonAverages(
     const oppFactor = opponent ? (opponentFactors.get(opponent)?.get(statType) ?? 1) : 1;
     const projection = proj.mean * oppFactor;
 
-    out.set(key, { player, team, statType, average: projection, stdDev, games: n, proj: { ...proj, mean: projection }, cfg });
+    out.set(key, {
+      player,
+      team,
+      statType,
+      average: projection,
+      stdDev,
+      games: n,
+      proj: { ...proj, mean: projection },
+      cfg,
+      sport,
+      values: chrono.map((g) => g.value),
+      minutes: chrono.map((g) => g.min),
+    });
   }
   return out;
 }
@@ -348,6 +365,7 @@ export interface SportPropPick {
   modelWinPct: number;
   opponent: string | null;
   gameDate: string | null;
+  trust?: Trust;
 }
 
 /** Same reasoning as lib/props-model.ts's buildPropPicks. */
@@ -400,6 +418,12 @@ export function buildSportPropPicks(
     if (modelWinPct - americanToImpliedProb(price) < MIN_PROP_EDGE) continue;
 
     const matchup = opponentThisWeek.get(avg.team);
+    // Same minutes filter as the projection: games he didn't play don't count.
+    const played = avg.values?.map((v, i) => ({ v, m: avg.minutes?.[i] ?? null })).filter((x) => !avg.cfg?.useMinutes || x.m === null || x.m > 0);
+    const trust =
+      played && avg.sport
+        ? propTrust(avg.sport, modelWinPct, trustFeatures(played.map((x) => x.v), g.line, side, played.map((x) => x.m)), americanToImpliedProb(price))
+        : undefined;
 
     picks.push({
       player: g.player,
@@ -414,6 +438,7 @@ export function buildSportPropPicks(
       modelWinPct,
       opponent: matchup?.opponent ?? null,
       gameDate: matchup?.gameDate ?? null,
+      trust,
     });
   }
 

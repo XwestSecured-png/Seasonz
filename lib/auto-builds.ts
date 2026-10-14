@@ -25,6 +25,7 @@ import { currentSeasonYear } from "./sports/espn";
 import { probToFairAmerican } from "./fair-odds";
 import { thisWeekOrNext } from "./week-window";
 import { americanToDecimalOdds as americanToDecimal } from "./stake-sizing";
+import { gameTrust, modelOnlyTrust, parlayTrust, type Trust, type TrustTier } from "./prop-trust";
 
 export const BUILD_SIZES = [2, 3, 4, 5, 6, 7, 8] as const;
 // Preferred band: confident but not so short the price adds nothing.
@@ -53,6 +54,7 @@ export interface BuildLeg {
   priceSource: "book" | "fair";
   reasons: string[]; // why the model likes it, most important first
   teamKey: string; // for "one per game / team" spacing
+  trust: Pick<Trust, "tier" | "adj" | "reasons" | "hits" | "of">;
 }
 
 export interface Build {
@@ -64,6 +66,7 @@ export interface Build {
   weakest: BuildLeg;
   summary: string;
   usesFairPrices: boolean;
+  trust: { tier: TrustTier; reason: string };
 }
 
 export interface BuildSet {
@@ -141,6 +144,7 @@ function makeBuilds(pool: BuildLeg[], kind: "game" | "prop", window: "today" | "
       weakest: legs.reduce((w, l) => (l.prob < w.prob ? l : w)),
       summary: summarize(legs, combinedProb, kind, window),
       usesFairPrices: legs.some((l) => l.priceSource === "fair"),
+      trust: parlayTrust(legs.map((l) => ({ tier: l.trust.tier, prob: l.prob }))),
     });
   }
   return out;
@@ -258,6 +262,7 @@ async function nflGameLegs(window: "today" | "week"): Promise<BuildLeg[]> {
       priceSource: book !== null ? "book" : "fair",
       reasons,
       teamKey: `nfl-${g.id}`,
+      trust: gameTrust(prob, book !== null),
     });
   }
   return legs;
@@ -361,6 +366,7 @@ async function otherSportGameLegs(window: "today" | "week"): Promise<BuildLeg[]>
         priceSource: book !== null ? "book" : "fair",
         reasons,
         teamKey: `${sport}-${g.id}`,
+        trust: gameTrust(prob, book !== null),
       });
     }
   }
@@ -443,6 +449,7 @@ async function propLegs(window: "today" | "week"): Promise<BuildLeg[]> {
         priceSource: !isModelOnly && r.priceAmerican !== null ? "book" : "fair",
         reasons,
         teamKey: `nfl-${r.team}`,
+        trust: !isModelOnly && r.trust ? (r.trust as Trust) : modelOnlyTrust(prob),
       });
     }
   }
@@ -500,6 +507,7 @@ async function propLegs(window: "today" | "week"): Promise<BuildLeg[]> {
         priceSource: "book",
         reasons,
         teamKey: `${sport}-${r.team}`,
+        trust: (r.trust as Trust | null) ?? modelOnlyTrust(prob),
       });
     }
   }

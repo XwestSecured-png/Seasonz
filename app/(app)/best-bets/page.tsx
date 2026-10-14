@@ -4,6 +4,7 @@ import { getBestBetsFeed } from "@/lib/best-bets-feed";
 import { formatEt } from "@/lib/week-window";
 import { PageInfo } from "../page-info";
 import { LogBetButton } from "../log-bet-button";
+import { TrustBadge } from "../trust-badge";
 
 export const dynamic = "force-dynamic";
 
@@ -78,6 +79,11 @@ export default async function BestBetsPage({ searchParams }: { searchParams: Pro
                 <div className="text-right shrink-0">
                   <div className="text-sm font-semibold text-emerald-400">+{(x.edge * 100).toFixed(1)} pts</div>
                   <div className="text-[11px] text-neutral-500">edge</div>
+                  {x.trust && (
+                    <div className="mt-0.5">
+                      <TrustBadge trust={x.trust} compact />
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="text-xs text-neutral-400 flex flex-wrap gap-x-3 gap-y-0.5">
