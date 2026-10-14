@@ -33,6 +33,23 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.8.1",
+    date: "2026-10-14",
+    title: "Your record vs the model",
+    summary: "My Picks has a Record tab: your full pick history, graded side by side with the model.",
+    changes: [
+      {
+        kind: "new",
+        title: "Record tab in My Picks",
+        whatChanged:
+          "Your all-time record next to the model's on the same games, how you do when you agree vs go against the model, how both do by model confidence, by sport and month by month, plus streaks and your prop record.",
+        whatItMeans:
+          "See where your instincts beat the model and where they don't. Every graded pick is kept, every season (preseason left out), and the sport and pick-type filters work here too.",
+        href: "/my-picks",
+      },
+    ],
+  },
+  {
     version: "1.8.0",
     date: "2026-10-13",
     title: "My Picks: all your picks in one place",

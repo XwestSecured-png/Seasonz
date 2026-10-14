@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { MyPick, PickStatus } from "@/lib/my-picks";
+import { RecordView } from "./record-view";
 
 const STATUS_STYLE: Record<PickStatus, string> = {
   pending: "bg-neutral-800 text-neutral-300",
@@ -55,7 +56,7 @@ function groupByDayAndTime(list: MyPick[]): DayGroup[] {
 }
 
 export function MyPicksView({ picks }: { picks: MyPick[] }) {
-  const [view, setView] = useState<"upcoming" | "results">("upcoming");
+  const [view, setView] = useState<"upcoming" | "results" | "record">("upcoming");
   const [sport, setSport] = useState<string>("all");
   const [kind, setKind] = useState<"all" | "Game" | "Prop">("all");
 
@@ -132,6 +133,9 @@ export function MyPicksView({ picks }: { picks: MyPick[] }) {
         <button type="button" onClick={() => setView("results")} className={chip(view === "results")}>
           Results <span className="opacity-60">{results.length}</span>
         </button>
+        <button type="button" onClick={() => setView("record")} className={chip(view === "record")}>
+          Record
+        </button>
       </div>
       <div className="flex gap-2 flex-wrap">
         <select
@@ -157,7 +161,9 @@ export function MyPicksView({ picks }: { picks: MyPick[] }) {
         </select>
       </div>
 
-      {list.length === 0 ? (
+      {view === "record" ? (
+        <RecordView picks={filtered} />
+      ) : list.length === 0 ? (
         <p className="text-sm text-neutral-500">
           {view === "upcoming" ? "Nothing pending for this filter." : "No finished picks for this filter yet."}
         </p>
