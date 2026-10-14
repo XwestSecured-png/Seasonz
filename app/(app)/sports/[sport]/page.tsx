@@ -15,6 +15,8 @@ import { currentSeasonYear } from "@/lib/sports/espn";
 import { etWeekWindow, inWindow, formatEt } from "@/lib/week-window";
 import { getGameInsights } from "@/lib/sports/insights";
 import { GameInsight } from "./game-insight";
+import { LogBetButton } from "../../log-bet-button";
+import { gameBetOptions } from "@/lib/bet-options";
 
 export const dynamic = "force-dynamic";
 
@@ -390,6 +392,11 @@ export default async function SportPage({ params }: { params: Promise<{ sport: s
                     </div>
                   )}
                 </div>
+                {user && !isPickLocked(g.kickoffAt) && (
+                  <div className="pt-1">
+                    <LogBetButton compact options={gameBetOptions(sport, g)} />
+                  </div>
+                )}
               </div>
             ))}
           </div>

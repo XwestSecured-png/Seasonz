@@ -167,6 +167,9 @@ export interface PlayerWeekStats {
   season: number;
   week: number;
   team: string;
+  /** nflverse gsis id (stable across seasons and name spellings). */
+  playerId?: string;
+  opponent?: string;
   player: string;
   position: string;
   epa: number; // this player's total EPA contribution that week
@@ -176,6 +179,10 @@ export interface PlayerWeekStats {
   rushYds: number;
   recYds: number;
   receptions: number;
+  // Opportunities, for the touchdown model (lib/td-model.ts).
+  carries?: number;
+  targets?: number;
+  passTds?: number;
   // Touchdowns scored BY this player (rushing + receiving only — not
   // passing, since "anytime TD scorer" props are about the player crossing
   // the goal line themselves). Used for the Anytime TD / 2+ TDs projections
@@ -207,6 +214,8 @@ export async function fetchPlayerWeekStats(season: number): Promise<PlayerWeekSt
       season,
       week: Number(r.week),
       team: r.team || r.recent_team,
+      playerId: r.player_id || undefined,
+      opponent: r.opponent_team || undefined,
       player: r.player_display_name || r.player_name,
       position: r.position,
       // nflverse's player_stats CSV doesn't publish a single "total EPA"
@@ -220,6 +229,9 @@ export async function fetchPlayerWeekStats(season: number): Promise<PlayerWeekSt
       rushYds: Number(r.rushing_yards || 0),
       recYds: Number(r.receiving_yards || 0),
       receptions: Number(r.receptions || 0),
+      carries: Number(r.carries || 0),
+      targets: Number(r.targets || 0),
+      passTds: Number(r.passing_tds || 0),
       rushingTds: Number(r.rushing_tds || 0),
       receivingTds: Number(r.receiving_tds || 0),
       sacksTaken: Number(r.sacks_suffered || 0),
@@ -321,4 +333,59 @@ export async function fetchTeamWeekStats(season: number): Promise<TeamWeekStats[
       // (receiving_2pt_conversions), so adding that in would double-count it.
       twoPtConversions: Number(r.passing_2pt_conversions || 0) + Number(r.rushing_2pt_conversions || 0),
     }));
+}
+
+/** One player's touchdowns, interceptions and fumbles in one game (only games with at least one). */
+export interface ScoringEventRow {
+  week: number;
+  team: string;
+  opponent: string;
+  playerId: string;
+  player: string;
+  position: string;
+  passTd: number;
+  rushTd: number;
+  recTd: number;
+  returnTd: number; // kick/punt return TDs
+  defTd: number; // INT or fumble return TDs by a defender
+  intThrown: number;
+  defInt: number;
+  fumbles: number;
+  fumblesLost: number;
+  forced: number; // fumbles forced (defense)
+  recovered: number; // opponent fumbles recovered
+}
+
+/** Every TD, interception and fumble by player and week (regular season, all positions). */
+export async function fetchScoringEvents(season: number): Promise<ScoringEventRow[]> {
+  const rows = await fetchCsv(`${NFLVERSE_BASE}/stats_player/stats_player_week_${season}.csv`);
+  const n = (v: string | undefined) => Number(v || 0) || 0;
+  const out: ScoringEventRow[] = [];
+  for (const r of rows) {
+    if (r.season_type !== "REG" && r.season_type !== undefined) continue;
+    const e: ScoringEventRow = {
+      week: n(r.week),
+      team: r.team || r.recent_team,
+      opponent: r.opponent_team || "",
+      playerId: r.player_id || `${r.player_display_name}|${r.position}`,
+      player: r.player_display_name || r.player_name,
+      position: r.position || "",
+      passTd: n(r.passing_tds),
+      rushTd: n(r.rushing_tds),
+      recTd: n(r.receiving_tds),
+      returnTd: n(r.special_teams_tds),
+      defTd: n(r.def_tds) + n(r.fumble_recovery_tds),
+      intThrown: n(r.passing_interceptions),
+      defInt: n(r.def_interceptions),
+      // fumbles_total also counts return and other fumbles; older files lack it.
+      fumbles: r.fumbles_total !== undefined ? n(r.fumbles_total) : n(r.rushing_fumbles) + n(r.receiving_fumbles) + n(r.sack_fumbles),
+      fumblesLost:
+        r.fumbles_lost_total !== undefined ? n(r.fumbles_lost_total) : n(r.rushing_fumbles_lost) + n(r.receiving_fumbles_lost) + n(r.sack_fumbles_lost),
+      forced: n(r.def_fumbles_forced),
+      recovered: n(r.fumble_recovery_opp),
+    };
+    const any = e.passTd + e.rushTd + e.recTd + e.returnTd + e.defTd + e.intThrown + e.defInt + e.fumbles + e.forced + e.recovered;
+    if (any > 0) out.push(e);
+  }
+  return out;
 }

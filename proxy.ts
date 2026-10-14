@@ -19,6 +19,10 @@ export function proxy(req: NextRequest) {
     pathname.startsWith("/api/signup") ||
     pathname.startsWith("/api/sync") ||
     pathname.startsWith("/api/health") ||
+    // Cron-secret endpoint (alerts sender), the push service worker, and app icons.
+    pathname.startsWith("/api/alerts") ||
+    pathname === "/sw.js" ||
+    pathname.startsWith("/icons/") ||
     pathname.startsWith("/api/stripe/webhook") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon")

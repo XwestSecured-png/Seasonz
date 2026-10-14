@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   // up fresh rather than trusting anything the client sent about timing,
   // and confirm it's actually this sport's game (not just any gameId).
   const [game] = await db
-    .select({ kickoffAt: sportGames.kickoffAt, sport: sportGames.sport })
+    .select({ kickoffAt: sportGames.kickoffAt, sport: sportGames.sport, homeTeam: sportGames.homeTeam, extra: sportGames.extra })
     .from(sportGames)
     .where(eq(sportGames.id, gameId))
     .limit(1);
@@ -60,12 +60,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  // The market's chance for the picked side right now: line-move alerts
+  // compare against it.
+  const m = (game.extra as { model?: { marketPct?: number | null } } | null)?.model?.marketPct ?? null;
+  const marketAtPick = m == null ? null : team === game.homeTeam ? m : 1 - m;
   await db
     .insert(sportUserPicks)
-    .values({ userId, sport, gameId, team })
+    .values({ userId, sport, gameId, team, marketAtPick })
     .onConflictDoUpdate({
       target: [sportUserPicks.userId, sportUserPicks.gameId],
-      set: { team, updatedAt: new Date() },
+      set: { team, marketAtPick, updatedAt: new Date() },
     });
 
   return NextResponse.json({ ok: true });

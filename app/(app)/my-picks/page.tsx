@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { getMyPicks } from "@/lib/my-picks";
 import { PageInfo } from "../page-info";
 import { MyPicksView } from "./my-picks-view";
+import { AlertsToggle } from "../alerts-toggle";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ export default async function MyPicksPage() {
           Tap a pick to go to its game. Preseason picks are shown but don&rsquo;t count toward your record.
         </p>
       </PageInfo>
+      <AlertsToggle />
       <MyPicksView picks={picks} />
     </div>
   );

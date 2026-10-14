@@ -171,9 +171,10 @@ export function injuryShift(sport: SportKey, homePct: number, homeLost: number, 
 }
 
 /** Blends the model-only chance with the book's no-vig chance (when there is a line). */
-export function blendWithMarket(sport: SportKey, modelPct: number, marketPct: number | null): number {
+export function blendWithMarket(sport: SportKey, modelPct: number, marketPct: number | null, weight?: number): number {
   if (marketPct == null) return modelPct;
-  const w = GAME_MODEL[sport].modelWeight;
+  // A re-tested weight (lib/model-weights) overrides the coded one, bounded.
+  const w = weight !== undefined && weight >= 0 && weight <= 0.5 ? weight : GAME_MODEL[sport].modelWeight;
   return sigmoid(w * logit(modelPct) + (1 - w) * logit(marketPct));
 }
 

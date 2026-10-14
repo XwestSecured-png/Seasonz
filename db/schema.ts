@@ -57,6 +57,8 @@ export const games = pgTable(
     modelOnlyPct: real("model_only_pct"),
     marketPct: real("market_pct"),
     lockedPct: real("locked_pct"),
+    // Model-only number at lock (before the line blend), for re-testing weights.
+    lockedModelPct: real("locked_model_pct"),
     lockedMarketPct: real("locked_market_pct"),
     lockedAt: timestamp("locked_at"),
     roof: text("roof"),
@@ -538,6 +540,8 @@ export const userPicks = pgTable(
       .references(() => games.id),
     team: text("team").notNull(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    // No-vig market chance of the picked team when the pick was made.
+    marketAtPick: real("market_at_pick"),
   },
   (t) => ({
     userGameIdx: uniqueIndex("user_picks_user_game_idx").on(t.userId, t.gameId),
@@ -585,10 +589,23 @@ export const userBets = pgTable("user_bets", {
   userId: integer("user_id")
     .notNull()
     .references(() => users.id),
-  gameId: integer("game_id")
-    .notNull()
-    .references(() => games.id),
-  market: text("market").notNull(), // "ML" | "SPREAD" | "TOTAL"
+  // NFL game (games table); null for other sports and parlays.
+  gameId: integer("game_id").references(() => games.id),
+  // "nfl" or a SportKey; "multi" for a parlay across sports.
+  sport: text("sport").notNull().default("nfl"),
+  // Other sports' game (sport_games table).
+  sportGameId: integer("sport_game_id").references(() => sportGames.id),
+  // Display label, e.g. "LeBron James Over 25.5 Points" or a parlay's legs.
+  description: text("description"),
+  // PROP bets: { player, statType, line, side } for auto-grading.
+  prop: jsonb("prop"),
+  // Closing number when the game started (for closing-line value).
+  closingPriceAmerican: integer("closing_price_american"),
+  closingLine: real("closing_line"),
+  // Closing-line value in win-chance points: closing no-vig chance of your
+  // side minus the chance your price implied. Positive = you beat the close.
+  clvPct: real("clv_pct"),
+  market: text("market").notNull(), // "ML" | "SPREAD" | "TOTAL" | "PROP" | "PARLAY"
   selection: text("selection").notNull(), // team abbr for ML/SPREAD, "OVER" | "UNDER" for TOTAL
   line: real("line"), // spread/total line at the time this bet was placed; null for ML
   priceAmerican: integer("price_american").notNull(),
@@ -1041,6 +1058,7 @@ export const sportUserPicks = pgTable(
       .references(() => sportGames.id),
     team: text("team").notNull(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    marketAtPick: real("market_at_pick"),
   },
   (t) => ({
     userGameIdx: uniqueIndex("sport_user_picks_user_game_idx").on(t.userId, t.gameId),
@@ -1136,3 +1154,33 @@ export const oddsApiKeyUsage = pgTable("odds_api_key_usage", {
   resetAt: timestamp("reset_at"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+// ---------------------------------------------------------------------------
+// Push alerts (lib/push.ts): one row per browser/device a user turned alerts
+// on in, with their alert preferences; alert_log dedupes sends.
+// ---------------------------------------------------------------------------
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id),
+  endpoint: text("endpoint").notNull().unique(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  prefs: jsonb("prefs").notNull().default({ locks: true, edges: true, moves: true }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const alertLog = pgTable(
+  "alert_log",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    kind: text("kind").notNull(),
+    ref: text("ref").notNull(),
+    sentAt: timestamp("sent_at").notNull().defaultNow(),
+  },
+  (t) => ({ userKindRef: uniqueIndex("alert_log_user_id_kind_ref_key").on(t.userId, t.kind, t.ref) })
+);

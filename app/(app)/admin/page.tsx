@@ -13,6 +13,8 @@ import { InviteCodesPanel, type ShownCode } from "./invite-codes-panel";
 import { PromoCodesPanel } from "./promo-codes-panel";
 import { nextCodeForPlatform, PLATFORMS, type Platform } from "@/lib/invite-codes";
 import { getOddsKeyReport, PROVIDER_LABELS } from "@/lib/odds-provider";
+import { getHealthReport } from "@/lib/health-checks";
+import { AlertsToggle } from "../alerts-toggle";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +61,7 @@ export default async function AdminPage() {
     .groupBy(users.tier);
   const paid = (t: Tier) => paidRows.find((r) => r.tier === t)?.count ?? 0;
   const mrr = paid("pro") * limits.proPriceUsd + paid("super_pro") * limits.superProPriceUsd;
+  const health = await getHealthReport();
 
   return (
     <div className="space-y-8">
@@ -82,6 +85,29 @@ export default async function AdminPage() {
           </p>
         </PageInfo>
       </div>
+
+      <section className="space-y-2">
+        <h2 className="text-sm font-semibold text-neutral-300">Sync health</h2>
+        {!health ? (
+          <p className="text-xs text-neutral-500">No check has run yet (runs hourly).</p>
+        ) : (
+          <div className="rounded-md border border-neutral-800 px-3 py-2 text-xs space-y-1">
+            <div className={health.ok ? "text-emerald-400" : "text-amber-300"}>
+              {health.ok ? `All ${health.checked} checks passed` : `${health.issues.length} issue(s) found`} ·{" "}
+              <span className="text-neutral-500">
+                {new Date(health.at).toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" })} ET
+              </span>
+            </div>
+            {health.issues.map((i) => (
+              <div key={i.id} className={i.level === "error" ? "text-red-400" : "text-amber-300"}>
+                {i.level === "error" ? "✕" : "!"} {i.message}
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="text-[11px] text-neutral-500">Turn on alerts on this device to get pushed when a check fails.</p>
+        <AlertsToggle />
+      </section>
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-neutral-300">Business metrics</h2>

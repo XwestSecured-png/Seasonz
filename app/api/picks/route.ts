@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   // nicety; this is what actually stops a locked pick from being set (or
   // cleared) via a direct API call made after the page loaded.
   const [game] = await db
-    .select({ kickoffAt: games.kickoffAt })
+    .select({ kickoffAt: games.kickoffAt, homeTeam: games.homeTeam, marketPct: games.marketPct })
     .from(games)
     .where(eq(games.id, gameId))
     .limit(1);
@@ -52,12 +52,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  // The market's chance for the picked side right now: line-move alerts
+  // compare against it.
+  const marketAtPick = game.marketPct == null ? null : team === game.homeTeam ? game.marketPct : 1 - game.marketPct;
   await db
     .insert(userPicks)
-    .values({ userId, gameId, team })
+    .values({ userId, gameId, team, marketAtPick })
     .onConflictDoUpdate({
       target: [userPicks.userId, userPicks.gameId],
-      set: { team, updatedAt: new Date() },
+      set: { team, marketAtPick, updatedAt: new Date() },
     });
 
   return NextResponse.json({ ok: true });

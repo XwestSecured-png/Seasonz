@@ -25,6 +25,7 @@ import {
 } from "@/db/schema";
 import { replaySportElo, type SportEloGame } from "./sport-elo";
 import { makeTeamResolver } from "./team-match";
+import { settlePendingBets } from "../bet-settle";
 import { SPORTS, PRESEASON, PRESEASON_SPORTS, type SportKey } from "./types";
 import {
   fetchTeams,
@@ -1065,6 +1066,8 @@ export async function runSportSync(
   results.push(...(await runModelStages(sport, year, logStage)));
 
   results.push(await logStage(`${sport}:propGrading`, () => gradePendingPropPicks(sport)));
+  // Logged bets (game bets and props) for this sport — lib/bet-settle.ts.
+  results.push(await logStage(`${sport}:gradeBets`, () => settlePendingBets({ sport })));
 
   return results;
 }

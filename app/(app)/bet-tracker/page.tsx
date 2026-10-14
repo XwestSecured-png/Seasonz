@@ -1,6 +1,8 @@
 import { db } from "@/db";
-import { games, userBets } from "@/db/schema";
+import { games, sportGames, userBets } from "@/db/schema";
 import { and, asc, desc, eq } from "drizzle-orm";
+import { SPORTS, type SportKey } from "@/lib/sports/types";
+import { SettleButtons } from "./settle-buttons";
 import { getCurrentUser } from "@/lib/current-user";
 import { getFavoriteTeam } from "@/lib/favorite-team";
 import { getSportsbookPrefs } from "@/lib/sportsbook-pref";
@@ -29,7 +31,9 @@ function describeBet(bet: {
   selection: string;
   line: number | null;
   priceAmerican: number;
+  description?: string | null;
 }): string {
+  if (bet.market === "PROP" || bet.market === "PARLAY") return `${bet.description ?? bet.market} (${formatPrice(bet.priceAmerican)})`;
   if (bet.market === "ML") return `${bet.selection} ML (${formatPrice(bet.priceAmerican)})`;
   if (bet.market === "SPREAD") {
     const lineStr = bet.line !== null ? `${bet.line > 0 ? "+" : ""}${bet.line}` : "";
@@ -63,15 +67,25 @@ export default async function BetTrackerPage() {
     allUpcomingGames.length > 0 ? Math.min(...allUpcomingGames.map((g) => g.week)) : null;
   const upcomingGames = allUpcomingGames.filter((g) => g.week === activeWeek);
 
-  const myBetsRaw = await db
-    .select({
-      bet: userBets,
-      game: games,
-    })
+  // Every sport: NFL bets join games, other sports join sport_games,
+  // parlays have no single game.
+  const myBetsRows = await db
+    .select({ bet: userBets, nfl: games, other: sportGames })
     .from(userBets)
-    .innerJoin(games, eq(games.id, userBets.gameId))
+    .leftJoin(games, eq(games.id, userBets.gameId))
+    .leftJoin(sportGames, eq(sportGames.id, userBets.sportGameId))
     .where(eq(userBets.userId, user.id))
     .orderBy(desc(userBets.placedAt));
+  const myBetsRaw = myBetsRows.map((r) => {
+    const g = r.nfl ?? r.other;
+    return {
+      bet: r.bet,
+      game: { homeTeam: g?.homeTeam ?? "", awayTeam: g?.awayTeam ?? "", isFinal: g?.isFinal ?? false },
+      matchup: g ? `${g.awayTeam} @ ${g.homeTeam}` : "Parlay",
+      sportLabel:
+        r.bet.sport === "nfl" ? "NFL" : r.bet.sport === "multi" ? "Multi" : (SPORTS[r.bet.sport as SportKey]?.label ?? r.bet.sport.toUpperCase()),
+    };
+  });
 
   const pending = myBetsRaw.filter((r) => r.bet.result === "PENDING");
   const graded = myBetsRaw.filter((r) => r.bet.result !== "PENDING");
@@ -83,6 +97,22 @@ export default async function BetTrackerPage() {
   const pushes = graded.filter((r) => r.bet.result === "PUSH").length;
   const roiPct = totalStaked > 0 ? (totalReturned / totalStaked) * 100 : null;
   const winRatePct = wins + losses > 0 ? (wins / (wins + losses)) * 100 : null;
+  // Closing-line value: the long-run sign of real skill (beating the close
+  // predicts profit better than a short win/loss streak).
+  const withClv = graded.filter((r) => r.bet.clvPct !== null);
+  const avgClv = withClv.length ? (withClv.reduce((s, r) => s + (r.bet.clvPct ?? 0), 0) / withClv.length) * 100 : null;
+  const beatClose = withClv.filter((r) => (r.bet.clvPct ?? 0) > 0).length;
+  // Per-sport breakdown.
+  const bySport = new Map<string, { n: number; w: number; l: number; staked: number; net: number }>();
+  for (const r of graded) {
+    const e = bySport.get(r.sportLabel) ?? { n: 0, w: 0, l: 0, staked: 0, net: 0 };
+    e.n++;
+    if (r.bet.result === "WON") e.w++;
+    if (r.bet.result === "LOST") e.l++;
+    e.staked += r.bet.stakeUsd;
+    e.net += r.bet.payoutUsd ?? 0;
+    bySport.set(r.sportLabel, e);
+  }
 
   return (
     <div className="space-y-8">
@@ -133,9 +163,54 @@ export default async function BetTrackerPage() {
         />
         <StatCard label="ROI" value={roiPct !== null ? `${roiPct >= 0 ? "+" : ""}${roiPct.toFixed(1)}%` : "—"} />
       </div>
+      <div className="grid grid-cols-2 gap-4">
+        <StatCard
+          label="Avg closing-line value"
+          value={avgClv !== null ? `${avgClv >= 0 ? "+" : ""}${avgClv.toFixed(1)} pts` : "—"}
+          accent={avgClv !== null ? (avgClv > 0 ? "emerald" : avgClv < 0 ? "red" : undefined) : undefined}
+        />
+        <StatCard label="Beat the closing line" value={withClv.length ? `${beatClose} of ${withClv.length}` : "—"} />
+      </div>
+      <p className="text-xs text-neutral-500 -mt-4">
+        Closing-line value compares the chance your price implied with the market&rsquo;s final no-vig chance when the game started.
+        Positive means you got a better number than the close, which over many bets is the best single sign you&rsquo;re winning for real.
+      </p>
+      {bySport.size > 1 && (
+        <div className="overflow-x-auto rounded-md border border-neutral-800">
+          <table className="w-full text-sm">
+            <thead className="bg-neutral-900 text-neutral-400 text-left text-xs">
+              <tr>
+                <th className="px-3 py-1.5 font-medium">Sport</th>
+                <th className="px-3 py-1.5 font-medium">Bets</th>
+                <th className="px-3 py-1.5 font-medium">Record</th>
+                <th className="px-3 py-1.5 font-medium">Net</th>
+                <th className="px-3 py-1.5 font-medium">ROI</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-800">
+              {[...bySport.entries()].map(([label, e]) => (
+                <tr key={label}>
+                  <td className="px-3 py-1.5">{label}</td>
+                  <td className="px-3 py-1.5 text-neutral-400">{e.n}</td>
+                  <td className="px-3 py-1.5 text-neutral-300">
+                    {e.w}-{e.l}
+                  </td>
+                  <td className={`px-3 py-1.5 ${e.net > 0 ? "text-emerald-400" : e.net < 0 ? "text-red-400" : "text-neutral-300"}`}>
+                    {e.net >= 0 ? "+" : "-"}${Math.abs(e.net).toFixed(0)}
+                  </td>
+                  <td className="px-3 py-1.5 text-neutral-300">{e.staked ? `${((e.net / e.staked) * 100).toFixed(1)}%` : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div>
-        <h2 className="text-sm font-semibold text-neutral-300 mb-2">Log a bet</h2>
+        <h2 className="text-sm font-semibold text-neutral-300 mb-1">Log an NFL game bet</h2>
+        <p className="text-xs text-neutral-500 mb-2">
+          For other sports, props and parlays, tap <strong>💵 Log bet</strong> on any game, prop, best bet or saved parlay.
+        </p>
         <BetForm
           games={upcomingGames.map((g) => ({
             id: g.id,
@@ -173,14 +248,16 @@ export default async function BetTrackerPage() {
                   r.game.homeTeam === favTeam?.code || r.game.awayTeam === favTeam?.code
                 )}
               >
-                <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
                   <span className="text-neutral-400 w-32 shrink-0">
-                    {r.game.awayTeam} @ {r.game.homeTeam}
+                    <span className="text-neutral-500">{r.sportLabel}</span> {r.matchup}
                   </span>
                   <span className="flex-1">{describeBet(r.bet)}</span>
                   <span className="text-neutral-500 shrink-0">${r.bet.stakeUsd.toFixed(0)}</span>
+                  {(r.bet.market === "PARLAY" || (r.bet.market === "PROP" && r.game.isFinal)) && <SettleButtons id={r.bet.id} />}
                   <DeleteBetButton id={r.bet.id} />
                 </div>
+                {(r.bet.market === "ML" || r.bet.market === "SPREAD" || r.bet.market === "TOTAL") && r.bet.sport === "nfl" && (
                 <WhatItMeans
                   compact
                   bet={{
@@ -199,6 +276,7 @@ export default async function BetTrackerPage() {
                     stakeUsd: r.bet.stakeUsd,
                   }}
                 />
+                )}
               </div>
             ))}
           </div>
@@ -222,9 +300,17 @@ export default async function BetTrackerPage() {
                 )}
               >
                 <span className="text-neutral-400 w-32 shrink-0">
-                  {r.game.awayTeam} @ {r.game.homeTeam}
+                  <span className="text-neutral-500">{r.sportLabel}</span> {r.matchup}
                 </span>
-                <span className="flex-1">{describeBet(r.bet)}</span>
+                <span className="flex-1">
+                  {describeBet(r.bet)}
+                  {r.bet.clvPct !== null && (
+                    <span className={`ml-2 text-xs ${r.bet.clvPct > 0 ? "text-emerald-400" : "text-amber-400"}`}>
+                      CLV {r.bet.clvPct > 0 ? "+" : ""}
+                      {(r.bet.clvPct * 100).toFixed(1)}
+                    </span>
+                  )}
+                </span>
                 <span className="text-neutral-500 shrink-0">${r.bet.stakeUsd.toFixed(0)}</span>
                 <ResultBadge result={r.bet.result} payoutUsd={r.bet.payoutUsd} />
               </div>

@@ -211,6 +211,13 @@
       "when": 1791910000000,
       "tag": "0029_seasonz_season_type",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791960000000,
+      "tag": "0030_seasonz_bets_alerts_results",
+      "breakpoints": true
     }
   ]
 }

@@ -10,6 +10,7 @@ import { db } from "@/db";
 import { sportGames, sportInjuryReports, sportPlayerGameStats, sportTeamGameStats, sportTeams } from "@/db/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { SPORTS, PRESEASON, type SportKey } from "./types";
+import { getModelWeights, weightFor } from "../model-weights";
 import { fetchScoreboardPreview, fetchEspnEventMoneyline, type PreviewEvent } from "./espn";
 import { fetchGameOddsForSport, pickSpread, pickTotal } from "./game-odds";
 import { simulateGame } from "./game-sim";
@@ -392,6 +393,7 @@ interface PlayerValue {
 
 async function runModel(sport: SportKey, year: number): Promise<string> {
   const P = GAME_MODEL[sport];
+  const modelWeight = weightFor(await getModelWeights().catch(() => ({})), sport);
   const games = await db
     .select()
     .from(sportGames)
@@ -674,7 +676,7 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
     const preseason = g.seasonType === PRESEASON;
     const blended = preseason
       ? (marketPct ?? sigmoid(0.5 * logit(modelOnly)))
-      : blendWithMarket(sport, modelOnly, marketPct);
+      : blendWithMarket(sport, modelOnly, marketPct, modelWeight);
 
     out.push({
       id: g.id,
@@ -760,7 +762,7 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
     "locked",
     out
       .filter((o) => !finalById.get(o.id) && (kickById.get(o.id) ?? 0) > now)
-      .map((o) => ({ id: o.id, value: { pct: o.pct, at: new Date(now).toISOString(), market: o.model.marketPct ?? null } }))
+      .map((o) => ({ id: o.id, value: { pct: o.pct, at: new Date(now).toISOString(), market: o.model.marketPct ?? null, modelOnly: o.model.modelOnlyPct ?? null } }))
   );
   // Opening snapshot: the first time a game has a line, record the line
   // and the model's own number. Comparing it with the closing line (the

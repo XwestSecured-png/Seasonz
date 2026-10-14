@@ -33,6 +33,81 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.9.0",
+    date: "2026-10-14",
+    title: "Results, best bets, alerts and a smarter TD model",
+    summary:
+      "See how the model has really done, find the day's best edges at the best price, log bets in one tap, get alerts, and see every touchdown, interception and fumble.",
+    changes: [
+      {
+        kind: "new",
+        title: "Results page",
+        whatChanged:
+          "A report card for every sport: the live record (numbers locked before kickoff), a bigger rebuilt record, calibration, how the model did against the book favorite, and how often the line moved our way.",
+        whatItMeans: "You can judge the model on its real track record before trusting a pick.",
+        href: "/results",
+      },
+      {
+        kind: "new",
+        title: "Best Bets",
+        whatChanged:
+          "One feed of the strongest edges across every sport, game lines and props, with the best price and which book has it.",
+        whatItMeans: "Less hunting: the biggest gaps between our number and the price are in one place, ready to log.",
+        href: "/best-bets",
+      },
+      {
+        kind: "new",
+        title: "One-tap bet logging with closing-line value",
+        whatChanged:
+          "A Log bet button on game cards, Best Bets and parlays. Game and prop bets grade themselves; the Bet Tracker now shows ROI and whether you beat the closing line, by sport.",
+        whatItMeans: "Beating the closing line is the best early sign you're betting well, even before results catch up.",
+        href: "/bet-tracker",
+      },
+      {
+        kind: "new",
+        title: "Push alerts",
+        whatChanged:
+          "Turn on alerts in My Picks for games about to lock that you haven't picked, the day's best edges, and big line moves on your picks and bets.",
+        whatItMeans: "You won't miss a pick or a line move. On iPhone, add Seasonz to your Home Screen first.",
+        href: "/my-picks",
+      },
+      {
+        kind: "new",
+        title: "TDs & Turnovers",
+        whatChanged:
+          "Every touchdown, interception and fumble by player and week, with filters by team and position, plus a ranked list of who's most likely to score next week.",
+        whatItMeans: "Quick reference for anytime-TD bets and turnover props.",
+        href: "/touchdowns",
+      },
+      {
+        kind: "improved",
+        title: "Better anytime-TD predictions",
+        whatChanged:
+          "The touchdown model now starts from each player's carries and targets (recent games count more), a touchdown rate pulled toward his position's average, and how many points his team is expected to score from the spread and total. Players on a bye are left out.",
+        whatItMeans:
+          "Tested on past games it picked scorers much better than the old touchdowns-per-game average (log loss 0.46 vs 0.74), so TD Props and TD parlays are built on sharper numbers.",
+        href: "/touchdowns",
+      },
+      {
+        kind: "improved",
+        title: "Model vs line weights re-test themselves",
+        whatChanged:
+          "How much each sport's final number trusts the model versus the betting line is re-tested daily on live graded games, and only changes once a sport has 300+ games and the change clearly helps.",
+        whatItMeans: "The blend keeps improving from real results, without one odd week swinging it.",
+        href: "/results",
+      },
+      {
+        kind: "new",
+        title: "Sync health checks",
+        whatChanged:
+          "Hourly checks for stale syncs, failed stages, odds that didn't match, games missing lines and games stuck live, shown on the admin page and pushed to admins.",
+        whatItMeans: "Problems get caught and fixed before they reach your picks.",
+        href: "/admin",
+        audience: "admin",
+      },
+    ],
+  },
+  {
     version: "1.8.1",
     date: "2026-10-14",
     title: "Your record vs the model",

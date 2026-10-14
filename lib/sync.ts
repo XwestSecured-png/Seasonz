@@ -17,11 +17,13 @@ import {
   fetchSchedule,
   fetchInjuries,
   fetchPlayerWeekStats,
+  fetchScoringEvents,
   fetchDefPlayerWeekStats,
   fetchAllRegSeasonGames,
   fetchTeamWeekStats,
 } from "./nflverse";
-import { replayNflElo, NFL_MODEL_WEIGHT, makeNflEpaLookup, nflEpaAdjPct, type EloGameResult } from "./elo";
+import { settlePendingBets } from "./bet-settle";
+import { replayNflElo, makeNflEpaLookup, nflEpaAdjPct, type EloGameResult } from "./elo";
 import { noVigHome, logit, sigmoid } from "./sports/game-model";
 import type { ScheduleGame } from "./nflverse";
 import { computeInjuryImpact, type InjuryImpactRow } from "./injury-impact";
@@ -55,12 +57,13 @@ import {
   buildPropPicks,
   buildAutoParlays,
   americanToImpliedProb,
-  computeTdProjections,
   computeTurnoverProjections,
   computeDefensiveProjections,
 } from "./props-model";
 import { getTeamByFullName } from "./team-colors";
-import { gradeBet } from "./bet-grading";
+import { getModelWeights, weightFor } from "./model-weights";
+import { projectTouchdowns, impliedPoints } from "./td-model";
+import { buildScoringBoard, saveScoringBoard } from "./scoring-board";
 import { MIN_MODEL_WIN_PCT } from "./confidence";
 import { sql, eq, and, desc, gt } from "drizzle-orm";
 
@@ -176,17 +179,18 @@ async function applyNflLineBlend(season: number): Promise<{ blended: number; loc
     .from(games)
     .where(and(eq(games.season, season), eq(games.isFinal, false), gt(games.kickoffAt, now)));
   let blended = 0;
+  // Re-tested model share (lib/model-weights), else the coded default.
+  const w = weightFor(await getModelWeights().catch(() => ({})), "nfl");
   for (const r of rows) {
     const model = r.modelOnlyPct ?? r.homeWinPctPre;
     if (model === null) continue;
     // The every-book consensus saved by the gameOdds stage, else the one book's line.
     const market = r.consensus ?? noVigHome(r.mlHome, r.mlAway);
-    const final =
-      market === null ? model : sigmoid(NFL_MODEL_WEIGHT * logit(model) + (1 - NFL_MODEL_WEIGHT) * logit(market));
+    const final = market === null ? model : sigmoid(w * logit(model) + (1 - w) * logit(market));
     if (market !== null) blended++;
     await db
       .update(games)
-      .set({ homeWinPctPre: final, marketPct: market, lockedPct: final, lockedMarketPct: market, lockedAt: now })
+      .set({ homeWinPctPre: final, marketPct: market, lockedPct: final, lockedMarketPct: market, lockedModelPct: r.modelOnlyPct, lockedAt: now })
       .where(eq(games.id, r.id));
   }
   return { blended, locked: rows.length };
@@ -314,34 +318,13 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
 
   results.push(
     await logStage("gradeBets", async () => {
-      const finalByKey = new Map(
-        schedule
-          .filter((g) => g.isFinal && g.homeScore !== null && g.awayScore !== null)
-          .map((g) => [`${g.season}|${g.week}|${g.homeTeam}|${g.awayTeam}`, g])
-      );
-      if (finalByKey.size === 0) return "No final games to grade bets against.";
-
-      const pending = await db.select().from(userBets).where(eq(userBets.result, "PENDING"));
-      if (pending.length === 0) return "No pending bets to grade.";
-
-      let graded = 0;
-      for (const bet of pending) {
-        const [game] = await db.select().from(games).where(eq(games.id, bet.gameId));
-        if (!game) continue;
-        const finalGame = finalByKey.get(`${game.season}|${game.week}|${game.homeTeam}|${game.awayTeam}`);
-        if (!finalGame || finalGame.homeScore === null || finalGame.awayScore === null) continue;
-
-        const { result, payoutUsd } = gradeBet(
-          { market: bet.market, selection: bet.selection, line: bet.line, priceAmerican: bet.priceAmerican, stakeUsd: bet.stakeUsd },
-          { homeTeam: game.homeTeam, awayTeam: game.awayTeam, homeScore: finalGame.homeScore, awayScore: finalGame.awayScore }
-        );
-        await db
-          .update(userBets)
-          .set({ result, payoutUsd, gradedAt: new Date() })
-          .where(eq(userBets.id, bet.id));
-        graded++;
-      }
-      return `${graded} pending bet(s) graded against final scores.`;
+      // Every pending NFL bet (game bets, and props from nflverse weekly
+      // stats when any are waiting) — see lib/bet-settle.ts.
+      const needStats = (
+        await db.select({ id: userBets.id }).from(userBets).where(and(eq(userBets.result, "PENDING"), eq(userBets.market, "PROP"), eq(userBets.sport, "nfl")))
+      ).length;
+      const nflWeekStats = needStats ? await fetchPlayerWeekStats(season).catch(() => []) : undefined;
+      return settlePendingBets({ sport: "nfl", nflWeekStats });
     })
   );
 
@@ -755,12 +738,32 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
           ? Math.min(...upcoming.map((g) => g.week))
           : Math.max(0, ...schedule.map((g) => g.week)) + 1;
 
-      const [playerStats, defPlayerStats] = await Promise.all([
+      const [playerStats, defPlayerStats, priorStats] = await Promise.all([
         fetchPlayerWeekStats(season),
         fetchDefPlayerWeekStats(season),
+        fetchPlayerWeekStats(season - 1).catch(() => []),
       ]);
 
-      const tdProjections = computeTdProjections(playerStats);
+      // Anytime TD: opportunity model (lib/td-model.ts) with next week's
+      // implied team points; players on a bye are left out.
+      const weekGames = await db
+        .select({ homeTeam: games.homeTeam, awayTeam: games.awayTeam, spreadHomeLine: games.spreadHomeLine, totalLine: games.totalLine })
+        .from(games)
+        .where(and(eq(games.season, season), eq(games.week, week)));
+      const playing = new Set(weekGames.flatMap((g) => [g.homeTeam, g.awayTeam]));
+      const tdProjections = projectTouchdowns(playerStats, priorStats, impliedPoints(weekGames)).filter(
+        (p) => playing.size === 0 || playing.has(p.team)
+      );
+      // TDs & Turnovers page: the season's events by player and week, plus these projections.
+      let boardNote = "";
+      try {
+        const events = await fetchScoringEvents(season);
+        const board = buildScoringBoard(season, week, events, tdProjections);
+        await saveScoringBoard(board);
+        boardNote = ` TDs & Turnovers board: ${board.players.length} player(s) through week ${board.throughWeek}.`;
+      } catch (e) {
+        boardNote = ` TDs & Turnovers board failed: ${e instanceof Error ? e.message : String(e)}.`;
+      }
       const turnovers = computeTurnoverProjections(playerStats);
       const defense = computeDefensiveProjections(defPlayerStats);
 
@@ -877,7 +880,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         await db.insert(propLinesRaw).values(uniqueFair.slice(i, i + 500)).onConflictDoNothing();
       }
 
-      return `Model props: ${written} line(s) written for week ${week} (TD/turnover/defensive categories, ${defPlayerStats.length} defensive-player rows scanned); ${uniqueFair.length} fair-priced builder option(s).`;
+      return `Model props: ${written} line(s) written for week ${week} (TD/turnover/defensive categories, ${defPlayerStats.length} defensive-player rows scanned); ${uniqueFair.length} fair-priced builder option(s).${boardNote}`;
     })
   );
 

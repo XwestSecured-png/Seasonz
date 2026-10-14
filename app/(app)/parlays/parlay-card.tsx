@@ -4,6 +4,8 @@ import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { PayoutCalc } from "./payout-calc";
 import { PushBetButton } from "../push-bet-button";
+import { LogBetButton } from "../log-bet-button";
+import { combinedDecimalOdds, decimalToAmerican } from "@/lib/parlay-math";
 import type { Sportsbook, SportsbookCategory } from "@/lib/sportsbooks";
 
 interface StoredLeg {
@@ -48,6 +50,7 @@ export function ParlayCard({
 }) {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
+  const combinedAmerican = decimalToAmerican(combinedDecimalOdds(legs));
 
   function grade(legIndex: number, result: StoredLeg["result"]) {
     startTransition(async () => {
@@ -144,6 +147,21 @@ export function ParlayCard({
           alreadyTracked
           compact
         />
+        {status === "pending" && (
+          <LogBetButton
+            compact
+            options={[
+              {
+                label: `${legs.length}-leg parlay ${combinedAmerican > 0 ? "+" : ""}${combinedAmerican}`,
+                sport: "multi",
+                market: "PARLAY",
+                selection: "PARLAY",
+                priceAmerican: combinedAmerican,
+                description: `${title ? `${title}: ` : ""}${legs.map((l) => l.label).join(" + ")}`,
+              },
+            ]}
+          />
+        )}
       </div>
     </div>
   );

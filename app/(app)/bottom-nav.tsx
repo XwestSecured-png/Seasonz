@@ -50,9 +50,12 @@ const PRIMARY = [
 // Free users (the page itself still enforces the gate; this is just so a
 // Free user doesn't tap in blind).
 const MORE_LINKS = [
+  { href: "/best-bets", label: "Best Bets", Icon: SparkIcon, pro: false },
+  { href: "/results", label: "Results", Icon: ChartIcon, pro: false },
   { href: "/best-builds", label: "Model Builds", Icon: TicketIcon, pro: false },
   { href: "/bet-tracker", label: "Bet Tracker", Icon: DollarIcon, pro: false },
   { href: "/td-props", label: "TD Props", Icon: FootballIcon, pro: false },
+  { href: "/touchdowns", label: "TDs & Turnovers", Icon: FootballIcon, pro: false },
   { href: "/factor-performance", label: "Factor Performance", Icon: ChartIcon, pro: true },
   { href: "/injury-impact", label: "Injury Impact", Icon: ShieldIcon, pro: true },
   { href: "/elo-ratings", label: "Elo Ratings", Icon: StarIcon, pro: true },
