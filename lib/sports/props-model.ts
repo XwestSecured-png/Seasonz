@@ -86,7 +86,7 @@ export const PROP_SD_MULT: Record<SportKey, Record<string, number>> = {
     "Walks Allowed": 1.2,
     "Earned Runs": 1.3,
   },
-  ncaaf: { "Pass Yds": 1.3, "Rush Yds": 1.3, "Rec Yds": 1.4, Receptions: 1.3 },
+  ncaaf: { "Pass Yds": 1.3, "Rush Yds": 1.3, "Rec Yds": 1.4, Receptions: 1.3, "Rush + Rec Yds": 1.3 },
 };
 
 // Per-stat model (lib/prop-dist.ts), chosen on every NBA (2,627) and WNBA
@@ -127,6 +127,8 @@ export const PROP_MODEL: Record<SportKey, Record<string, PropModelConfig>> = {
     "Rec Yds": { dist: "normal", sdMult: 1.4, shrinkK: 40, useMinutes: false },
     "Rush Yds": { dist: "normal", sdMult: 1.3, shrinkK: 40, useMinutes: false },
     Receptions: { dist: "poisson", sdMult: 1.3, shrinkK: 40, useMinutes: false },
+    // NFL's combo settings with college's heavier shrinkage (as for its parts).
+    "Rush + Rec Yds": { dist: "normal", sdMult: 1.3, shrinkK: 40, useMinutes: false, temper: 0.94 },
   },
   // Hockey (live check on 2025-27 box scores, /api/health/insights?propcal=nhl):
   // Points .621 -> .590, Assists .640 -> .609, Shots .595 -> .563, Saves .594 -> .554.
@@ -199,6 +201,7 @@ export const STDDEV_FLOOR_ABS: Record<SportKey, Record<string, number>> = {
     "Rush Yds": 8,
     "Rec Yds": 8,
     Receptions: 1,
+    "Rush + Rec Yds": 10,
   },
 };
 

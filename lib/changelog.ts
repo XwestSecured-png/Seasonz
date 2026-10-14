@@ -33,6 +33,23 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.11.1",
+    date: "2026-10-14",
+    title: "Rushing + receiving yards props",
+    summary: "The prop model now covers rushing + receiving yards combo props, NFL and college.",
+    changes: [
+      {
+        kind: "new",
+        title: "Rush + Rec Yds props",
+        whatChanged:
+          "The model now projects combined rushing + receiving yards, so those lines get a chance, a plain-English verdict, a trust badge and can be model picks, parlay legs and Best Bets. Logged bets on them grade themselves.",
+        whatItMeans:
+          "Tested on 2024-26 games before going live: when the model said 70%+, it said about 83% on average and those picks hit 83%.",
+        href: "/props",
+      },
+    ],
+  },
+  {
     version: "1.11.0",
     date: "2026-10-14",
     title: "Every prop, spelled out",

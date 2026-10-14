@@ -17,7 +17,7 @@ const RECENT_GAMES_WINDOW = 5;
 // From the prop calibration check (lib/prop-calibration.ts) on 2024-2026
 // weekly stats: the old spread said 81-84% on 70%+ picks that hit 74-77%.
 // Wider spreads bring predicted and actual together (e.g. Rec Yds 78.1% / 78.2%).
-const NFL_SD_MULT: Record<string, number> = { "Pass Yds": 1.3, "Rush Yds": 1.3, "Rec Yds": 1.4, Receptions: 1.3 };
+const NFL_SD_MULT: Record<string, number> = { "Pass Yds": 1.3, "Rush Yds": 1.3, "Rec Yds": 1.4, Receptions: 1.3, "Rush + Rec Yds": 1.3 };
 
 // Per-stat model, chosen on 2021-25 weekly stats (lib/prop-dist.ts; log loss,
 // lower is better, old -> new): yardage stays a bell curve but the last 5
@@ -29,6 +29,11 @@ export const NFL_PROP_MODEL: Record<string, PropModelConfig> = {
   "Rush Yds": { dist: "normal", sdMult: 1.3, shrinkK: 5, useMinutes: false, temper: 0.94 },
   "Rec Yds": { dist: "normal", sdMult: 1.4, shrinkK: 5, useMinutes: false },
   Receptions: { dist: "poisson", sdMult: 1.3, shrinkK: 5, useMinutes: false, temper: 0.88 },
+  // Rushing + receiving yards. Chosen on 2024-26 weekly stats (248 RB/WR/TE
+  // histories, lines at the projection +/- 0.5 and 1 sd): bell curve, 20-game
+  // pull 5, slight calibration pull. Log loss .5698; 70%+ picks said 82.8%,
+  // hit 83.2%.
+  "Rush + Rec Yds": { dist: "normal", sdMult: 1.3, shrinkK: 5, useMinutes: false, temper: 0.94 },
 };
 
 /** A prop is only picked when the model's chance beats the price's implied chance by at least this much. */
@@ -39,6 +44,7 @@ export const NFL_STDDEV_FLOOR_ABS: Record<string, number> = {
   "Rush Yds": 8,
   "Rec Yds": 8,
   Receptions: 1,
+  "Rush + Rec Yds": 10,
 };
 // Opponent-allowed adjustment is clamped to a modest range — a defense that
 // has only faced a couple of real offenses this season shouldn't be able to
@@ -51,6 +57,7 @@ const STAT_FIELDS: { statType: string; field: keyof PlayerWeekStats }[] = [
   { statType: "Rush Yds", field: "rushYds" },
   { statType: "Rec Yds", field: "recYds" },
   { statType: "Receptions", field: "receptions" },
+  { statType: "Rush + Rec Yds", field: "rushRecYds" },
 ];
 
 export interface PlayerSeasonAverage {

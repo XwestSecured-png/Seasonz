@@ -33,6 +33,7 @@ export interface PropRow {
 const STAT_CATEGORY: Record<string, string> = {
   "Pass Yds": "Passing",
   "Rush Yds": "Rushing",
+  "Rush + Rec Yds": "Rushing",
   "Rec Yds": "Receiving",
   Receptions: "Receiving",
   "Anytime TD": "Touchdowns",

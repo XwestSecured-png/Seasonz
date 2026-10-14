@@ -127,6 +127,15 @@ const NCAAF_STATS: StatExtractor[] = [
   { statType: "Rush Yds", extract: fromGroup("rushing", "YDS") },
   { statType: "Rec Yds", extract: fromGroup("receiving", "YDS") },
   { statType: "Receptions", extract: fromGroup("receiving", "REC") },
+  {
+    // Rushing + receiving yards; a player with neither line didn't record it.
+    statType: "Rush + Rec Yds",
+    extract: (s) => {
+      const r = fromGroup("rushing", "YDS")(s);
+      const c = fromGroup("receiving", "YDS")(s);
+      return r === null && c === null ? null : (r ?? 0) + (c ?? 0);
+    },
+  },
 ];
 
 export const STAT_EXTRACTORS: Record<SportKey, StatExtractor[]> = {

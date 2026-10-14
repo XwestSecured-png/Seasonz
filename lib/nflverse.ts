@@ -179,6 +179,8 @@ export interface PlayerWeekStats {
   rushYds: number;
   recYds: number;
   receptions: number;
+  /** Rushing + receiving yards (the "Rush + Rec Yds" prop). */
+  rushRecYds: number;
   // Opportunities, for the touchdown model (lib/td-model.ts).
   carries?: number;
   targets?: number;
@@ -229,6 +231,7 @@ export async function fetchPlayerWeekStats(season: number): Promise<PlayerWeekSt
       rushYds: Number(r.rushing_yards || 0),
       recYds: Number(r.receiving_yards || 0),
       receptions: Number(r.receptions || 0),
+      rushRecYds: Number(r.rushing_yards || 0) + Number(r.receiving_yards || 0),
       carries: Number(r.carries || 0),
       targets: Number(r.targets || 0),
       passTds: Number(r.passing_tds || 0),

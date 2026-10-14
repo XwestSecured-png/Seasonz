@@ -110,6 +110,7 @@ const NFL_FIELD: Record<string, keyof PlayerWeekStats> = {
   "Pass Yds": "passYds",
   "Rush Yds": "rushYds",
   "Rec Yds": "recYds",
+  "Rush + Rec Yds": "rushRecYds",
   Receptions: "receptions",
 };
 

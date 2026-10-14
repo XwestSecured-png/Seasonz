@@ -64,11 +64,12 @@ export async function GET(req: NextRequest) {
       const now = new Date();
       const season = now.getMonth() >= 1 ? now.getFullYear() : now.getFullYear() - 1;
       const rows = [...(await fetchPlayerWeekStats(season - 2)), ...(await fetchPlayerWeekStats(season - 1)), ...(await fetchPlayerWeekStats(season))];
-      const fields: [string, "passYds" | "rushYds" | "recYds" | "receptions"][] = [
+      const fields: [string, "passYds" | "rushYds" | "recYds" | "receptions" | "rushRecYds"][] = [
         ["Pass Yds", "passYds"],
         ["Rush Yds", "rushYds"],
         ["Rec Yds", "recYds"],
         ["Receptions", "receptions"],
+        ["Rush + Rec Yds", "rushRecYds"],
       ];
       for (const [stat, field] of fields) {
         const by = new Map<string, { t: number; v: number }[]>();
@@ -119,11 +120,12 @@ export async function GET(req: NextRequest) {
         ...(await fetchPlayerWeekStats(season - 1)),
         ...(await fetchPlayerWeekStats(season)),
       ];
-      const fields: [string, "passYds" | "rushYds" | "recYds" | "receptions"][] = [
+      const fields: [string, "passYds" | "rushYds" | "recYds" | "receptions" | "rushRecYds"][] = [
         ["Pass Yds", "passYds"],
         ["Rush Yds", "rushYds"],
         ["Rec Yds", "recYds"],
         ["Receptions", "receptions"],
+        ["Rush + Rec Yds", "rushRecYds"],
       ];
       for (const [stat, field] of fields) {
         const byPlayer = new Map<string, { t: number; v: number }[]>();
