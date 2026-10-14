@@ -25,6 +25,8 @@ import {
 } from "@/db/schema";
 import { replaySportElo, type SportEloGame } from "./sport-elo";
 import { makeTeamResolver } from "./team-match";
+import { gradePropLog, logPropPicks } from "../prop-log";
+import { getModelWeights, weightFor } from "../model-weights";
 import { settlePendingBets } from "../bet-settle";
 import { SPORTS, PRESEASON, PRESEASON_SPORTS, type SportKey } from "./types";
 import {
@@ -946,7 +948,8 @@ export async function runSportSync(
             .map((r) => `${r.team}|${r.player}`)
         );
 
-        const picks = buildSportPropPicks(allProps, averages, schedule, week, unavailable);
+        const propWeight = weightFor(await getModelWeights().catch(() => ({})), `prop:${sport}`);
+        const picks = buildSportPropPicks(allProps, averages, schedule, week, unavailable, propWeight);
 
         await db
           .delete(sportOddsLines)
@@ -1067,7 +1070,8 @@ export async function runSportSync(
             });
         }
 
-        return `Props: ${thisWeekEvents.length} event(s), ${allProps.length} raw line(s), ${picks.length} pick(s) at 70%+ model confidence, for week ${week}.`;
+        const loggedN = await logPropPicks(sport, year, week, picks).catch(() => 0);
+        return `Props: ${thisWeekEvents.length} event(s), ${allProps.length} raw line(s), ${picks.length} pick(s) at 70%+ (model ${Math.round(propWeight * 100)}% / market blend; ${loggedN} logged), for week ${week}.`;
       })
     );
   }
@@ -1080,6 +1084,8 @@ export async function runSportSync(
   results.push(await logStage(`${sport}:propGrading`, () => gradePendingPropPicks(sport)));
   // Logged bets (game bets and props) for this sport — lib/bet-settle.ts.
   results.push(await logStage(`${sport}:gradeBets`, () => settlePendingBets({ sport })));
+  // Logged model props (lib/prop-log.ts), for re-fitting the props blend.
+  results.push(await logStage(`${sport}:gradePropLog`, () => gradePropLog(sport)));
 
   return results;
 }

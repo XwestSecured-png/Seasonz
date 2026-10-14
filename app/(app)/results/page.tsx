@@ -1,5 +1,6 @@
 import { getResults, type Card, type SportResults } from "@/lib/results";
 import { getWeightReport } from "@/lib/model-weights";
+import { propLogSummary } from "@/lib/prop-log";
 import { PageInfo } from "../page-info";
 
 export const dynamic = "force-dynamic";
@@ -7,7 +8,7 @@ export const dynamic = "force-dynamic";
 const f1 = (v: number | null, d = 1) => (v === null ? "—" : v.toFixed(d));
 
 export default async function ResultsPage() {
-  const [results, weights] = await Promise.all([getResults(), getWeightReport()]);
+  const [results, weights, props] = await Promise.all([getResults(), getWeightReport(), propLogSummary()]);
   const liveTotal = results.reduce((s, r) => s + r.live.n, 0);
   const liveCorrect = results.reduce((s, r) => s + r.live.correct, 0);
 
@@ -47,10 +48,45 @@ export default async function ResultsPage() {
       </div>
 
       <section className="space-y-2">
+        <h2 className="text-sm font-semibold text-neutral-200">Prop picks, graded</h2>
+        {props.length === 0 ? (
+          <p className="text-xs text-neutral-500">Prop picks are logged from now on; results show here once games are graded.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-md border border-neutral-800">
+            <table className="w-full text-xs">
+              <thead className="bg-neutral-900 text-neutral-400 text-left">
+                <tr>
+                  <th className="px-2.5 py-1.5 font-medium">Sport</th>
+                  <th className="px-2.5 py-1.5 font-medium">Record</th>
+                  <th className="px-2.5 py-1.5 font-medium">Hit rate</th>
+                  <th className="px-2.5 py-1.5 font-medium">We said</th>
+                  <th className="px-2.5 py-1.5 font-medium">Model alone said</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-800">
+                {props.map((r) => (
+                  <tr key={r.sport}>
+                    <td className="px-2.5 py-1.5 text-neutral-200">{r.sport.toUpperCase()}</td>
+                    <td className="px-2.5 py-1.5">
+                      {r.hits}-{r.n - r.hits}
+                    </td>
+                    <td className="px-2.5 py-1.5">{((r.hits / r.n) * 100).toFixed(1)}%</td>
+                    <td className="px-2.5 py-1.5">{(r.predicted * 100).toFixed(1)}%</td>
+                    <td className="px-2.5 py-1.5 text-neutral-400">{(r.modelOnly * 100).toFixed(1)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-2">
         <h2 className="text-sm font-semibold text-neutral-200">How much we trust the model vs the line</h2>
         <p className="text-xs text-neutral-400 max-w-2xl">
-          Each sport&rsquo;s final number blends the model with the betting line. The blend is re-tested on live graded games every
-          week; a new weight is only used once a sport has 300+ live games and the change clearly helps.
+          Each sport&rsquo;s final number, for games and for props, blends the model with the betting market. The blend is re-tested
+          daily on live graded results; a new share is only used once there are 300+ graded games (or props) and the change clearly
+          helps. Props start at an even 50/50 split.
         </p>
         <div className="overflow-x-auto rounded-md border border-neutral-800">
           <table className="w-full text-xs">

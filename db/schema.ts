@@ -1188,3 +1188,36 @@ export const alertLog = pgTable(
   },
   (t) => ({ userKindRef: uniqueIndex("alert_log_user_id_kind_ref_key").on(t.userId, t.kind, t.ref) })
 );
+
+// ---------------------------------------------------------------------------
+// Every prop pick the model listed, with the model-only chance, the market's
+// no-vig chance and the final blended chance, graded after the game. The
+// model-vs-market blend for props is re-fit from this log (lib/model-weights.ts).
+// ---------------------------------------------------------------------------
+export const propPickLog = pgTable(
+  "prop_pick_log",
+  {
+    id: serial("id").primaryKey(),
+    sport: text("sport").notNull(),
+    season: integer("season").notNull(),
+    week: integer("week").notNull(),
+    player: text("player").notNull(),
+    team: text("team"),
+    statType: text("stat_type").notNull(),
+    line: real("line").notNull(),
+    side: text("side").notNull(),
+    book: text("book"),
+    priceAmerican: integer("price_american"),
+    modelOnly: real("model_only").notNull(),
+    market: real("market"),
+    final: real("final").notNull(),
+    gameDate: text("game_date"),
+    result: text("result"), // "hit" | "miss" | "push" | "void"; null until graded
+    actual: real("actual"),
+    loggedAt: timestamp("logged_at").notNull().defaultNow(),
+    gradedAt: timestamp("graded_at"),
+  },
+  (t) => ({
+    key: uniqueIndex("prop_pick_log_key").on(t.sport, t.season, t.week, t.player, t.statType, t.line, t.side),
+  })
+);

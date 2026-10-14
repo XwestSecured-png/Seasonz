@@ -22,10 +22,7 @@ const BARS: Record<TrustTier, number> = { High: 3, Medium: 2, Low: 1 };
 export function TrustBadge({ trust, label = "trust", compact = false }: { trust: TrustView | null | undefined; label?: string; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   if (!trust) return null;
-  const why = [
-    ...(trust.adj != null ? [`Picks like this hit about ${Math.round(trust.adj * 100)}% in testing`] : []),
-    ...(trust.reasons ?? []),
-  ];
+  const why = trust.reasons ?? [];
   return (
     <span className="relative inline-flex">
       {/* A span, not a button: badges sit inside other buttons and links. */}

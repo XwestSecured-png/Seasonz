@@ -1,0 +1,159 @@
+// Prop pick log: every prop the model lists is saved with its model-only
+// chance, the market's no-vig chance and the final blended chance, then
+// graded once the game is final. lib/model-weights.ts re-fits each sport's
+// model/market blend for props from these graded picks.
+import { db } from "@/db";
+import { games, propPickLog, sportGames, sportPlayerGameStats } from "@/db/schema";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { STAT_EXTRACTORS } from "./sports/stat-extract";
+import type { SportKey } from "./sports/types";
+import type { PlayerWeekStats } from "./nflverse";
+
+export interface LoggablePick {
+  player: string;
+  team: string;
+  statType: string;
+  line: number;
+  side: "Over" | "Under";
+  book: string;
+  priceAmerican: number;
+  modelWinPct: number;
+  modelOnly?: number;
+  market?: number | null;
+  gameDate: string | null;
+}
+
+/** Saves this sync's picks (one row per player/stat/line/side). Rows already graded are never touched. */
+export async function logPropPicks(sport: string, season: number, week: number, picks: LoggablePick[]): Promise<number> {
+  const seen = new Set<string>();
+  let n = 0;
+  for (const p of picks) {
+    const k = `${p.player}|${p.statType}|${p.line}|${p.side}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const v = {
+      book: p.book,
+      priceAmerican: p.priceAmerican,
+      modelOnly: p.modelOnly ?? p.modelWinPct,
+      market: p.market ?? null,
+      final: p.modelWinPct,
+      gameDate: p.gameDate,
+      team: p.team,
+      loggedAt: new Date(),
+    };
+    await db
+      .insert(propPickLog)
+      .values({ sport, season, week, player: p.player, statType: p.statType, line: p.line, side: p.side, ...v })
+      .onConflictDoUpdate({
+        target: [propPickLog.sport, propPickLog.season, propPickLog.week, propPickLog.player, propPickLog.statType, propPickLog.line, propPickLog.side],
+        set: v,
+        // Closing numbers: keep updating until graded.
+        setWhere: isNull(propPickLog.result),
+      });
+    n++;
+  }
+  return n;
+}
+
+function outcome(side: string, line: number, actual: number): "hit" | "miss" | "push" {
+  if (actual === line) return "push";
+  return (side === "Over") === actual > line ? "hit" : "miss";
+}
+
+const NFL_FIELD: Record<string, keyof PlayerWeekStats> = {
+  "Pass Yds": "passYds",
+  "Rush Yds": "rushYds",
+  "Rec Yds": "recYds",
+  Receptions: "receptions",
+};
+const norm = (s: string) => s.trim().toLowerCase();
+
+/** Grades pending logged picks whose game is final. NFL needs this season's nflverse weekly rows. */
+export async function gradePropLog(sport: string, nflWeekStats?: PlayerWeekStats[]): Promise<string> {
+  const pending = await db
+    .select()
+    .from(propPickLog)
+    .where(and(eq(propPickLog.sport, sport), or(isNull(propPickLog.result))));
+  if (pending.length === 0) return "No pending logged props.";
+  let graded = 0;
+  let voided = 0;
+  const set = async (id: number, result: string, actual: number | null) => {
+    await db.update(propPickLog).set({ result, actual, gradedAt: new Date() }).where(eq(propPickLog.id, id));
+  };
+
+  if (sport === "nfl") {
+    if (!nflWeekStats?.length) return `${pending.length} pending (no weekly stats yet).`;
+    const weeks = [...new Set(pending.map((p) => p.week))];
+    const seasons = [...new Set(pending.map((p) => p.season))];
+    const g = await db.select().from(games).where(and(inArray(games.season, seasons), inArray(games.week, weeks)));
+    const statsBy = new Map(nflWeekStats.map((r) => [`${r.season}|${r.week}|${norm(r.player)}`, r]));
+    for (const p of pending) {
+      const game = g.find((x) => x.season === p.season && x.week === p.week && (x.homeTeam === p.team || x.awayTeam === p.team));
+      if (!game?.isFinal) continue;
+      const field = NFL_FIELD[p.statType];
+      if (!field) continue;
+      const row = statsBy.get(`${p.season}|${p.week}|${norm(p.player)}`);
+      // nflverse posts a day or two after games; void only once the week is clearly in.
+      const weekIn = nflWeekStats.some((r) => r.season === p.season && r.week === p.week);
+      if (!weekIn) continue;
+      if (!row) {
+        await set(p.id, "void", null);
+        voided++;
+        continue;
+      }
+      const actual = Number(row[field]) || 0;
+      await set(p.id, outcome(p.side, p.line, actual), actual);
+      graded++;
+    }
+    return `Logged props graded: ${graded}, voided ${voided}, ${pending.length - graded - voided} still pending.`;
+  }
+
+  const extractors = STAT_EXTRACTORS[sport as SportKey] ?? [];
+  const dates = [...new Set(pending.map((p) => p.gameDate).filter((d): d is string => !!d))];
+  if (dates.length === 0) return `${pending.length} pending (no game dates).`;
+  const sg = await db
+    .select()
+    .from(sportGames)
+    .where(and(eq(sportGames.sport, sport), inArray(sportGames.gameDate, dates)));
+  const finalIds = sg.filter((x) => x.isFinal).map((x) => x.id);
+  const box = finalIds.length
+    ? await db
+        .select({ gameId: sportPlayerGameStats.gameId, player: sportPlayerGameStats.player, stats: sportPlayerGameStats.stats })
+        .from(sportPlayerGameStats)
+        .where(and(eq(sportPlayerGameStats.sport, sport), inArray(sportPlayerGameStats.gameId, finalIds)))
+    : [];
+  const boxBy = new Map(box.map((b) => [`${b.gameId}|${norm(b.player)}`, b.stats as Record<string, string>]));
+  const hasBox = new Set(box.map((b) => b.gameId));
+  for (const p of pending) {
+    const game = sg.find((x) => x.gameDate === p.gameDate && (x.homeTeam === p.team || x.awayTeam === p.team));
+    if (!game?.isFinal || !hasBox.has(game.id)) continue;
+    const ex = extractors.find((e) => e.statType === p.statType);
+    if (!ex) continue;
+    const stats = boxBy.get(`${game.id}|${norm(p.player)}`);
+    const v = stats ? ex.extract(stats) : null;
+    if (v === null) {
+      await set(p.id, "void", null);
+      voided++;
+      continue;
+    }
+    await set(p.id, outcome(p.side, p.line, v), v);
+    graded++;
+  }
+  return `Logged props graded: ${graded}, voided ${voided}, ${pending.length - graded - voided} still pending.`;
+}
+
+/** Hit rate of graded logged picks by sport (for the Results page). */
+export async function propLogSummary(): Promise<{ sport: string; n: number; hits: number; predicted: number; modelOnly: number }[]> {
+  const rows = await db
+    .select({
+      sport: propPickLog.sport,
+      n: sql<number>`count(*)::int`,
+      hits: sql<number>`count(*) filter (where ${propPickLog.result} = 'hit')::int`,
+      predicted: sql<number>`avg(${propPickLog.final})::float`,
+      modelOnly: sql<number>`avg(${propPickLog.modelOnly})::float`,
+    })
+    .from(propPickLog)
+    .where(inArray(propPickLog.result, ["hit", "miss"]))
+    .groupBy(propPickLog.sport);
+  return rows;
+}

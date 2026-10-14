@@ -12,6 +12,7 @@ import {
   factorSnapshots,
   lineHistory,
   userBets,
+  propPickLog,
 } from "@/db/schema";
 import {
   fetchSchedule,
@@ -64,8 +65,9 @@ import { getTeamByFullName } from "./team-colors";
 import { getModelWeights, weightFor } from "./model-weights";
 import { projectTouchdowns, impliedPoints } from "./td-model";
 import { buildScoringBoard, saveScoringBoard } from "./scoring-board";
+import { gradePropLog, logPropPicks } from "./prop-log";
 import { MIN_MODEL_WIN_PCT } from "./confidence";
-import { sql, eq, and, desc, gt } from "drizzle-orm";
+import { sql, eq, and, desc, gt, isNull } from "drizzle-orm";
 
 export interface SyncStageResult {
   stage: string;
@@ -323,8 +325,14 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
       const needStats = (
         await db.select({ id: userBets.id }).from(userBets).where(and(eq(userBets.result, "PENDING"), eq(userBets.market, "PROP"), eq(userBets.sport, "nfl")))
       ).length;
-      const nflWeekStats = needStats ? await fetchPlayerWeekStats(season).catch(() => []) : undefined;
-      return settlePendingBets({ sport: "nfl", nflWeekStats });
+      const needLog = (
+        await db.select({ id: propPickLog.id }).from(propPickLog).where(and(eq(propPickLog.sport, "nfl"), isNull(propPickLog.result))).limit(1)
+      ).length;
+      const nflWeekStats = needStats || needLog ? await fetchPlayerWeekStats(season).catch(() => []) : undefined;
+      const bets = await settlePendingBets({ sport: "nfl", nflWeekStats });
+      // Logged model props (lib/prop-log.ts), for re-fitting the props blend.
+      const logged = needLog ? await gradePropLog("nfl", nflWeekStats) : "";
+      return `${bets} ${logged}`.trim();
     })
   );
 
@@ -1127,7 +1135,8 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
             .filter((r) => r.status === "OUT" || r.status === "DOUBTFUL")
             .map((r) => `${r.team}|${r.player}`)
         );
-        const picks = buildPropPicks(allProps, averages, schedule, week, unavailable);
+        const propWeight = weightFor(await getModelWeights().catch(() => ({})), "prop:nfl");
+        const picks = buildPropPicks(allProps, averages, schedule, week, unavailable, propWeight);
 
         await db
           .delete(oddsLines)
@@ -1276,7 +1285,8 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         }
 
         const keyNote = oddsProviderNote();
-        return `Props: ${thisWeekEvents.length} event(s), ${allProps.length} raw line(s) (saved for book comparison), ${picks.length} pick(s) at ${Math.round(MIN_MODEL_WIN_PCT * 100)}%+ model confidence, ${parlays.length} weekly auto-parlay(s) + ${dailyParlays.length} for today, for week ${week}.${keyNote}`;
+        const loggedN = await logPropPicks("nfl", season, week, picks).catch(() => 0);
+        return `Props: ${thisWeekEvents.length} event(s), ${allProps.length} raw line(s) (saved for book comparison), ${picks.length} pick(s) at ${Math.round(MIN_MODEL_WIN_PCT * 100)}%+ (model ${Math.round(propWeight * 100)}% / market blend; ${loggedN} logged), ${parlays.length} weekly auto-parlay(s) + ${dailyParlays.length} for today, for week ${week}.${keyNote}`;
       })
     );
   }

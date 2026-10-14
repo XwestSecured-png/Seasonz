@@ -8,12 +8,13 @@
 // share by MIN_GAIN; it's capped at MAX_W so the line always does most of the
 // work. Results are stored in app_settings "modelWeights".
 import { db } from "@/db";
-import { appSettings, games, sportGames } from "@/db/schema";
+import { appSettings, games, propPickLog, sportGames } from "@/db/schema";
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { SPORTS, PRESEASON, type SportKey } from "./sports/types";
 import { GAME_MODEL } from "./sports/game-model";
 import { currentSeasonYear } from "./sports/espn";
 import { NFL_MODEL_WEIGHT } from "./elo";
+import { PROP_MODEL_WEIGHT_DEFAULT } from "./props-model";
 
 const KEY = "modelWeights";
 export const MIN_N = 300;
@@ -52,13 +53,13 @@ export function blendLogLoss(rows: WeightRow[], w: number): number {
   return s / Math.max(1, rows.length);
 }
 
-/** Grid search 0..MAX_W; applies only with enough games and a clear gain. */
-export function fitWeight(rows: WeightRow[], base: number, current: number): Omit<WeightFit, "at"> {
+/** Grid search 0..maxW; applies only with enough games and a clear gain. */
+export function fitWeight(rows: WeightRow[], base: number, current: number, maxW = MAX_W): Omit<WeightFit, "at"> {
   const n = rows.length;
   if (n === 0) return { weight: current, base, n, best: null, llCurrent: null, llBest: null, applied: current !== base };
   let best = { w: current, v: blendLogLoss(rows, current) };
   const llCurrent = best.v;
-  for (let w = 0; w <= MAX_W + 1e-9; w += 0.01) {
+  for (let w = 0; w <= maxW + 1e-9; w += 0.01) {
     const v = blendLogLoss(rows, w);
     if (v < best.v - 1e-12) best = { w: +w.toFixed(2), v };
   }
@@ -77,18 +78,38 @@ export async function getModelWeights(): Promise<WeightStore> {
   return v;
 }
 
+/** Props are keyed "prop:<sport>" and may use any share 0..1 (the line isn't as sharp as a game line). */
+const isProp = (key: string) => key.startsWith("prop:");
+const baseFor = (key: string) =>
+  isProp(key) ? PROP_MODEL_WEIGHT_DEFAULT : key === "nfl" ? NFL_MODEL_WEIGHT : (GAME_MODEL[key as SportKey]?.modelWeight ?? 0);
+
 /** The weight to use now for a sport (bounded; falls back to the coded default). */
 export function weightFor(store: WeightStore, sport: string): number {
-  const base = sport === "nfl" ? NFL_MODEL_WEIGHT : GAME_MODEL[sport as SportKey]?.modelWeight ?? 0;
+  const base = baseFor(sport);
   const w = store[sport]?.weight;
-  return typeof w === "number" && w >= 0 && w <= MAX_W ? w : base;
+  const max = isProp(sport) ? 1 : MAX_W;
+  return typeof w === "number" && w >= 0 && w <= max ? w : base;
 }
 
 const OTHER: SportKey[] = ["nba", "wnba", "nhl", "mlb", "ncaaf", "ncaab"];
+const ALL_KEYS = ["nfl", ...OTHER, ...["nfl", ...OTHER].map((s) => `prop:${s}`)];
+const keyLabel = (key: string) => {
+  const s = isProp(key) ? key.slice(5) : key;
+  const l = s === "nfl" ? "NFL" : SPORTS[s as SportKey].label;
+  return isProp(key) ? `${l} props` : `${l} games`;
+};
 
 /** Live graded games with a locked model-only and market number. */
 export async function liveWeightRows(sport: string): Promise<WeightRow[]> {
   const out: WeightRow[] = [];
+  if (isProp(sport)) {
+    const rows = await db
+      .select({ model: propPickLog.modelOnly, market: propPickLog.market, result: propPickLog.result })
+      .from(propPickLog)
+      .where(and(eq(propPickLog.sport, sport.slice(5)), inArray(propPickLog.result, ["hit", "miss"])));
+    for (const r of rows) if (r.market != null) out.push({ model: r.model, market: r.market, won: r.result === "hit" ? 1 : 0 });
+    return out;
+  }
   if (sport === "nfl") {
     const now = new Date();
     const season = now.getMonth() >= 1 ? now.getFullYear() : now.getFullYear() - 1;
@@ -123,11 +144,11 @@ export async function refitModelWeights(): Promise<string> {
   const store = await getModelWeights();
   const next: WeightStore = {};
   const msgs: string[] = [];
-  for (const sport of ["nfl", ...OTHER]) {
-    const base = sport === "nfl" ? NFL_MODEL_WEIGHT : GAME_MODEL[sport as SportKey].modelWeight;
+  for (const sport of ALL_KEYS) {
+    const base = baseFor(sport);
     const current = weightFor(store, sport);
     const rows = await liveWeightRows(sport);
-    const fit = fitWeight(rows, base, current);
+    const fit = fitWeight(rows, base, current, isProp(sport) ? 1 : MAX_W);
     next[sport] = { ...fit, at: new Date().toISOString() };
     msgs.push(`${sport} ${Math.round(fit.weight * 100)}% (n=${fit.n}${fit.best !== null ? `, best ${Math.round(fit.best * 100)}%` : ""})`);
   }
@@ -150,7 +171,7 @@ export interface WeightReport {
 
 export async function getWeightReport(): Promise<WeightReport[]> {
   const store = await getModelWeights();
-  return ["nfl", ...OTHER].map((sport) => {
+  return ALL_KEYS.map((sport) => {
     const f = store[sport];
     const current = weightFor(store, sport);
     const n = f?.n ?? 0;
@@ -161,6 +182,6 @@ export async function getWeightReport(): Promise<WeightReport[]> {
         : f.applied
           ? "Updated from live results"
           : "Current share holds up";
-    return { sport, label: sport === "nfl" ? "NFL" : SPORTS[sport as SportKey].label, current, n, best: f?.best ?? null, status };
+    return { sport, label: keyLabel(sport), current, n, best: f?.best ?? null, status };
   });
 }

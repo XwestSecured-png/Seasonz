@@ -98,9 +98,10 @@ async function NflProps() {
     <div className="space-y-6">
       <p className="text-sm text-neutral-400 max-w-2xl">
         Player stats compared against this week&rsquo;s sportsbook lines, adjusted for recent
-        form and the upcoming opponent&rsquo;s real defense. Only picks at 70% model confidence
-        or higher that also beat the book&rsquo;s price by 3+ points are shown — a likely prop at a
-        bad price still loses money over time.
+        form and the upcoming opponent&rsquo;s real defense. Our chance blends the model with the
+        betting market&rsquo;s own chance for that line (books know injury and role news the stats
+        don&rsquo;t). Only picks at 70% or higher that also beat the book&rsquo;s price by 3+ points are
+        shown — a likely prop at a bad price still loses money over time.
         {week !== null && <> Currently showing week {week}.</>}
       </p>
       <PageInfo>
@@ -110,11 +111,13 @@ async function NflProps() {
         </p>
         <p>
           <strong>Trust</strong> (High / Medium / Low) says how much to believe a pick&rsquo;s chance. Every pick here is
-          70%+, so trust looks at what the chance leaves out: how many games of data there are, how often the player has
+          70%+, so trust looks at what the model leaves out: how many games of data there are, how often the player has
           cleared this exact line lately, how up-and-down the stat is, and (in basketball and hockey) whether the player&rsquo;s minutes
           have been steady. It was tested on past games in every sport: High-trust picks hit about 85&ndash;88% of the
-          time, Medium about 75%, Low about 70%. If our chance is 15+ points above the book&rsquo;s price, trust tops out
-          at Medium, since gaps that big often mean news the model hasn&rsquo;t seen. Tap a badge to see why.
+          time, Medium about 75%, Low about 70% (tested on the model alone, before the market blend). If the model is 15+
+          points above the betting market, trust tops out at Medium, since gaps that big often mean news the model
+          hasn&rsquo;t seen. Tap a badge to see why. Pick&rsquo;em apps (PrizePicks, Underdog and the like) aren&rsquo;t used as
+          prices: their even-money &ldquo;odds&rdquo; aren&rsquo;t real ones.
         </p>
         <p>
           For yardage and reception stats: the projection behind each pick is a recency-weighted

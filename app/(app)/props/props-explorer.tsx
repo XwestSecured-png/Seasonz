@@ -263,7 +263,7 @@ export function PropsExplorer({
                                           <span className="text-emerald-400 font-medium">
                                             {(r.modelWinPct * 100).toFixed(0)}%
                                           </span>{" "}
-                                          model win
+                                          to hit
                                         </>
                                       )}
                                       {r.trust && (

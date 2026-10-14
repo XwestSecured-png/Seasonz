@@ -33,6 +33,39 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.10.1",
+    date: "2026-10-14",
+    title: "More honest prop chances",
+    summary: "Prop chances now use last season's games, ignore pick'em apps' fake prices, and blend in the betting market.",
+    changes: [
+      {
+        kind: "fixed",
+        title: "Early-season props were overconfident",
+        whatChanged:
+          "Projections now include last season's games, not just this season's handful. In testing on games 4-8 of past seasons, 70%+ receiving-yards picks said 75% but hit 66%; with last season included they said 73% and hit 73%.",
+        whatItMeans: "Fewer props that look great on a few games of data and then miss.",
+        href: "/props",
+      },
+      {
+        kind: "fixed",
+        title: "Pick'em apps no longer count as prices",
+        whatChanged:
+          "PrizePicks, DraftKings Pick6, Underdog and similar apps list lines at even money that aren't real odds. They're no longer used as a pick's price or to judge an edge.",
+        whatItMeans: "Edges shown are against prices you can actually bet.",
+        href: "/props",
+      },
+      {
+        kind: "improved",
+        title: "Prop chances blend in the betting market",
+        whatChanged:
+          "A prop's chance is now the model blended 50/50 with the market's own chance for that line. Every listed prop is logged and graded, and the mix re-tunes itself once 300+ have results.",
+        whatItMeans:
+          "When the model is far from the books it's usually missing news (a role change, an injury), so you'll see fewer but more believable 70%+ props. The Results page shows how they do.",
+        href: "/results",
+      },
+    ],
+  },
+  {
     version: "1.10.0",
     date: "2026-10-14",
     title: "Trust scores on props and parlays",

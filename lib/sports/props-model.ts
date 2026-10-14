@@ -8,7 +8,7 @@
 // lib/props-model.ts rather than duplicated.
 import { propTrust, trustFeatures, type Trust } from "../prop-trust";
 import type { PropOutcome } from "../odds";
-import { winProbability, americanToImpliedProb, MIN_PROP_EDGE, NFL_PROP_MODEL, isPlaceholderLine, marketOverChances } from "../props-model";
+import { winProbability, americanToImpliedProb, MIN_PROP_EDGE, NFL_PROP_MODEL, isPlaceholderLine, marketOverChances, blendPropChance, PROP_MODEL_WEIGHT_DEFAULT } from "../props-model";
 import { projectProp, propChance, LEGACY_PROP_MODEL, type PropModelConfig, type Projection } from "../prop-dist";
 import { MIN_MODEL_WIN_PCT } from "../confidence";
 import { STAT_EXTRACTORS } from "./stat-extract";
@@ -366,6 +366,9 @@ export interface SportPropPick {
   opponent: string | null;
   gameDate: string | null;
   trust?: Trust;
+  /** The model's own chance (before the market blend) and the market's no-vig chance for the side. */
+  modelOnly?: number;
+  market?: number | null;
 }
 
 /** Same reasoning as lib/props-model.ts's buildPropPicks. */
@@ -374,7 +377,9 @@ export function buildSportPropPicks(
   averages: Map<string, SportPlayerSeasonAverage>,
   schedule: SportScheduleGame[],
   upcomingWeek: number,
-  unavailable: Set<string> = new Set()
+  unavailable: Set<string> = new Set(),
+  /** Model share of the model/market blend (lib/model-weights.ts, "prop:<sport>"). */
+  modelWeight = PROP_MODEL_WEIGHT_DEFAULT
 ): SportPropPick[] {
   const opponentThisWeek = new Map<string, { opponent: string; gameDate: string | null }>();
   for (const g of schedule) {
@@ -407,10 +412,15 @@ export function buildSportPropPicks(
     const projection = avg.average;
     const edgePct = (projection - g.line) / g.line;
     // Count distributions are skewed, so take whichever side the model rates higher.
-    const pOver =
+    const pOverModel =
       avg.proj && avg.cfg ? propChance(avg.proj, g.line, avg.cfg, "Over") : winProbability(avg.average, avg.stdDev, g.line, "Over");
+    // The final chance blends the model with the market's no-vig chance for
+    // this line (see blendPropChance); no market, model alone.
+    const mk = market.get(`${g.player}|${g.statType}|${g.line}`);
+    const pOver = mk === undefined ? pOverModel : blendPropChance(pOverModel, mk, modelWeight);
     const side: "Over" | "Under" = pOver >= 0.5 ? "Over" : "Under";
     const modelWinPct = side === "Over" ? pOver : 1 - pOver;
+    const modelOnly = side === "Over" ? pOverModel : 1 - pOverModel;
     if (modelWinPct < MIN_MODEL_WIN_PCT) continue;
 
     const price = side === "Over" ? g.overPrice : g.underPrice;
@@ -420,13 +430,12 @@ export function buildSportPropPicks(
     if (modelWinPct - americanToImpliedProb(price) < MIN_PROP_EDGE) continue;
 
     const matchup = opponentThisWeek.get(avg.team);
-    const mk = market.get(`${g.player}|${g.statType}|${g.line}`);
-    const marketSide = mk === undefined ? americanToImpliedProb(price) : side === "Over" ? mk : 1 - mk;
+    const marketSide = mk === undefined ? null : side === "Over" ? mk : 1 - mk;
     // Same minutes filter as the projection: games he didn't play don't count.
     const played = avg.values?.map((v, i) => ({ v, m: avg.minutes?.[i] ?? null })).filter((x) => !avg.cfg?.useMinutes || x.m === null || x.m > 0);
     const trust =
       played && avg.sport
-        ? propTrust(avg.sport, modelWinPct, trustFeatures(played.map((x) => x.v), g.line, side, played.map((x) => x.m)), marketSide)
+        ? propTrust(avg.sport, modelOnly, trustFeatures(played.map((x) => x.v), g.line, side, played.map((x) => x.m)), marketSide ?? americanToImpliedProb(price))
         : undefined;
 
     picks.push({
@@ -440,6 +449,8 @@ export function buildSportPropPicks(
       projection,
       edgePct,
       modelWinPct,
+      modelOnly,
+      market: marketSide,
       opponent: matchup?.opponent ?? null,
       gameDate: matchup?.gameDate ?? null,
       trust,
