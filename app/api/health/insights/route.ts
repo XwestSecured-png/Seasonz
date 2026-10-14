@@ -17,6 +17,11 @@ import { STDDEV_FLOOR_ABS, propModelFor, minutesOf } from "@/lib/sports/props-mo
 import { NFL_STDDEV_FLOOR_ABS, NFL_PROP_MODEL } from "@/lib/props-model";
 import { fetchPlayerWeekStats } from "@/lib/nflverse";
 import { trustSamples, trustBacktest, type TrustSample } from "@/lib/prop-trust";
+import { scoreLines } from "@/lib/prop-score";
+import { verdictFor } from "@/lib/prop-verdict";
+import { propLinesRaw, sportPropLinesRaw } from "@/db/schema";
+import { max } from "drizzle-orm";
+import { MAIN_BOOKS } from "@/lib/football-markets";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -27,6 +32,30 @@ export async function GET(req: NextRequest) {
   }
   // Prop-model calibration check (lib/prop-calibration.ts) on this and last
   // season's box scores: ?propcal=nba (or nfl).
+  // Every-line scoring check (lib/prop-score.ts): ?linescores=nba (or nfl).
+  const ls = req.nextUrl.searchParams.get("linescores");
+  if (ls) {
+    const isNfl = ls === "nfl";
+    const tbl = isNfl ? propLinesRaw : sportPropLinesRaw;
+    const season = isNfl ? (new Date().getMonth() >= 1 ? new Date().getFullYear() : new Date().getFullYear() - 1) : currentSeasonYear(ls as SportKey);
+    const where = isNfl ? eq(propLinesRaw.season, season) : and(eq(sportPropLinesRaw.sport, ls), eq(sportPropLinesRaw.season, season));
+    const [w] = await db.select({ week: max(tbl.week) }).from(tbl).where(where);
+    if (w?.week == null) return NextResponse.json({ error: "no lines" });
+    const lines = (await db.select().from(tbl).where(and(where, eq(tbl.week, w.week), inArray(tbl.book, MAIN_BOOKS)))).map((r) => ({
+      player: r.player,
+      statType: r.statType,
+      line: r.line,
+      side: r.side,
+      book: r.book,
+      priceAmerican: r.priceAmerican,
+    }));
+    const scores = await scoreLines(ls, season, w.week, lines);
+    const vals = Object.entries(scores);
+    const byVerdict: Record<string, number> = {};
+    for (const [, v] of vals) byVerdict[verdictFor(v.chance).label] = (byVerdict[verdictFor(v.chance).label] ?? 0) + 1;
+    const keys = new Set(lines.map((l) => `${l.player}|${l.statType}|${l.line}|${l.side}`));
+    return NextResponse.json({ week: w.week, lineSides: keys.size, scored: vals.length, byVerdict, sample: vals.slice(0, 4) });
+  }
   // Prop trust-score fit (lib/prop-trust.ts): ?trustcal=nba (or nfl).
   const trustcal = req.nextUrl.searchParams.get("trustcal");
   if (trustcal) {

@@ -2,6 +2,15 @@
 
 import { useMemo, useState } from "react";
 import { MODEL_FAIR_BOOK, fairAmerican, propLegLabel } from "@/lib/football-markets";
+import { Verdict } from "../verdict";
+import { TrustBadge, type TrustView } from "../trust-badge";
+
+/** Our chance for one posted line and side (lib/prop-score.ts). */
+export interface LineScoreView {
+  chance: number;
+  projection: number;
+  trust: TrustView;
+}
 
 export interface RawLine {
   player: string;
@@ -50,6 +59,8 @@ const CATEGORY: Record<string, string> = {
   "Extra Points": "Kicking",
 };
 const CATEGORIES = ["Touchdowns", "Quarterback", "Rushing", "Receiving", "Turnovers", "Defense", "Kicking"];
+// Other sports' stat types (Points, Shots on Goal, Strikeouts...) are their own categories.
+const catOf = (statType: string) => CATEGORY[statType] ?? statType;
 
 const fmt = (p: number) => (p > 0 ? `+${p}` : `${p}`);
 const implied = (p: number) => (p > 0 ? 100 / (p + 100) : -p / (-p + 100));
@@ -62,6 +73,8 @@ interface Grouped {
   label: string;
   prices: { book: string; priceAmerican: number }[]; // best first
   modelPct: number | null;
+  line: number;
+  side: string;
 }
 
 /**
@@ -69,8 +82,7 @@ interface Grouped {
  * plus the model's fair price for props books rarely post, browsable by
  * category, team and player — best price first.
  */
-export function AllLinesBrowser({ lines }: { lines: RawLine[] }) {
-  const [category, setCategory] = useState<string>("Touchdowns");
+export function AllLinesBrowser({ lines, scores = {} }: { lines: RawLine[]; scores?: Record<string, LineScoreView> }) {
   const [team, setTeam] = useState("");
   const [query, setQuery] = useState("");
 
@@ -89,6 +101,8 @@ export function AllLinesBrowser({ lines }: { lines: RawLine[] }) {
           label: propLegLabel(l.player, l.statType, l.side, l.line).slice(l.player.length + 1),
           prices: [],
           modelPct: null,
+          line: l.line,
+          side: l.side,
         };
         map.set(key, g);
       }
@@ -100,10 +114,16 @@ export function AllLinesBrowser({ lines }: { lines: RawLine[] }) {
   }, [lines]);
 
   const teams = useMemo(() => Array.from(new Set(groups.map((g) => g.team))).sort(), [groups]);
+  const allCats = useMemo(() => {
+    const present = Array.from(new Set(groups.map((g) => catOf(g.statType))));
+    return [...CATEGORIES.filter((c) => present.includes(c)), ...present.filter((c) => !CATEGORIES.includes(c)).sort()];
+  }, [groups]);
+  const [picked, setCategory] = useState<string | null>(null);
+  const category = picked && allCats.includes(picked) ? picked : (allCats[0] ?? "");
   const counts = useMemo(() => {
     const c = new Map<string, number>();
     for (const g of groups) {
-      const cat = CATEGORY[g.statType] ?? "Other";
+      const cat = catOf(g.statType);
       c.set(cat, (c.get(cat) ?? 0) + 1);
     }
     return c;
@@ -112,7 +132,7 @@ export function AllLinesBrowser({ lines }: { lines: RawLine[] }) {
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     return groups
-      .filter((g) => (CATEGORY[g.statType] ?? "Other") === category)
+      .filter((g) => catOf(g.statType) === category)
       .filter((g) => !team || g.team === team)
       .filter((g) => !q || g.player.toLowerCase().includes(q))
       // Hide the "No" side of yes/no props and Unders of 0.5 lines unless searching a player.
@@ -139,7 +159,7 @@ export function AllLinesBrowser({ lines }: { lines: RawLine[] }) {
   return (
     <div className="space-y-3">
       <div className="flex gap-1.5 flex-wrap">
-        {CATEGORIES.filter((c) => counts.get(c)).map((c) => (
+        {allCats.map((c) => (
           <button
             key={c}
             type="button"
@@ -198,11 +218,27 @@ export function AllLinesBrowser({ lines }: { lines: RawLine[] }) {
                     ) : (
                       <span className="text-neutral-500">No book line posted</span>
                     )}
-                    {g.modelPct !== null && (
-                      <span className="text-sky-400">
-                        Model: {Math.round(g.modelPct * 100)}% (fair {fmt(fairAmerican(g.modelPct))})
-                      </span>
-                    )}
+                    {(() => {
+                      const sc = scores[`${g.player}|${g.statType}|${g.line}|${g.side}`];
+                      if (sc) {
+                        return (
+                          <span className="inline-flex flex-wrap items-baseline gap-x-1.5">
+                            <Verdict chance={sc.chance} />
+                            <span className="text-neutral-500">proj {sc.projection.toFixed(1)}</span>
+                            {sc.chance >= 0.5 && <TrustBadge trust={sc.trust} compact />}
+                          </span>
+                        );
+                      }
+                      if (g.modelPct !== null) {
+                        return (
+                          <span className="inline-flex flex-wrap items-baseline gap-x-1.5">
+                            <Verdict chance={g.modelPct} />
+                            <span className="text-neutral-500">model fair {fmt(fairAmerican(g.modelPct))}</span>
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
                   </li>
                 ))}
               </ul>

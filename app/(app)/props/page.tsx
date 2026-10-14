@@ -1,4 +1,5 @@
 import type { TrustView } from "../trust-badge";
+import { scoreLines } from "@/lib/prop-score";
 import Link from "next/link";
 import { db } from "@/db";
 import {
@@ -80,6 +81,8 @@ async function NflProps() {
       book: r.book,
       priceAmerican: r.priceAmerican,
     }));
+  // Our chance for every posted line and side, spelled out (lib/prop-score.ts).
+  const scores = week !== null ? await scoreLines("nfl", season, week, browseLines).catch(() => ({})) : {};
   const booksByLine = new Map<string, { book: string; priceAmerican: number }[]>();
   for (const r of rawLines) {
     const key = `${r.player}|${r.statType}|${r.line}|${r.side}`;
@@ -156,10 +159,12 @@ async function NflProps() {
         <h2 className="text-sm font-semibold text-neutral-200">Every prop this week</h2>
         <p className="text-xs text-neutral-500 max-w-2xl">
           Every line FanDuel, DraftKings, BetMGM and Caesars posted (best price first), including touchdowns, QB
-          stats, turnovers, sacks, tackles and kicking. Fumbles, QB sacked, INT thrown and 2+ TDs also show the
-          model&rsquo;s chance from each player&rsquo;s rate this season, since books rarely post them.
+          stats, turnovers, sacks, tackles and kicking. Each line shows our chance it hits, spelled out (from
+          &ldquo;almost no chance&rdquo; to &ldquo;very, very likely&rdquo;), with a trust badge on the likely side.
+          Fumbles, QB sacked, INT thrown and 2+ TDs show the model&rsquo;s chance from each player&rsquo;s rate this
+          season, since books rarely post them.
         </p>
-        <AllLinesBrowser lines={browseLines} />
+        <AllLinesBrowser lines={browseLines} scores={scores} />
       </section>
 
       <h2 className="text-sm font-semibold text-neutral-200">Model picks (70%+)</h2>
@@ -274,8 +279,14 @@ async function OtherSportPropsSection({ sport, userId }: { sport: SportKey; user
           .orderBy(desc(sportOddsLines.modelWinPct))
       : [];
 
+  // Raw lines for the latest week synced (even if no pick cleared 70%).
+  const [latestRaw] = await db
+    .select({ week: max(sportPropLinesRaw.week) })
+    .from(sportPropLinesRaw)
+    .where(and(eq(sportPropLinesRaw.sport, sport), eq(sportPropLinesRaw.season, season)));
+  const rawWeek = latestRaw?.week ?? modelWeek;
   const rawModelLines =
-    modelWeek !== null
+    rawWeek !== null
       ? await db
           .select()
           .from(sportPropLinesRaw)
@@ -283,11 +294,20 @@ async function OtherSportPropsSection({ sport, userId }: { sport: SportKey; user
             and(
               eq(sportPropLinesRaw.sport, sport),
               eq(sportPropLinesRaw.season, season),
-              eq(sportPropLinesRaw.week, modelWeek),
+              eq(sportPropLinesRaw.week, rawWeek),
               inArray(sportPropLinesRaw.book, MAIN_BOOKS)
             )
           )
       : [];
+  const lineScores =
+    rawWeek !== null
+      ? await scoreLines(
+          sport,
+          season,
+          rawWeek,
+          rawModelLines.map((r) => ({ player: r.player, statType: r.statType, line: r.line, side: r.side, book: r.book, priceAmerican: r.priceAmerican }))
+        ).catch(() => ({}))
+      : {};
   const modelBooksByLine = new Map<string, { book: string; priceAmerican: number }[]>();
   for (const r of rawModelLines) {
     const key = `${r.player}|${r.statType}|${r.line}|${r.side}`;
@@ -382,14 +402,16 @@ async function OtherSportPropsSection({ sport, userId }: { sport: SportKey; user
         )}
       </div>
 
-      {sport === "ncaaf" && (
+      {rawModelLines.length > 0 && (
         <section className="space-y-2 border-t border-neutral-800 pt-5">
           <h2 className="text-sm font-semibold text-neutral-200">Every prop this week</h2>
           <p className="text-xs text-neutral-500 max-w-2xl">
-            Every line FanDuel, DraftKings, BetMGM and Caesars posted, best price first: touchdowns, QB stats,
-            rushing, receiving, defense and kicking.
+            Every line FanDuel, DraftKings, BetMGM and Caesars posted, best price first. Each line shows our chance it
+            hits, spelled out (from &ldquo;almost no chance&rdquo; to &ldquo;very, very likely&rdquo;), with a trust badge
+            on the likely side.
           </p>
           <AllLinesBrowser
+            scores={lineScores}
             lines={rawModelLines
               .filter((r) => MAIN_BOOKS.includes(r.book))
               .map((r) => ({

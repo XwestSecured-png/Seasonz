@@ -5,6 +5,7 @@ import { formatEt } from "@/lib/week-window";
 import { PageInfo } from "../page-info";
 import { LogBetButton } from "../log-bet-button";
 import { TrustBadge } from "../trust-badge";
+import { Verdict } from "../verdict";
 
 export const dynamic = "force-dynamic";
 
@@ -88,7 +89,7 @@ export default async function BestBetsPage({ searchParams }: { searchParams: Pro
               </div>
               <div className="text-xs text-neutral-400 flex flex-wrap gap-x-3 gap-y-0.5">
                 <span>
-                  Our chance <span className="text-sky-300 font-medium">{pct(x.modelPct)}</span>
+                  Our chance <Verdict chance={x.modelPct} />
                 </span>
                 <span>
                   Best price <span className="text-emerald-300 font-medium">{fmt(x.bestPrice)}</span> {x.bestBook} (implies{" "}

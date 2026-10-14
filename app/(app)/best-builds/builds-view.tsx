@@ -1,6 +1,7 @@
 "use client";
 
 import { TrustBadge } from "../trust-badge";
+import { verdictFor, VERDICT_CLASS } from "@/lib/prop-verdict";
 import { useState } from "react";
 import type { Build, BuildSet } from "@/lib/auto-builds";
 import type { Sportsbook, SportsbookCategory } from "@/lib/sportsbooks";
@@ -78,7 +79,9 @@ function BuildCard({
                     {fmtOdds(leg.priceAmerican)}
                     {leg.priceSource === "fair" && <span className="ml-1 text-[10px] text-neutral-500">fair</span>}
                   </span>
-                  <span className="block text-xs text-emerald-400">{pct(leg.prob)}</span>
+                  <span className={`block text-xs ${VERDICT_CLASS[verdictFor(leg.prob).tone]}`}>
+                    {pct(leg.prob)} · {verdictFor(leg.prob).label}
+                  </span>
                   <span className="block">
                     <TrustBadge trust={leg.trust} compact />
                   </span>

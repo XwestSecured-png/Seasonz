@@ -232,6 +232,13 @@
       "when": 1791960002000,
       "tag": "0032_seasonz_prop_pick_log",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1791960003000,
+      "tag": "0033_seasonz_prop_projections",
+      "breakpoints": true
     }
   ]
 }

@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { oddsLines } from "@/db/schema";
 import { and, eq, inArray, max } from "drizzle-orm";
 import { PageInfo } from "../page-info";
+import { Verdict } from "../verdict";
 import { SectionNote } from "../section-note";
 import { NextStep } from "../next-step";
 import { PayoutCalc } from "../parlays/payout-calc";
@@ -148,9 +149,10 @@ export default async function TdPropsPage() {
                     >
                       {i + 1}. {p.player} <span className="text-neutral-500">({p.team})</span>
                     </span>
-                    <span className="text-xs text-neutral-400">
+                    <span className="text-xs text-neutral-400 text-right">
                       Anytime {pct(p.anytimeTdPct)}
                       {p.multiTdPct > 0 ? ` · 2+ ${pct(p.multiTdPct)}` : ""}
+                      <Verdict chance={p.anytimeTdPct} showPct={false} className="block text-[10px]" />
                     </span>
                   </li>
                 );

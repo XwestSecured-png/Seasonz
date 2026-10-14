@@ -1221,3 +1221,24 @@ export const propPickLog = pgTable(
     key: uniqueIndex("prop_pick_log_key").on(t.sport, t.season, t.week, t.player, t.statType, t.line, t.side),
   })
 );
+
+// ---------------------------------------------------------------------------
+// This week's prop projection for every player/stat with a posted line
+// (distribution, model settings, recent games), so the Props page can score
+// ANY line, not just the model's picks (lib/prop-score.ts).
+// ---------------------------------------------------------------------------
+export const propProjections = pgTable(
+  "prop_projections",
+  {
+    id: serial("id").primaryKey(),
+    sport: text("sport").notNull(),
+    season: integer("season").notNull(),
+    week: integer("week").notNull(),
+    player: text("player").notNull(),
+    team: text("team"),
+    statType: text("stat_type").notNull(),
+    data: jsonb("data").notNull(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({ key: uniqueIndex("prop_projections_key").on(t.sport, t.season, t.week, t.player, t.statType) })
+);

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { TrustBadge, type TrustView } from "../trust-badge";
+import { Verdict } from "../verdict";
 
 export interface SportPropRow {
   id: number;
@@ -155,10 +156,7 @@ export function SportPropsExplorer({
                                 {r.modelWinPct !== null && (
                                   <>
                                     {" · "}
-                                    <span className="text-emerald-400 font-medium">
-                                      {(r.modelWinPct * 100).toFixed(0)}%
-                                    </span>{" "}
-                                    to hit
+                                    <Verdict chance={r.modelWinPct} />
                                   </>
                                 )}
                                 {r.trust && (

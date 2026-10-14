@@ -26,6 +26,7 @@ import {
 import { replaySportElo, type SportEloGame } from "./sport-elo";
 import { makeTeamResolver } from "./team-match";
 import { gradePropLog, logPropPicks } from "../prop-log";
+import { saveProjections } from "../prop-score";
 import { getModelWeights, weightFor } from "../model-weights";
 import { settlePendingBets } from "../bet-settle";
 import { SPORTS, PRESEASON, PRESEASON_SPORTS, type SportKey } from "./types";
@@ -1071,6 +1072,17 @@ export async function runSportSync(
         }
 
         const loggedN = await logPropPicks(sport, year, week, picks).catch(() => 0);
+        // Projections for every player with a posted line, so the Props page
+        // can score any line (lib/prop-score.ts).
+        const withLines = new Set(allProps.map((p) => `${p.player}|${p.statType}`));
+        await saveProjections(
+          sport,
+          year,
+          week,
+          [...averages.values()]
+            .filter((a) => a.proj && a.cfg && a.values && withLines.has(`${a.player}|${a.statType}`))
+            .map((a) => ({ player: a.player, team: a.team, statType: a.statType, data: { proj: a.proj!, cfg: a.cfg!, values: a.values!, minutes: a.minutes } }))
+        ).catch(() => 0);
         return `Props: ${thisWeekEvents.length} event(s), ${allProps.length} raw line(s), ${picks.length} pick(s) at 70%+ (model ${Math.round(propWeight * 100)}% / market blend; ${loggedN} logged), for week ${week}.`;
       })
     );

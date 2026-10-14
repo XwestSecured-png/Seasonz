@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getScoringBoard, type BoardPlayer, type EventKey } from "@/lib/scoring-board";
 import { PageInfo } from "../page-info";
+import { verdictFor, VERDICT_CLASS } from "@/lib/prop-verdict";
 
 export const dynamic = "force-dynamic";
 
@@ -185,7 +186,10 @@ function NextTable({ board, filter }: { board: NonNullable<Awaited<ReturnType<ty
               <td className="px-2 py-1.5">
                 <span className="text-neutral-100">{p.player}</span> <span className="text-neutral-500">{p.team} · {p.position}</span>
               </td>
-              <td className="px-2 py-1.5 text-right font-semibold text-sky-300">{Math.round(p.chance * 100)}%</td>
+              <td className="px-2 py-1.5 text-right">
+                <span className={`font-semibold ${VERDICT_CLASS[verdictFor(p.chance).tone]}`}>{Math.round(p.chance * 100)}%</span>
+                <span className={`block text-[10px] ${VERDICT_CLASS[verdictFor(p.chance).tone]}`}>{verdictFor(p.chance).label}</span>
+              </td>
               <td className="px-2 py-1.5 text-right">{fair(p.chance)}</td>
               <td className="px-2 py-1.5 text-right">{Math.round(p.multi * 100)}%</td>
               <td className="px-2 py-1.5 text-right">{p.carries.toFixed(1)}</td>

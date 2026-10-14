@@ -33,6 +33,30 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.11.0",
+    date: "2026-10-14",
+    title: "Every prop, spelled out",
+    summary: "Every posted prop line now shows our chance it hits in plain words, from \"almost no chance\" to \"very, very likely\", with a trust badge.",
+    changes: [
+      {
+        kind: "new",
+        title: "Our chance on every prop line",
+        whatChanged:
+          "\"Every prop this week\" now scores every line the books posted, not just the model's picks: the chance it hits, a plain-English verdict, the projection, and a trust badge on the likely side. Every sport now has this list, not just football.",
+        whatItMeans: "You can check any prop you're eyeing, not only the ones the model picked.",
+        href: "/props",
+      },
+      {
+        kind: "improved",
+        title: "Chances in plain words",
+        whatChanged:
+          "Props, model picks, parlay legs, Best Bets and TD props spell out each chance: Very, very likely (90%+), Very likely (80%+), Likely (70%+), Leans toward hitting (58%+), Toss-up, Leans toward missing, Unlikely (under 30%), Very unlikely (under 20%) and Almost no chance (10% or less).",
+        whatItMeans: "No need to translate percentages: you can see at a glance how a prop is likely to go.",
+        href: "/props",
+      },
+    ],
+  },
+  {
     version: "1.10.1",
     date: "2026-10-14",
     title: "More honest prop chances",

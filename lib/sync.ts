@@ -66,6 +66,7 @@ import { getModelWeights, weightFor } from "./model-weights";
 import { projectTouchdowns, impliedPoints } from "./td-model";
 import { buildScoringBoard, saveScoringBoard } from "./scoring-board";
 import { gradePropLog, logPropPicks } from "./prop-log";
+import { saveProjections } from "./prop-score";
 import { MIN_MODEL_WIN_PCT } from "./confidence";
 import { sql, eq, and, desc, gt, isNull } from "drizzle-orm";
 
@@ -1286,6 +1287,17 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
 
         const keyNote = oddsProviderNote();
         const loggedN = await logPropPicks("nfl", season, week, picks).catch(() => 0);
+        // Projections for every player with a posted line, so the Props page
+        // can score any line (lib/prop-score.ts).
+        const withLines = new Set(allProps.map((p) => `${p.player}|${p.statType}`));
+        await saveProjections(
+          "nfl",
+          season,
+          week,
+          [...averages.values()]
+            .filter((a) => a.proj && a.cfg && a.values && withLines.has(`${a.player}|${a.statType}`))
+            .map((a) => ({ player: a.player, team: a.team, statType: a.statType, data: { proj: a.proj!, cfg: a.cfg!, values: a.values! } }))
+        ).catch(() => 0);
         return `Props: ${thisWeekEvents.length} event(s), ${allProps.length} raw line(s) (saved for book comparison), ${picks.length} pick(s) at ${Math.round(MIN_MODEL_WIN_PCT * 100)}%+ (model ${Math.round(propWeight * 100)}% / market blend; ${loggedN} logged), ${parlays.length} weekly auto-parlay(s) + ${dailyParlays.length} for today, for week ${week}.${keyNote}`;
       })
     );
