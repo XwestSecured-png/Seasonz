@@ -123,7 +123,7 @@ export function propTrust(sport: string, p: number, f: TrustFeatures, implied: n
   const adj = adjustedChance(sport, p, f);
   let tier: TrustTier = adj >= TRUST_HIGH && f.n >= 5 ? "High" : adj >= TRUST_MEDIUM ? "Medium" : "Low";
   const reasons: string[] = [];
-  if (f.hits !== null && f.of) reasons.push(`Hit this line in ${f.hits} of his last ${f.of} games`);
+  if (f.hits !== null && f.of) reasons.push(`Hit this line in ${f.hits} of the last ${f.of} games`);
   if (f.n < 5) reasons.push(`Only ${f.n} games of data`);
   else if (f.n >= 8) reasons.push(`${f.n} games of data`);
   if (f.cv !== null && f.cv < 0.3) reasons.push("Very steady lately, which the model tends to overrate");
