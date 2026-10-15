@@ -392,3 +392,19 @@ export async function fetchScoringEvents(season: number): Promise<ScoringEventRo
   }
   return out;
 }
+
+/** One player's offensive snap share in one game (nflverse snap counts, from Pro Football Reference). */
+export interface SnapRow {
+  week: number;
+  team: string;
+  player: string;
+  offensePct: number; // 0-1
+}
+
+/** Offensive snap shares by player and week, regular season. */
+export async function fetchSnapCounts(season: number): Promise<SnapRow[]> {
+  const rows = await fetchCsv(`${NFLVERSE_BASE}/snap_counts/snap_counts_${season}.csv`);
+  return rows
+    .filter((r) => r.game_type === "REG" && Number(r.offense_snaps || 0) > 0)
+    .map((r) => ({ week: Number(r.week), team: r.team, player: r.player, offensePct: Number(r.offense_pct || 0) }));
+}

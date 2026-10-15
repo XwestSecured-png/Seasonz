@@ -33,6 +33,31 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.12.0",
+    date: "2026-10-15",
+    title: "Role changes in NFL props",
+    summary: "NFL prop projections now react to a player's snap share trend, the clearest sign of a coach changing his role.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Snap share trend",
+        whatChanged:
+          "When a player's share of offensive snaps over his last 2 games is up or down from his recent norm, his NFL yardage and receptions projections move with it, and the trust badge says so.",
+        whatItMeans:
+          "Role changes from the coaching staff (or a teammate's injury) show up a week or two before the stat averages catch up. In testing on 2025-26 games it improved every NFL prop stat.",
+        href: "/props",
+      },
+      {
+        kind: "improved",
+        title: "Tested and left out",
+        whatChanged:
+          "We also tested recent target/carry trends, team pass-rate trends, a teammate-out boost and players in the last year of their contracts. None made predictions better, so none were added.",
+        whatItMeans: "Only signals that actually help go into the model.",
+        href: "/props",
+      },
+    ],
+  },
+  {
     version: "1.11.2",
     date: "2026-10-14",
     title: "Sharper prop projections, faster syncs",

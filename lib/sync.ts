@@ -19,6 +19,7 @@ import {
   fetchInjuries,
   fetchPlayerWeekStats,
   fetchScoringEvents,
+  fetchSnapCounts,
   fetchDefPlayerWeekStats,
   fetchAllRegSeasonGames,
   fetchTeamWeekStats,
@@ -55,6 +56,7 @@ import { fetchNgsTeamWeeks, computeNgsProfiles, opponentMap, type NgsTeamWeek } 
 import { computeNgsAdjustments } from "./ngs-matchup";
 import {
   computeSeasonAverages,
+  snapTrends,
   buildPropPicks,
   buildAutoParlays,
   americanToImpliedProb,
@@ -1123,7 +1125,9 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
 
         const playerStats = await fetchPlayerWeekStats(season);
         const priorStats = await fetchPlayerWeekStats(season - 1).catch(() => []);
-        const averages = computeSeasonAverages(playerStats, schedule, week, priorStats);
+        // Snap-share trend (role changes); the model runs without it if nflverse hasn't posted snaps.
+        const snaps = await fetchSnapCounts(season).catch(() => []);
+        const averages = computeSeasonAverages(playerStats, schedule, week, priorStats, snapTrends(snaps));
 
         // A player marked OUT or DOUBTFUL for this game shouldn't get a prop
         // pick at all — their season stats say nothing about a game they

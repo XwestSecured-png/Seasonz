@@ -1,4 +1,4 @@
-import type { PlayerWeekStats, DefensivePlayerWeekStats, ScheduleGame } from "./nflverse";
+import type { PlayerWeekStats, DefensivePlayerWeekStats, ScheduleGame, SnapRow } from "./nflverse";
 import type { PropOutcome } from "./odds";
 import { MIN_MODEL_WIN_PCT } from "./confidence";
 import { projectProp, propChance, type PropModelConfig, type Projection } from "./prop-dist";
@@ -96,6 +96,8 @@ export interface PlayerSeasonAverage {
   cfg?: PropModelConfig;
   /** Every game's value, oldest first (for the trust score). */
   values?: number[];
+  /** Snap-share trend (last 2 games vs last 8), when known. */
+  snapTrend?: number;
 }
 
 /**
@@ -187,7 +189,9 @@ export function computeSeasonAverages(
    * 73% and hit 73% (Receptions 79% -> 73% vs 79% -> 76%; Pass Yds
    * 76% -> 62% vs 72% -> 74%).
    */
-  prior: PlayerWeekStats[] = []
+  prior: PlayerWeekStats[] = [],
+  /** Snap-share trend by player (snapTrends); missing = no adjustment. */
+  snapTrend: Map<string, number> = new Map()
 ): Map<string, PlayerSeasonAverage> {
   const byKey = new Map<string, { team: string; week: number; value: number }[]>();
   const currentGames = new Map<string, number>();
@@ -238,7 +242,8 @@ export function computeSeasonAverages(
     const team = sorted[0].team;
     const opponent = opponentThisWeek.get(team);
     const oppFactor = opponent ? (opponentFactors.get(opponent)?.get(statType) ?? 1) : 1;
-    const projection = proj.mean * oppFactor;
+    const trend = snapTrend.get(snapKey(player)) ?? 1;
+    const projection = proj.mean * oppFactor * Math.pow(trend, SNAP_TREND_POWER);
 
     out.set(key, {
       player,
@@ -251,10 +256,49 @@ export function computeSeasonAverages(
       proj: { ...proj, mean: projection },
       cfg,
       values: [...sorted].reverse().map((g) => g.value),
+      snapTrend: snapTrend.get(snapKey(player)),
     });
   }
   return out;
 }
+
+const snapKey = (name: string) => name.toLowerCase().replace(/[^a-z]/g, "");
+
+/**
+ * Snap-share trend: each player's offensive snap share over his last 2
+ * games vs his last 8 (this season, 3+ games), clamped to 0.5-1.6. A rising
+ * share means a growing role (a coaching decision, or a teammate hurt) that
+ * the stat average hasn't caught up with yet.
+ */
+export function snapTrends(snaps: SnapRow[]): Map<string, number> {
+  const by = new Map<string, SnapRow[]>();
+  for (const r of snaps) {
+    const k = snapKey(r.player);
+    const l = by.get(k) ?? [];
+    l.push(r);
+    by.set(k, l);
+  }
+  const out = new Map<string, number>();
+  const avg = (a: number[]) => a.reduce((x, y) => x + y, 0) / Math.max(1, a.length);
+  for (const [k, l] of by) {
+    if (l.length < 3) continue;
+    l.sort((a, b) => a.week - b.week);
+    const pct = l.map((r) => r.offensePct);
+    const long = avg(pct.slice(-8));
+    if (long <= 0) continue;
+    out.set(k, Math.min(1.6, Math.max(0.5, avg(pct.slice(-2)) / long)));
+  }
+  return out;
+}
+
+/**
+ * How much the snap trend moves a projection: projection x trend^0.25.
+ * Backtest (2023-24 to choose, 2025-26 to check; log loss, lower is better):
+ * Pass Yds .6409 -> .6395, Rush Yds .6355 -> .6339, Rec Yds .6353 -> .6348,
+ * Receptions .6069 -> .6060, Rush + Rec .6384 -> .6372. Recent targets/
+ * carries trends and team pass-rate trends were also tested and didn't help.
+ */
+export const SNAP_TREND_POWER = 0.25;
 
 /** Standard normal CDF via the Abramowitz-Stegun approximation (max error ~1.5e-7) — no library dependency for one well-known formula. */
 function normalCdf(z: number): number {
@@ -455,6 +499,10 @@ export function buildPropPicks(
     const matchup = opponentThisWeek.get(avg.team);
     const marketSide = mk === undefined ? null : side === "Over" ? mk : 1 - mk;
     const trust = avg.values ? propTrust("nfl", modelOnly, trustFeatures(avg.values, g.line, side), marketSide ?? americanToImpliedProb(price)) : undefined;
+    if (trust && avg.snapTrend !== undefined) {
+      if (avg.snapTrend >= 1.15) trust.reasons.push(`Snap share up lately (${Math.round((avg.snapTrend - 1) * 100)}% over his recent norm): a bigger role`);
+      else if (avg.snapTrend <= 0.85) trust.reasons.push(`Snap share down lately (${Math.round((1 - avg.snapTrend) * 100)}% under his recent norm): a smaller role`);
+    }
 
     picks.push({
       player: g.player,
