@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { TeamPicker } from "./team-picker";
 import { MusicLauncher } from "./music-launcher";
 import type { MusicService } from "@/lib/music-pref";
@@ -91,6 +91,22 @@ export function BottomNav({
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
   const moreActive = MORE_LINKS.some((l) => l.href === pathname);
+
+  // While the sheet is open: the page behind it can't scroll (the sheet
+  // scrolls instead), and Escape closes it.
+  useEffect(() => {
+    if (!moreOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMoreOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [moreOpen]);
   const platformCategories = allowedPlatformCategories(tier);
   const canAnalytics = canViewAdvancedAnalytics(tier);
 
@@ -107,16 +123,18 @@ export function BottomNav({
 
       {/* "More" sheet — secondary pages + the account controls that used to
           sit in the header, consolidated into one tap-away panel. */}
+      {/* Capped to the screen height (the list is taller than most phones):
+          the title row stays put and the list scrolls inside the sheet. */}
       <div
-        className={`fixed inset-x-0 bottom-0 z-50 rounded-t-2xl border-t border-neutral-800 bg-neutral-950 shadow-2xl transition-transform duration-200 sm:hidden ${
+        className={`fixed inset-x-0 bottom-0 z-50 flex flex-col rounded-t-2xl border-t border-neutral-800 bg-neutral-950 shadow-2xl transition-transform duration-200 sm:hidden ${
           moreOpen ? "translate-y-0" : "translate-y-full"
         }`}
-        style={{ paddingBottom: "calc(5.25rem + env(safe-area-inset-bottom))" }}
+        style={{ maxHeight: "calc(100dvh - env(safe-area-inset-top) - 0.75rem)" }}
         role="dialog"
         aria-modal="true"
         aria-hidden={!moreOpen}
       >
-        <div className="flex items-center justify-between px-4 pt-4 pb-1">
+        <div className="flex shrink-0 items-center justify-between px-4 pt-4 pb-1">
           <span className="text-sm font-semibold text-neutral-300">More</span>
           <button
             type="button"
@@ -127,7 +145,11 @@ export function BottomNav({
             <CloseIcon className="h-5 w-5" />
           </button>
         </div>
-        <nav className="px-2 pt-2 pb-1">
+        <div
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          style={{ paddingBottom: "calc(5.25rem + env(safe-area-inset-bottom))" }}
+        >
+        <nav className="grid grid-cols-2 gap-x-1 px-2 pt-2 pb-1">
           {MORE_LINKS.map((l) => {
             const active = pathname === l.href;
             const locked = l.pro && !canAnalytics;
@@ -137,12 +159,12 @@ export function BottomNav({
                 href={l.href}
                 onClick={() => setMoreOpen(false)}
                 style={active ? { color: accent } : undefined}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium ${
+                className={`flex min-w-0 items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-sm font-medium leading-tight ${
                   active ? "bg-neutral-900" : "text-neutral-300 hover:bg-neutral-900/70"
                 }`}
               >
                 <l.Icon className="h-5 w-5 shrink-0" />
-                <span className="flex-1">{l.label}</span>
+                <span className="min-w-0 flex-1">{l.label}</span>
                 {locked && <LockIcon className="h-3.5 w-3.5 shrink-0 text-neutral-600" />}
               </Link>
             );
@@ -150,7 +172,7 @@ export function BottomNav({
           <Link prefetch={false}
             href="/upgrade"
             onClick={() => setMoreOpen(false)}
-            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-blue-400 hover:bg-neutral-900/70"
+            className="col-span-2 flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-sm font-medium text-blue-400 hover:bg-neutral-900/70"
           >
             <StarIcon className="h-5 w-5 shrink-0" />
             Upgrade — you&rsquo;re on {TIER_LABELS[tier]}
@@ -159,7 +181,7 @@ export function BottomNav({
             <Link prefetch={false}
               href="/admin"
               onClick={() => setMoreOpen(false)}
-              className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-neutral-300 hover:bg-neutral-900/70"
+              className="col-span-2 flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-sm font-medium text-neutral-300 hover:bg-neutral-900/70"
             >
               <ShieldStarIcon className="h-5 w-5 shrink-0" />
               Admin
@@ -185,6 +207,7 @@ export function BottomNav({
               Log out
             </button>
           </form>
+        </div>
         </div>
       </div>
 

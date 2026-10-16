@@ -33,6 +33,21 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.12.2",
+    date: "2026-10-16",
+    title: "More menu fits your phone",
+    summary: "The More menu now fits the screen and scrolls, instead of running off the top.",
+    changes: [
+      {
+        kind: "fixed",
+        title: "More menu fits the screen",
+        whatChanged:
+          "The More menu had grown taller than most phone screens (about 1,200 pixels with all the new pages), so its top, including the close button, ran off the screen and it couldn't scroll. It's now capped at the screen height with the title and close button pinned, the list scrolls inside it, pages show in two columns, and the page behind it no longer scrolls while it's open.",
+        whatItMeans: "Every link and setting in More is reachable on any phone, from the smallest iPhone SE up.",
+      },
+    ],
+  },
+  {
     version: "1.12.1",
     date: "2026-10-15",
     title: "Fits every screen",
