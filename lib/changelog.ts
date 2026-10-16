@@ -33,6 +33,28 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.12.1",
+    date: "2026-10-15",
+    title: "Fits every screen",
+    summary: "Seasonz now fits phones, tablets and laptops without sideways scrolling or zooming.",
+    changes: [
+      {
+        kind: "fixed",
+        title: "Fits tablets and laptops",
+        whatChanged:
+          "The page list at the top was wider than most screens (about 1,800 pixels), which pushed every page wider than the screen on tablets and laptops. It's now its own row that scrolls sideways, with the page you're on kept in view.",
+        whatItMeans: "No more sideways scrolling or a zoomed-out page on an iPad or laptop.",
+      },
+      {
+        kind: "fixed",
+        title: "Fits phones",
+        whatChanged:
+          "Prop rows, the bet tracker, the bankroll box and the Make your own pick form no longer run off the side of small phones. Tapping a box no longer zooms the page in on iPhone.",
+        whatItMeans: "Every page stays the width of your screen. Checked on 24 pages at 10 screen sizes, from a small phone to a wide laptop.",
+      },
+    ],
+  },
+  {
     version: "1.12.0",
     date: "2026-10-15",
     title: "Role changes in NFL props",

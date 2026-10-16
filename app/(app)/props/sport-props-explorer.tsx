@@ -144,14 +144,14 @@ export function SportPropsExplorer({
                       <ul className="space-y-1">
                         {rows.map((r) => (
                           <li key={r.id} className="text-xs space-y-1">
-                            <div className="text-neutral-400 flex items-center justify-between gap-2">
+                            <div className="text-neutral-400 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
                               <span>
                                 <span className={r.side === "Over" ? "text-emerald-400" : "text-rose-400"}>
                                   {r.side}
                                 </span>{" "}
                                 {r.line} {r.statType} · {formatPrice(r.priceAmerican)} @ {r.book}
                               </span>
-                              <span className="text-neutral-500 shrink-0">
+                              <span className="text-neutral-500 min-w-0 flex flex-wrap items-center gap-x-1">
                                 proj {r.projection?.toFixed(1) ?? "—"}
                                 {r.modelWinPct !== null && (
                                   <>

@@ -53,7 +53,7 @@ export function TrustBadge({ trust, label = "trust", compact = false }: { trust:
         {compact ? `${trust.tier} trust` : `${trust.tier} ${label}`}
       </span>
       {open && why.length > 0 && (
-        <span className="absolute right-0 top-full z-20 mt-1 w-64 rounded-md border border-neutral-700 bg-neutral-900 p-2 text-left text-[11px] font-normal text-neutral-300 shadow-lg">
+        <span className="absolute right-0 top-full z-20 mt-1 w-64 max-w-[calc(100vw-2rem)] rounded-md border border-neutral-700 bg-neutral-900 p-2 text-left text-[11px] font-normal text-neutral-300 shadow-lg">
           {why.map((w) => (
             <span key={w} className="block py-0.5">
               • {w}

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef } from "react";
 
 const LINKS = [
   { href: "/", label: "Dashboard" },
@@ -32,17 +33,23 @@ const LINKS = [
 
 export function NavLinks({ accent }: { accent?: string }) {
   const pathname = usePathname();
+  const navRef = useRef<HTMLElement>(null);
+  // Keep the current page's link in view when the row scrolls sideways.
+  useEffect(() => {
+    navRef.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [pathname]);
 
   return (
-    <nav className="flex gap-1">
+    <nav ref={navRef} className="flex w-max gap-1">
       {LINKS.map((link) => {
         const active = pathname === link.href;
         return (
           <Link prefetch={false}
             key={link.label}
             href={link.href}
+            aria-current={active ? "page" : undefined}
             style={active ? { backgroundColor: accent } : undefined}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            className={`whitespace-nowrap px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
               active
                 ? "text-white"
                 : "text-neutral-300 hover:bg-neutral-800/80 hover:text-white"

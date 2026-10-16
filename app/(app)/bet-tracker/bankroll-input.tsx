@@ -20,7 +20,7 @@ export function BankrollInput({ current }: { current: number | null }) {
   };
 
   return (
-    <div className="flex items-center gap-2 text-sm">
+    <div className="flex flex-wrap items-center gap-2 text-sm">
       <label className="text-neutral-400" htmlFor="bankroll-input">
         Bankroll ($)
       </label>
@@ -32,7 +32,7 @@ export function BankrollInput({ current }: { current: number | null }) {
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder="Optional — turns % suggestions into $"
-        className="w-56 rounded-md bg-neutral-900 border border-neutral-800 px-2 py-1 text-neutral-100"
+        className="w-full min-w-0 max-w-56 flex-1 rounded-md bg-neutral-900 border border-neutral-800 px-2 py-1 text-neutral-100"
       />
       <button
         type="button"

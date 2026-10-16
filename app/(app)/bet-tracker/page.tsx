@@ -249,10 +249,10 @@ export default async function BetTrackerPage() {
                 )}
               >
                 <div className="flex items-center justify-between gap-4 flex-wrap">
-                  <span className="text-neutral-400 w-32 shrink-0">
+                  <span className="text-neutral-400 sm:w-32 sm:shrink-0">
                     <span className="text-neutral-500">{r.sportLabel}</span> {r.matchup}
                   </span>
-                  <span className="flex-1">{describeBet(r.bet)}</span>
+                  <span className="flex-1 min-w-[10rem]">{describeBet(r.bet)}</span>
                   <span className="text-neutral-500 shrink-0">${r.bet.stakeUsd.toFixed(0)}</span>
                   {(r.bet.market === "PARLAY" || (r.bet.market === "PROP" && r.game.isFinal)) && <SettleButtons id={r.bet.id} />}
                   <DeleteBetButton id={r.bet.id} />
@@ -293,16 +293,16 @@ export default async function BetTrackerPage() {
             {graded.map((r) => (
               <div
                 key={r.bet.id}
-                className="px-4 py-2.5 flex items-center justify-between gap-4 text-sm"
+                className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm"
                 style={favoriteHighlightStyle(
                   favTeam,
                   r.game.homeTeam === favTeam?.code || r.game.awayTeam === favTeam?.code
                 )}
               >
-                <span className="text-neutral-400 w-32 shrink-0">
+                <span className="text-neutral-400 sm:w-32 sm:shrink-0">
                   <span className="text-neutral-500">{r.sportLabel}</span> {r.matchup}
                 </span>
-                <span className="flex-1">
+                <span className="flex-1 min-w-[10rem]">
                   {describeBet(r.bet)}
                   {r.bet.clvPct !== null && (
                     <span className={`ml-2 text-xs ${r.bet.clvPct > 0 ? "text-emerald-400" : "text-amber-400"}`}>

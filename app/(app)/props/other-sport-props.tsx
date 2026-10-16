@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import type { SportKey } from "@/lib/sports/types";
 import type { PlayerOption } from "@/lib/sports/player-options";
 
-const SELECT = "rounded border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-sm disabled:opacity-50";
+const SELECT = "w-full min-w-0 rounded border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-sm disabled:opacity-50";
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 /** Suggested line: the book's line if one is posted, else the recent average rounded to a half point (no pushes). */
 const suggestLine = (avg: number, book: { line: number } | null) => (book ? book.line : Math.max(0.5, Math.floor(avg) + 0.5));
@@ -154,7 +154,7 @@ export function OtherSportProps({
         {games.length === 0 ? (
           <p className="text-xs text-neutral-500">No upcoming games synced yet for this sport.</p>
         ) : (
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 [&>*]:min-w-0">
             <select
               value={gameId}
               onChange={(e) => pickGame(e.target.value ? Number(e.target.value) : "")}

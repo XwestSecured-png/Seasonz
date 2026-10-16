@@ -41,7 +41,7 @@ export function FeedbackWidget({ username }: { username: string }) {
       className="fixed right-4 z-50 bottom-[calc(6.5rem+env(safe-area-inset-bottom))] sm:bottom-12"
     >
       {open ? (
-        <div className="w-80 rounded-lg border border-neutral-800 bg-neutral-900 shadow-xl p-4 space-y-3">
+        <div className="w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-neutral-800 bg-neutral-900 shadow-xl p-4 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-neutral-200">Send feedback</span>
             <button

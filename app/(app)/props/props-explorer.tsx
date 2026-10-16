@@ -244,7 +244,7 @@ export function PropsExplorer({
                                 </li>
                               ) : (
                                 <li key={r.id} className="text-xs space-y-1">
-                                  <div className="text-neutral-400 flex items-center justify-between gap-2">
+                                  <div className="text-neutral-400 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
                                     <span>
                                       <span
                                         className={
@@ -255,7 +255,7 @@ export function PropsExplorer({
                                       </span>{" "}
                                       {r.line} · {formatPrice(r.priceAmerican)} @ {r.book}
                                     </span>
-                                    <span className="text-neutral-500 shrink-0">
+                                    <span className="text-neutral-500 min-w-0 flex flex-wrap items-center gap-x-1">
                                       proj {r.projection?.toFixed(1) ?? "—"} ·{" "}
                                       {r.edgePct !== null ? `${(r.edgePct * 100).toFixed(1)}%` : "—"}{" "}
                                       edge

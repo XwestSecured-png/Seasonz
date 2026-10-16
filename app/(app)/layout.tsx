@@ -60,51 +60,53 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen text-neutral-100" style={wrapperStyle}>
-      <header className="sticky top-0 z-30 border-b border-neutral-800/80 bg-neutral-950/70 px-4 sm:px-6 py-3 flex items-center justify-between gap-4 flex-wrap backdrop-blur supports-[backdrop-filter]:bg-neutral-950/50">
-        <div className="flex items-center gap-6 flex-wrap">
-          <Link prefetch={false} href="/" aria-label="Seasonz home" className="whitespace-nowrap">
+      <header className="sticky top-0 z-30 border-b border-neutral-800/80 bg-neutral-950/70 px-4 sm:px-6 pt-3 pb-2 backdrop-blur supports-[backdrop-filter]:bg-neutral-950/50">
+        <div className="flex items-center justify-between gap-4">
+          <Link prefetch={false} href="/" aria-label="Seasonz home" className="shrink-0 whitespace-nowrap">
             <SeasonzLogo />
           </Link>
-          {/* On mobile this nav is replaced by the fixed bottom tab bar
-              below, which is the primary way around the app there. */}
-          <div className="hidden sm:block">
-            <NavLinks accent={accent} />
+          {/* Team/account controls move into the bottom nav's "More" sheet on
+              mobile so the header stays to just the title there. */}
+          <div className="hidden sm:flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1 lg:gap-x-4">
+            {user && (
+              <span className="text-sm text-neutral-500">
+                {user.username}
+                <Link prefetch={false}
+                  href="/upgrade"
+                  className="ml-1.5 rounded-full border border-neutral-700 px-1.5 py-0.5 text-[10px] font-medium text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
+                >
+                  {TIER_LABELS[tier]}
+                </Link>
+              </span>
+            )}
+            {user?.isAdmin && (
+              <Link prefetch={false}
+                href="/admin"
+                className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
+              >
+                <ShieldStarIcon className="h-4 w-4" />
+                Admin
+              </Link>
+            )}
+            <TeamPicker current={favTeamCode} />
+            <MusicLauncher current={musicPref} />
+            <SportsbookPicker current={sportsbookPrefs} allowedCategories={platformCategories} />
+            <form action="/api/logout" method="POST">
+              <button
+                type="submit"
+                className="text-sm text-neutral-400 hover:text-neutral-200"
+              >
+                Log out
+              </button>
+            </form>
           </div>
         </div>
-        {/* Team/account controls move into the bottom nav's "More" sheet on
-            mobile so the header stays to just the title there. */}
-        <div className="hidden sm:flex items-center gap-4">
-          {user && (
-            <span className="text-sm text-neutral-500">
-              {user.username}
-              <Link prefetch={false}
-                href="/upgrade"
-                className="ml-1.5 rounded-full border border-neutral-700 px-1.5 py-0.5 text-[10px] font-medium text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
-              >
-                {TIER_LABELS[tier]}
-              </Link>
-            </span>
-          )}
-          {user?.isAdmin && (
-            <Link prefetch={false}
-              href="/admin"
-              className="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-200"
-            >
-              <ShieldStarIcon className="h-4 w-4" />
-              Admin
-            </Link>
-          )}
-          <TeamPicker current={favTeamCode} />
-          <MusicLauncher current={musicPref} />
-          <SportsbookPicker current={sportsbookPrefs} allowedCategories={platformCategories} />
-          <form action="/api/logout" method="POST">
-            <button
-              type="submit"
-              className="text-sm text-neutral-400 hover:text-neutral-200"
-            >
-              Log out
-            </button>
-          </form>
+        {/* The full page list is wider than most screens: on tablets and
+            laptops it's its own row that scrolls sideways instead of
+            pushing the page wider than the screen. On phones the fixed
+            bottom tab bar replaces it. */}
+        <div className="no-scrollbar hidden sm:block -mx-4 sm:-mx-6 mt-2 overflow-x-auto px-4 sm:px-6">
+          <NavLinks accent={accent} />
         </div>
       </header>
       <main className="p-4 sm:p-6 pb-32 sm:pb-12 max-w-5xl mx-auto">
