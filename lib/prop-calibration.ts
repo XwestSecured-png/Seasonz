@@ -36,9 +36,9 @@ const MAX_SAMPLES = 40000;
 function candidates(sdMult: number, hasMinutes: boolean): PropModelConfig[] {
   const out: PropModelConfig[] = [];
   for (const dist of ["normal", "poisson", "negbin"] as DistKind[])
-    for (const shrinkK of [5, 40])
+    for (const shrinkK of [5, 40, 100])
       for (const useMinutes of hasMinutes ? [false, true] : [false])
-        for (const temper of [0.88, 1]) out.push({ dist, sdMult, shrinkK, useMinutes, temper });
+        for (const temper of [0.8, 0.88, 1]) out.push({ dist, sdMult, shrinkK, useMinutes, temper });
   return out;
 }
 

@@ -212,6 +212,7 @@ export const STDDEV_FLOOR_ABS: Record<SportKey, Record<string, number>> = {
 export interface SportBoxScoreRow {
   player: string;
   team: string;
+  position?: string | null;
   week: number;
   /** Kickoff time (ms), to order several games in one week. */
   t?: number;
@@ -231,7 +232,46 @@ export interface SportPlayerSeasonAverage {
   /** Every game's value and minutes, oldest first (for the trust score). */
   values?: number[];
   minutes?: (number | null)[];
+  /** Back-from-injury adjustment applied to the projection, when any. */
+  returnAdj?: { kind: "self" | "teammate"; who: string; factor: number };
 }
+
+/** A key player back from injury (lib/injury-returns.ts), with when he came off the Out list. */
+export interface SportReturner {
+  player: string;
+  team: string;
+  position: string | null;
+  at: number;
+}
+
+/**
+ * Back from injury, other sports (1.14.1). Live check on 2025-27 box scores
+ * (/api/health/insights?returncal=<sport>), log loss at lines around the
+ * projection, against ordinary games as the baseline:
+ *  - basketball: a key player's first game back runs ~7% under his
+ *    projection (NBA Points: x0.9 gains .009 where ordinary games lose
+ *    .007; WNBA similar or stronger); same-position teammates lose ~10%
+ *    (NBA Points/Rebounds/PRA x0.85-0.9 gain .013-.015).
+ *  - hockey: a key skater's first game back, Points/Assists x0.88-0.9
+ *    (gain .012-.013; ordinary games ~0).
+ * Baseball (rest days look the same as injuries in box scores) and college
+ * football (too few games) aren't adjusted.
+ */
+const RETURN_SELF_BY_SPORT: Partial<Record<SportKey, Record<string, number>>> = {
+  nba: { Points: 0.94, Rebounds: 0.95, Assists: 0.95, "3-Pointers Made": 0.9, "Pts+Reb": 0.94, "Pts+Reb+Ast": 0.94, "Reb+Ast": 0.95, Steals: 0.9, Blocks: 0.92, Turnovers: 0.95 },
+  nhl: { Points: 0.9, Assists: 0.9 },
+};
+RETURN_SELF_BY_SPORT.wnba = RETURN_SELF_BY_SPORT.nba;
+RETURN_SELF_BY_SPORT.ncaab = RETURN_SELF_BY_SPORT.nba;
+const RETURN_MATE_BY_SPORT: Partial<Record<SportKey, Record<string, number>>> = {
+  nba: { Points: 0.9, Rebounds: 0.9, Assists: 0.9, "3-Pointers Made": 0.92, "Pts+Reb": 0.9, "Pts+Reb+Ast": 0.9, "Reb+Ast": 0.92, Steals: 0.94, Blocks: 0.94, Turnovers: 0.92 },
+};
+RETURN_MATE_BY_SPORT.wnba = RETURN_MATE_BY_SPORT.nba;
+RETURN_MATE_BY_SPORT.ncaab = RETURN_MATE_BY_SPORT.nba;
+const bbGroup = (p: string | null | undefined) => {
+  const x = (p ?? "").toUpperCase();
+  return x.startsWith("C") ? "C" : x.startsWith("G") || x === "PG" || x === "SG" ? "G" : "F";
+};
 
 /** Same reasoning as lib/props-model.ts's computeOpponentAllowedFactors, generalized over this sport's STAT_EXTRACTORS instead of a fixed NFL field list. */
 function computeOpponentAllowedFactors(
@@ -295,10 +335,22 @@ export function computeSportSeasonAverages(
   sport: SportKey,
   rows: SportBoxScoreRow[],
   schedule: SportScheduleGame[],
-  upcomingWeek: number
+  upcomingWeek: number,
+  /** Key players back from injury (recent injury_returns rows). */
+  returners: SportReturner[] = []
 ): Map<string, SportPlayerSeasonAverage> {
   const extractors = STAT_EXTRACTORS[sport];
   const floors = STDDEV_FLOOR_ABS[sport];
+  // Last game and position per player, to tell whether a returner has played since he came back.
+  const lastGame = new Map<string, number>();
+  const posOf = new Map<string, string | null>();
+  for (const r of rows) {
+    if ((r.t ?? 0) > (lastGame.get(r.player) ?? 0)) lastGame.set(r.player, r.t ?? 0);
+    if (r.position) posOf.set(r.player, r.position);
+  }
+  const pending = returners.filter((r) => (lastGame.get(r.player) ?? 0) < r.at);
+  const selfF = RETURN_SELF_BY_SPORT[sport] ?? {};
+  const mateF = RETURN_MATE_BY_SPORT[sport] ?? {};
 
   const byKey = new Map<string, { team: string; week: number; t: number; value: number; min: number | null }[]>();
   for (const row of rows) {
@@ -340,7 +392,14 @@ export function computeSportSeasonAverages(
     const team = sorted[0].team;
     const opponent = opponentThisWeek.get(team);
     const oppFactor = opponent ? (opponentFactors.get(opponent)?.get(statType) ?? 1) : 1;
-    const projection = proj.mean * oppFactor;
+    let returnAdj: SportPlayerSeasonAverage["returnAdj"];
+    if (pending.some((r) => r.player === player) && selfF[statType]) returnAdj = { kind: "self", who: player, factor: selfF[statType] };
+    else if (mateF[statType]) {
+      const g = bbGroup(posOf.get(player));
+      const mate = pending.find((r) => r.team === team && r.player !== player && bbGroup(r.position ?? posOf.get(r.player)) === g);
+      if (mate) returnAdj = { kind: "teammate", who: mate.player, factor: mateF[statType] };
+    }
+    const projection = proj.mean * oppFactor * (returnAdj?.factor ?? 1);
 
     out.set(key, {
       player,
@@ -354,6 +413,7 @@ export function computeSportSeasonAverages(
       sport,
       values: chrono.map((g) => g.value),
       minutes: chrono.map((g) => g.min),
+      returnAdj,
     });
   }
   return out;
@@ -448,6 +508,13 @@ export function buildSportPropPicks(
       played && avg.sport
         ? propTrust(avg.sport, modelOnly, trustFeatures(played.map((x) => x.v), g.line, side, played.map((x) => x.m)), marketSide ?? americanToImpliedProb(price))
         : undefined;
+    if (trust && avg.returnAdj) {
+      trust.reasons.push(
+        avg.returnAdj.kind === "self"
+          ? `First game back from injury: projection trimmed ${Math.round((1 - avg.returnAdj.factor) * 100)}% (players usually start slow)`
+          : `${avg.returnAdj.who} is back from injury: projection trimmed ${Math.round((1 - avg.returnAdj.factor) * 100)}% for a smaller role`
+      );
+    }
 
     picks.push({
       player: g.player,

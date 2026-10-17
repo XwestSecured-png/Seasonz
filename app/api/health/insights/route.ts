@@ -196,9 +196,12 @@ export async function GET(req: NextRequest) {
         list.push({ t: r.kickoffAt?.getTime() ?? 0, v, min: minutesOf(st) });
         byPlayer.set(r.player, list);
       }
+      // ?all=1 keeps players who record the stat in under half their games
+      // (needed for rare events: home runs, RBIs, goals).
+      const all = req.nextUrl.searchParams.get("all") === "1";
       const series = [...byPlayer.entries()]
         .map(([player, values]) => ({ player, values: values.sort((a, b) => a.t - b.t) }))
-        .filter((x) => x.values.filter((v) => v.v > 0).length >= x.values.length * 0.5);
+        .filter((x) => (all ? x.values.length >= 10 : x.values.filter((v) => v.v > 0).length >= x.values.length * 0.5));
       // Yardage-type stats are continuous; everything else is a count.
       const isCount = !/Yds/.test(statType);
       out[statType] = calibrateStat(series, STDDEV_FLOOR_ABS[sport][statType] ?? 1, propModelFor(sport, statType), isCount);

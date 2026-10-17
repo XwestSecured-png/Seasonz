@@ -8,7 +8,7 @@
 // "Multi-sport tables" comment and lib/sports/espn.ts's caveat about this
 // being unverified against live ESPN data until the first real Vercel sync.
 import { db } from "@/db";
-import { detectSportReturns, type ReportRow } from "../injury-returns";
+import { detectSportReturns, recentReturns, type ReportRow } from "../injury-returns";
 import {
   sportTeams,
   sportGames,
@@ -918,6 +918,7 @@ export async function runSportSync(
             week: sportPlayerGameStats.week,
             season: sportPlayerGameStats.season,
             stats: sportPlayerGameStats.stats,
+            position: sportPlayerGameStats.position,
             kickoffAt: sportGames.kickoffAt,
           })
           .from(sportPlayerGameStats)
@@ -934,10 +935,17 @@ export async function runSportSync(
           ...prior.map((r, i) => ({ player: r.player, team: r.team, week: i - prior.length - 1000, t: r.kickoffAt?.getTime() ?? 0, stats: r.stats as Record<string, string> })),
           ...rawStatRows
             .filter((r) => r.season === year)
-            .map((r) => ({ player: r.player, team: r.team, week: r.week, t: r.kickoffAt?.getTime() ?? 0, stats: r.stats as Record<string, string> })),
+            .map((r) => ({ player: r.player, team: r.team, position: r.position, week: r.week, t: r.kickoffAt?.getTime() ?? 0, stats: r.stats as Record<string, string> })),
         ];
 
-        const averages = computeSportSeasonAverages(sport, statRows, schedule, week);
+        // Key players back from injury in the last week (lib/injury-returns.ts).
+        const returners = (await recentReturns(7 * 24, sport).catch(() => [])).map((r) => ({
+          player: r.player,
+          team: r.team,
+          position: r.position,
+          at: r.detectedAt.getTime(),
+        }));
+        const averages = computeSportSeasonAverages(sport, statRows, schedule, week, returners);
         // A player whose last team (from box scores) isn't in the game his
         // line was posted for has changed teams; drop him rather than show
         // him on the wrong team.
