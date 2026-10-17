@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 
-type Prefs = { locks: boolean; edges: boolean; moves: boolean };
+type Prefs = { locks: boolean; edges: boolean; moves: boolean; returns: boolean };
 const LABELS: Record<keyof Prefs, string> = {
   locks: "Picks about to lock",
   edges: "Today's best edges",
   moves: "Big line moves on my picks and bets",
+  returns: "Key players back from injury",
 };
 
 function keyBytes(base64: string): Uint8Array<ArrayBuffer> {
@@ -21,7 +22,7 @@ function keyBytes(base64: string): Uint8Array<ArrayBuffer> {
 export function AlertsToggle() {
   const [supported, setSupported] = useState<boolean | null>(null);
   const [sub, setSub] = useState<PushSubscription | null>(null);
-  const [prefs, setPrefs] = useState<Prefs>({ locks: true, edges: true, moves: true });
+  const [prefs, setPrefs] = useState<Prefs>({ locks: true, edges: true, moves: true, returns: true });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -38,7 +39,7 @@ export function AlertsToggle() {
       const body = await r.json().catch(() => null);
       if (body?.subscribed) {
         setSub(s);
-        setPrefs(body.prefs);
+        setPrefs({ returns: true, ...body.prefs });
       }
     })().catch(() => {});
   }, []);

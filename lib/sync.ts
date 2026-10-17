@@ -17,6 +17,7 @@ import {
 import {
   fetchSchedule,
   fetchInjuries,
+  fetchInjuryHistory,
   fetchPlayerWeekStats,
   fetchScoringEvents,
   fetchSnapCounts,
@@ -25,6 +26,7 @@ import {
   fetchTeamWeekStats,
 } from "./nflverse";
 import { settlePendingBets } from "./bet-settle";
+import { recordNflReturns } from "./injury-returns";
 import { replayNflElo, makeNflEpaLookup, nflEpaAdjPct, type EloGameResult } from "./elo";
 import { noVigHome, logit, sigmoid } from "./sports/game-model";
 import type { ScheduleGame } from "./nflverse";
@@ -56,6 +58,7 @@ import { fetchNgsTeamWeeks, computeNgsProfiles, opponentMap, type NgsTeamWeek } 
 import { computeNgsAdjustments } from "./ngs-matchup";
 import {
   computeSeasonAverages,
+  findReturners,
   snapTrends,
   buildPropPicks,
   buildAutoParlays,
@@ -1127,7 +1130,11 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         const priorStats = await fetchPlayerWeekStats(season - 1).catch(() => []);
         // Snap-share trend (role changes); the model runs without it if nflverse hasn't posted snaps.
         const snaps = await fetchSnapCounts(season).catch(() => []);
-        const averages = computeSeasonAverages(playerStats, schedule, week, priorStats, snapTrends(snaps));
+        // Key players back from injury this week (and their teammates' trimmed roles).
+        const injuryHistory = await fetchInjuryHistory(season).catch(() => []);
+        const returners = findReturners(playerStats, injuryHistory, week);
+        await recordNflReturns(season, returners, playerStats).catch(() => 0);
+        const averages = computeSeasonAverages(playerStats, schedule, week, priorStats, snapTrends(snaps), returners);
 
         // A player marked OUT or DOUBTFUL for this game shouldn't get a prop
         // pick at all — their season stats say nothing about a game they

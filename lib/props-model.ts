@@ -100,6 +100,85 @@ export interface PlayerSeasonAverage {
   values?: number[];
   /** Snap-share trend (last 2 games vs last 8), when known. */
   snapTrend?: number;
+  /** Back-from-injury adjustment applied to the projection, when any. */
+  returnAdj?: { kind: "self" | "teammate"; who: string; factor: number };
+}
+
+/** A key player expected back this week after missing games while listed Out. */
+export interface Returner {
+  player: string;
+  team: string;
+  position: string;
+  missed: number;
+}
+
+/**
+ * Back from injury (1.14.0). Backtest on 2020-23 weekly stats (chosen) and
+ * checked on 2024-25, log loss at lines around the projection:
+ *  - the player himself, first game back after missing 1+ games: Pass Yds
+ *    x0.85 (.6313 -> .5797 on 2024-25), Rec Yds x0.88 (.5969 -> .552),
+ *    Receptions x0.9 (.5594 -> .5302), Rush Yds x0.9 (.5688 -> .5486).
+ *  - a teammate at the same position (WR/TE together) when a key player
+ *    returns: his recent games came with a bigger role that's going away.
+ *    Rec Yds x0.8 (.5485 -> .5192), Rush Yds x0.8 (.5677 -> .4954),
+ *    Receptions x0.9 (train .5398 -> .5168; flat on 2024-25).
+ * "Key": 8+ targets + carries a game (QBs: 25+ attempts) before the injury.
+ */
+export const RETURN_SELF: Record<string, number> = { "Pass Yds": 0.85, "Rush Yds": 0.9, "Rec Yds": 0.88, Receptions: 0.9, "Rush + Rec Yds": 0.89 };
+// Teammate trims are measured on games the returner played; on 2025 reports
+// 22 of 29 flagged returners did, so the trim is scaled by that ~75%.
+const RETURN_PLAY_PROB = 0.75;
+const RETURN_TEAMMATE_IF_PLAYS: Record<string, number> = { "Pass Yds": 0.9, "Rush Yds": 0.8, "Rec Yds": 0.8, Receptions: 0.9, "Rush + Rec Yds": 0.8 };
+export const RETURN_TEAMMATE: Record<string, number> = Object.fromEntries(
+  Object.entries(RETURN_TEAMMATE_IF_PLAYS).map(([k, f]) => [k, +(1 - RETURN_PLAY_PROB * (1 - f)).toFixed(3)])
+);
+const posGroup = (p: string) => (p === "WR" || p === "TE" ? "REC" : p);
+const nameKey = (n: string) => n.toLowerCase().replace(/[^a-z]/g, "").replace(/(jr|sr|ii|iii|iv)$/, "");
+
+/**
+ * Key players coming back this week: they missed their team's last game(s)
+ * while listed Out (or Doubtful), and this week's practice report lists them
+ * without an Out or Doubtful tag.
+ */
+export function findReturners(
+  rows: PlayerWeekStats[],
+  injuries: { week: number; team: string; player: string; status: string }[],
+  upcomingWeek: number
+): Returner[] {
+  const teamWeeks = new Map<string, Set<number>>();
+  for (const r of rows) (teamWeeks.get(r.team) ?? teamWeeks.set(r.team, new Set()).get(r.team)!).add(r.week);
+  const reportTeams = new Set(injuries.filter((i) => i.week === upcomingWeek).map((i) => i.team));
+  const statusBy = new Map<string, Map<number, string>>();
+  for (const i of injuries) {
+    const k = `${i.team}|${nameKey(i.player)}`;
+    (statusBy.get(k) ?? statusBy.set(k, new Map()).get(k)!).set(i.week, i.status);
+  }
+  const byPlayer = new Map<string, PlayerWeekStats[]>();
+  for (const r of rows) (byPlayer.get(r.player) ?? byPlayer.set(r.player, []).get(r.player)!).push(r);
+  const out: Returner[] = [];
+  for (const [player, list] of byPlayer) {
+    list.sort((a, b) => a.week - b.week);
+    if (list.length < 3) continue;
+    const last = list[list.length - 1];
+    const team = last.team;
+    if (!reportTeams.has(team)) continue; // this week's report isn't out yet
+    const missedWeeks = [...(teamWeeks.get(team) ?? [])].filter((w) => w > last.week && w < upcomingWeek);
+    if (missedWeeks.length === 0) continue;
+    const use =
+      list.reduce((a, r) => a + (r.targets ?? 0) + (r.carries ?? 0), 0) / list.length;
+    const isQb = last.position === "QB";
+    if (isQb ? !list.some((r) => r.passYds > 150) : use < 8) continue;
+    const st = statusBy.get(`${team}|${nameKey(player)}`);
+    if (!st) continue;
+    const wasOut = missedWeeks.some((w) => /^(Out|Doubtful)$/i.test(st.get(w) ?? ""));
+    // He must be on this week's report (practicing) and not Out/Doubtful:
+    // players on injured reserve drop off the weekly report entirely.
+    const now = st.get(upcomingWeek);
+    if (now === undefined) continue;
+    const nowOut = /^(Out|Doubtful)$/i.test(now);
+    if (wasOut && !nowOut) out.push({ player, team, position: last.position, missed: missedWeeks.length });
+  }
+  return out;
 }
 
 /**
@@ -193,8 +272,13 @@ export function computeSeasonAverages(
    */
   prior: PlayerWeekStats[] = [],
   /** Snap-share trend by player (snapTrends); missing = no adjustment. */
-  snapTrend: Map<string, number> = new Map()
+  snapTrend: Map<string, number> = new Map(),
+  /** Key players back from injury this week (findReturners). */
+  returners: Returner[] = []
 ): Map<string, PlayerSeasonAverage> {
+  const returningSelf = new Map(returners.map((r) => [r.player, r]));
+  const posOf = new Map<string, string>();
+  for (const r of rows) posOf.set(r.player, r.position);
   const byKey = new Map<string, { team: string; week: number; value: number }[]>();
   const currentGames = new Map<string, number>();
   for (const row of rows) currentGames.set(row.player, (currentGames.get(row.player) ?? 0) + 1);
@@ -245,7 +329,15 @@ export function computeSeasonAverages(
     const opponent = opponentThisWeek.get(team);
     const oppFactor = opponent ? (opponentFactors.get(opponent)?.get(statType) ?? 1) : 1;
     const trend = snapTrend.get(snapKey(player)) ?? 1;
-    const projection = proj.mean * oppFactor * Math.pow(trend, SNAP_TREND_POWER);
+    let returnAdj: PlayerSeasonAverage["returnAdj"];
+    const self = returningSelf.get(player);
+    if (self && RETURN_SELF[statType]) returnAdj = { kind: "self", who: player, factor: RETURN_SELF[statType] };
+    else if (RETURN_TEAMMATE[statType]) {
+      const g = posGroup(posOf.get(player) ?? "");
+      const mate = returners.find((r) => r.team === team && r.player !== player && posGroup(r.position) === g);
+      if (mate) returnAdj = { kind: "teammate", who: mate.player, factor: RETURN_TEAMMATE[statType] };
+    }
+    const projection = proj.mean * oppFactor * Math.pow(trend, SNAP_TREND_POWER) * (returnAdj?.factor ?? 1);
 
     out.set(key, {
       player,
@@ -259,6 +351,7 @@ export function computeSeasonAverages(
       cfg,
       values: [...sorted].reverse().map((g) => g.value),
       snapTrend: snapTrend.get(snapKey(player)),
+      returnAdj,
     });
   }
   return out;
@@ -521,6 +614,13 @@ export function buildPropPicks(
     const matchup = opponentThisWeek.get(avg.team);
     const marketSide = mk === undefined ? null : side === "Over" ? mk : 1 - mk;
     const trust = avg.values ? propTrust("nfl", modelOnly, trustFeatures(avg.values, g.line, side), marketSide ?? americanToImpliedProb(price)) : undefined;
+    if (trust && avg.returnAdj) {
+      trust.reasons.push(
+        avg.returnAdj.kind === "self"
+          ? `First game back from injury: projection trimmed ${Math.round((1 - avg.returnAdj.factor) * 100)}% (players usually start slow)`
+          : `${avg.returnAdj.who} is back from injury: projection trimmed ${Math.round((1 - avg.returnAdj.factor) * 100)}% for a smaller role`
+      );
+    }
     if (trust && avg.snapTrend !== undefined) {
       if (avg.snapTrend >= 1.15) trust.reasons.push(`Snap share up lately (${Math.round((avg.snapTrend - 1) * 100)}% over his recent norm): a bigger role`);
       else if (avg.snapTrend <= 0.85) trust.reasons.push(`Snap share down lately (${Math.round((1 - avg.snapTrend) * 100)}% under his recent norm): a smaller role`);

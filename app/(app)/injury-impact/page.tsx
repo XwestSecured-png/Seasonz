@@ -7,6 +7,8 @@ import { NextStep } from "../next-step";
 import { UpgradeGate } from "../upgrade-gate";
 import { getCurrentUser } from "@/lib/current-user";
 import { canViewAdvancedAnalytics } from "@/lib/entitlements";
+import { recentReturns } from "@/lib/injury-returns";
+import { SPORTS, type SportKey } from "@/lib/sports/types";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +46,8 @@ export default async function InjuryImpactPage() {
     .select()
     .from(injuryReports)
     .where(eq(injuryReports.season, season));
+  const returns = await recentReturns(7 * 24).catch(() => []);
+  const sportLabel = (s: string) => (s === "nfl" ? "NFL" : (SPORTS[s as SportKey]?.label ?? s));
 
   return (
     <div className="space-y-8">
@@ -75,6 +79,36 @@ export default async function InjuryImpactPage() {
             see on Model Tracker and Factor Performance.
           </p>
         </PageInfo>
+      </div>
+
+      <div>
+        <h2 className="text-sm font-semibold text-neutral-300 mb-2">Back from injury (all sports, last 7 days)</h2>
+        <SectionNote>
+          Key players who were listed Out, missed games, and are now off the Out list. Our game chances
+          stop counting them as missing. NFL props also trim the returning player&rsquo;s first game back
+          and his same-position teammates, who lose the extra role they had while he was out.
+        </SectionNote>
+        {returns.length === 0 ? (
+          <p className="text-sm text-neutral-500">No key players back from injury in the last 7 days.</p>
+        ) : (
+          <ul className="divide-y divide-neutral-800 rounded-md border border-neutral-800">
+            {returns.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-3 py-2 text-sm">
+                <span className="rounded bg-emerald-900/60 px-1.5 py-0.5 text-xs text-emerald-300">{sportLabel(r.sport)}</span>
+                <span className="font-medium">{r.player}</span>
+                <span className="text-neutral-400">
+                  {r.team}
+                  {r.position ? ` · ${r.position}` : ""}
+                </span>
+                <span className="w-full text-xs text-neutral-400 sm:w-auto">
+                  {r.detail}
+                  {r.missed > 0 ? ` · missed ${r.missed} game${r.missed === 1 ? "" : "s"}` : ""} · back{" "}
+                  {new Date(r.detectedAt).toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {STATUS_SECTIONS.map((section) => {

@@ -12,6 +12,7 @@ import { SPORTS, type SportKey } from "@/lib/sports/types";
 import { currentSeasonYear } from "@/lib/sports/espn";
 import { etWeekWindow, inWindow } from "@/lib/week-window";
 import { calibrateStat } from "@/lib/prop-calibration";
+import { returnCal, type BoxRow } from "@/lib/return-calibration";
 import { STAT_EXTRACTORS } from "@/lib/sports/stat-extract";
 import { STDDEV_FLOOR_ABS, propModelFor, minutesOf } from "@/lib/sports/props-model";
 import { NFL_STDDEV_FLOOR_ABS, NFL_PROP_MODEL } from "@/lib/props-model";
@@ -108,6 +109,39 @@ export async function GET(req: NextRequest) {
       }
     }
     return NextResponse.json(trustBacktest(all) ?? { error: "not enough samples", n: all.length });
+  }
+  // Back-from-injury check (lib/return-calibration.ts): ?returncal=nba[&stat=Points].
+  const returncal = req.nextUrl.searchParams.get("returncal");
+  if (returncal) {
+    const sport = returncal as SportKey;
+    const season = currentSeasonYear(sport);
+    const rows = await db
+      .select({
+        gameId: sportPlayerGameStats.gameId,
+        team: sportPlayerGameStats.team,
+        player: sportPlayerGameStats.player,
+        position: sportPlayerGameStats.position,
+        season: sportPlayerGameStats.season,
+        stats: sportPlayerGameStats.stats,
+        kickoffAt: sportGames.kickoffAt,
+      })
+      .from(sportPlayerGameStats)
+      .innerJoin(sportGames, eq(sportGames.id, sportPlayerGameStats.gameId))
+      .where(and(eq(sportPlayerGameStats.sport, sport), inArray(sportPlayerGameStats.season, [season - 1, season]), eq(sportGames.isFinal, true)));
+    const only = req.nextUrl.searchParams.get("stat");
+    const out: Record<string, unknown> = { season };
+    for (const { statType, extract } of STAT_EXTRACTORS[sport]) {
+      if (only && only !== statType) continue;
+      const box: BoxRow[] = [];
+      for (const r of rows) {
+        const st = r.stats as Record<string, string>;
+        const v = extract(st);
+        if (v === null || minutesOf(st) === 0) continue;
+        box.push({ gameId: r.gameId, team: r.team, player: r.player, position: r.position, season: r.season, at: r.kickoffAt?.getTime() ?? 0, value: v, min: minutesOf(st) });
+      }
+      out[statType] = returnCal(sport, box, propModelFor(sport, statType), STDDEV_FLOOR_ABS[sport][statType] ?? 1, season);
+    }
+    return NextResponse.json(out);
   }
   const propcal = req.nextUrl.searchParams.get("propcal");
   if (propcal) {

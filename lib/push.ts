@@ -8,13 +8,15 @@ import { db } from "@/db";
 import { alertLog, appSettings, pushSubscriptions } from "@/db/schema";
 import { eq, inArray, sql } from "drizzle-orm";
 
-export type AlertKind = "locks" | "edges" | "moves" | "admin";
+export type AlertKind = "locks" | "edges" | "moves" | "returns" | "admin";
 export interface PushPrefs {
   locks: boolean;
   edges: boolean;
   moves: boolean;
+  /** Key players back from injury in sports you follow. */
+  returns: boolean;
 }
-export const DEFAULT_PREFS: PushPrefs = { locks: true, edges: true, moves: true };
+export const DEFAULT_PREFS: PushPrefs = { locks: true, edges: true, moves: true, returns: true };
 
 interface Vapid {
   publicKey: string;

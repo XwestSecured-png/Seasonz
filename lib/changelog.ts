@@ -33,6 +33,37 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.14.0",
+    date: "2026-10-17",
+    title: "Back-from-injury alerts",
+    summary: "Get an alert when a key player comes back from injury, and NFL props now account for a player's first game back.",
+    changes: [
+      {
+        kind: "new",
+        title: "Alert when a key player returns",
+        whatChanged:
+          "When a key player (a top scorer, a starting QB, a starting goalie or pitcher) has missed games while listed Out and comes off the Out list, you get a push alert before his team's next game. Alerts cover the sports you've picked or bet in the last 30 days. You can turn them off under Alerts ('Key players back from injury').",
+        whatItMeans: "Lines often move when a star returns. You'll hear about it before the game, not after.",
+        href: "/injury-impact",
+      },
+      {
+        kind: "new",
+        title: "Back from injury list",
+        whatChanged: "The Injury Impact page now lists every key player back from injury in the last 7 days, across all sports.",
+        whatItMeans: "One place to check who's returning this week.",
+        href: "/injury-impact",
+      },
+      {
+        kind: "improved",
+        title: "NFL props account for a player's return",
+        whatChanged:
+          "In his first game back, a returning player's projection is trimmed 10-15% (players usually start slow), and same-position teammates are trimmed up to 15%, since the bigger role they had while he was out is going away. Tested on 2020-23 NFL seasons and checked on 2024-25: more accurate for every yardage and catch stat.",
+        whatItMeans: "Fewer Overs on players about to lose targets or carries, and on stars easing back in.",
+        href: "/props",
+      },
+    ],
+  },
+  {
     version: "1.13.0",
     date: "2026-10-17",
     title: "More honest prop chances in every sport",

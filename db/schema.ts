@@ -1242,3 +1242,23 @@ export const propProjections = pgTable(
   },
   (t) => ({ key: uniqueIndex("prop_projections_key").on(t.sport, t.season, t.week, t.player, t.statType) })
 );
+
+// Key players back from injury: someone listed Out who missed his team's
+// last game(s) and is now off the Out list (lib/injury-returns.ts). Drives
+// the "Back from injury" push alert and the list on the Injury Impact page.
+export const injuryReturns = pgTable(
+  "injury_returns",
+  {
+    id: serial("id").primaryKey(),
+    sport: text("sport").notNull(),
+    season: integer("season").notNull(),
+    team: text("team").notNull(),
+    player: text("player").notNull(),
+    position: text("position"),
+    missed: integer("missed").notNull().default(0),
+    detail: text("detail"),
+    detectedOn: date("detected_on", { mode: "string" }).notNull(),
+    detectedAt: timestamp("detected_at").notNull().defaultNow(),
+  },
+  (t) => ({ key: uniqueIndex("injury_returns_key").on(t.sport, t.season, t.team, t.player, t.detectedOn) })
+);

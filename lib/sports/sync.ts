@@ -8,6 +8,7 @@
 // "Multi-sport tables" comment and lib/sports/espn.ts's caveat about this
 // being unverified against live ESPN data until the first real Vercel sync.
 import { db } from "@/db";
+import { detectSportReturns, type ReportRow } from "../injury-returns";
 import {
   sportTeams,
   sportGames,
@@ -776,6 +777,13 @@ export async function runSportSync(
           ? Math.min(...upcomingForWeek.map((g) => g.week))
           : Math.max(0, ...allGameRows.map((g) => g.week)) + 1;
 
+      // Last run's report, to spot key players coming off the Out list.
+      const prevReport = await db
+        .select({ team: sportInjuryReports.team, player: sportInjuryReports.player, position: sportInjuryReports.position, status: sportInjuryReports.status })
+        .from(sportInjuryReports)
+        .where(and(eq(sportInjuryReports.sport, sport), eq(sportInjuryReports.season, year)));
+      const nextReport: ReportRow[] = [];
+
       await db
         .delete(sportInjuryReports)
         .where(and(eq(sportInjuryReports.sport, sport), eq(sportInjuryReports.season, year)));
@@ -793,6 +801,7 @@ export async function runSportSync(
           unmatched++;
           continue;
         }
+        const status = /suspen/i.test(inj.detail ?? "") ? "SUSPENDED" : inj.status;
         await db.insert(sportInjuryReports).values({
           sport,
           season: year,
@@ -801,15 +810,23 @@ export async function runSportSync(
           player: inj.player,
           position: inj.position,
           // ESPN lists suspensions as "Out" with the reason in the detail.
-          status: /suspen/i.test(inj.detail ?? "") ? "SUSPENDED" : inj.status,
+          status,
           winPctImpact: null,
         });
+        nextReport.push({ team: abbr, player: inj.player, position: inj.position ?? null, status });
         inserted++;
+      }
+      let returnNote = "";
+      try {
+        returnNote = await detectSportReturns(sport, year, prevReport, nextReport);
+      } catch (e) {
+        returnNote = ` Return check failed: ${e instanceof Error ? e.message : String(e)}.`;
       }
 
       return (
         `${inserted} injury report row(s) synced for ${def.label}` +
-        (unmatched > 0 ? ` (${unmatched} couldn't be matched to a synced team).` : ".")
+        (unmatched > 0 ? ` (${unmatched} couldn't be matched to a synced team).` : ".") +
+        returnNote
       );
     })
   );

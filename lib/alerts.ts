@@ -13,6 +13,7 @@ import { getBestBetsFeed } from "./best-bets-feed";
 import { DEFAULT_PREFS, sendAlert, type PushPrefs } from "./push";
 import { noVigHome } from "./sports/game-model";
 import { PICK_LOCK_MINUTES_BEFORE_KICKOFF } from "./time";
+import { recentReturns } from "./injury-returns";
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -37,13 +38,16 @@ export async function runAlerts(now = new Date()): Promise<string> {
   if (subs.length === 0) return "No subscribers.";
   const prefsBy = new Map<number, PushPrefs>();
   for (const s of subs) {
-    const p = (s.prefs ?? DEFAULT_PREFS) as PushPrefs;
+    const p = { ...DEFAULT_PREFS, ...((s.prefs ?? {}) as Partial<PushPrefs>) };
     const prev = prefsBy.get(s.userId);
     // Any device that wants a kind turns it on for the user.
-    prefsBy.set(s.userId, prev ? { locks: prev.locks || p.locks, edges: prev.edges || p.edges, moves: prev.moves || p.moves } : p);
+    prefsBy.set(
+      s.userId,
+      prev ? { locks: prev.locks || p.locks, edges: prev.edges || p.edges, moves: prev.moves || p.moves, returns: prev.returns || p.returns } : p
+    );
   }
   const userIds = [...prefsBy.keys()];
-  const sent = { locks: 0, edges: 0, moves: 0 };
+  const sent = { locks: 0, edges: 0, moves: 0, returns: 0 };
 
   // ---- Lock reminders -----------------------------------------------------
   // Games locking in this run's window: kickoff - lock minutes in [now, now+30m).
@@ -208,5 +212,76 @@ export async function runAlerts(now = new Date()): Promise<string> {
     }
   }
 
-  return `Alerts sent: ${sent.locks} lock, ${sent.edges} edge, ${sent.moves} line-move (${userIds.length} subscriber(s)).`;
+  // ---- Key players back from injury --------------------------------------
+  // Detected in the last 12 hours, team plays in the next 2 days, for users
+  // who've picked or bet that sport in the last 30 days (or everyone, for
+  // users with no picks yet). At most 3 per user per run.
+  const returnUsers = userIds.filter((u) => prefsBy.get(u)!.returns);
+  if (returnUsers.length) {
+    const fresh = await recentReturns(12);
+    if (fresh.length) {
+      const until = new Date(now.getTime() + 48 * HOUR);
+      const nextGame = new Map<string, { opp: string; home: boolean; at: Date }>();
+      const sg = await db
+        .select({ sport: sportGames.sport, home: sportGames.homeTeam, away: sportGames.awayTeam, at: sportGames.kickoffAt })
+        .from(sportGames)
+        .where(and(eq(sportGames.isFinal, false), gt(sportGames.kickoffAt, now), lt(sportGames.kickoffAt, until)));
+      const ng = await db
+        .select({ home: games.homeTeam, away: games.awayTeam, at: games.kickoffAt })
+        .from(games)
+        .where(and(eq(games.isFinal, false), gt(games.kickoffAt, now), lt(games.kickoffAt, until)));
+      for (const g of [...sg, ...ng.map((x) => ({ ...x, sport: "nfl" }))]) {
+        if (!g.at) continue;
+        for (const [team, opp, home] of [[g.home, g.away, true], [g.away, g.home, false]] as const) {
+          const k = `${g.sport}|${team}`;
+          const cur = nextGame.get(k);
+          if (!cur || g.at < cur.at) nextGame.set(k, { opp, home, at: g.at });
+        }
+      }
+      const relevant = fresh.filter((r) => nextGame.has(`${r.sport}|${r.team}`));
+      if (relevant.length) {
+        const since = new Date(now.getTime() - 30 * 24 * HOUR);
+        const follows = new Map<number, Set<string>>();
+        const addF = (u: number, sp: string) => (follows.get(u) ?? follows.set(u, new Set()).get(u)!).add(sp);
+        for (const p of await db
+          .select({ u: sportUserPicks.userId, sp: sportUserPicks.sport })
+          .from(sportUserPicks)
+          .where(and(inArray(sportUserPicks.userId, returnUsers), gte(sportUserPicks.updatedAt, since))))
+          addF(p.u, p.sp);
+        for (const p of await db
+          .select({ u: userPicks.userId })
+          .from(userPicks)
+          .where(and(inArray(userPicks.userId, returnUsers), gte(userPicks.updatedAt, since))))
+          addF(p.u, "nfl");
+        for (const b of await db
+          .select({ u: userBets.userId, sp: userBets.sport })
+          .from(userBets)
+          .where(and(inArray(userBets.userId, returnUsers), gte(userBets.placedAt, since))))
+          addF(b.u, b.sp);
+        const day = (d: Date) => d.toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "short" });
+        for (const u of returnUsers) {
+          const f = follows.get(u);
+          let n = 0;
+          for (const r of relevant) {
+            if (n >= 3) break;
+            if (f && !f.has(r.sport)) continue;
+            const g = nextGame.get(`${r.sport}|${r.team}`)!;
+            const missedTxt = r.missed > 0 ? ` after missing ${r.missed} game${r.missed === 1 ? "" : "s"}` : "";
+            const ok = await sendAlert(u, "returns", `return:${r.id}`, {
+              title: `${label(r.sport)}: ${r.player} is back`,
+              body: `${r.player} (${r.team}, ${r.detail}) is off the injury report${missedTxt}. ${r.team} ${g.home ? "vs" : "@"} ${g.opp}, ${day(g.at)} ${etTime(g.at)} ET. Lines and our chances may shift.`,
+              url: r.sport === "nfl" ? "/injury-impact" : `/sports/${r.sport}`,
+              tag: `return-${r.id}`,
+            });
+            if (ok) {
+              sent.returns++;
+              n++;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return `Alerts sent: ${sent.locks} lock, ${sent.edges} edge, ${sent.moves} line-move, ${sent.returns} back-from-injury (${userIds.length} subscriber(s)).`;
 }

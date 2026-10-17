@@ -7,7 +7,7 @@ import { DEFAULT_PREFS, getVapidPublicKey, type PushPrefs } from "@/lib/push";
 
 function cleanPrefs(v: unknown): PushPrefs {
   const p = (v ?? {}) as Partial<PushPrefs>;
-  return { locks: p.locks !== false, edges: p.edges !== false, moves: p.moves !== false };
+  return { locks: p.locks !== false, edges: p.edges !== false, moves: p.moves !== false, returns: p.returns !== false };
 }
 
 /** Public key for the browser's subscribe call, plus this device's state. */

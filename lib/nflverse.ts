@@ -117,6 +117,20 @@ const OFFICIAL_STATUS_MAP: Record<string, InjuryStatus> = {
 };
 
 /** This week's injury designations, with a practice-status fallback when the official tag isn't published yet. */
+/** Every week's official game status so far this season (for spotting players back from injury). */
+export interface InjuryHistoryRow {
+  week: number;
+  team: string;
+  player: string;
+  status: string; // "Out" | "Doubtful" | "Questionable" | ""
+}
+export async function fetchInjuryHistory(season: number): Promise<InjuryHistoryRow[]> {
+  const rows = await fetchCsv(`${NFLVERSE_BASE}/injuries/injuries_${season}.csv`);
+  return rows
+    .filter((r) => r.season_type === "REG" || r.game_type === "REG")
+    .map((r) => ({ week: Number(r.week) || 0, team: r.team, player: r.full_name, status: r.report_status || "" }));
+}
+
 export async function fetchInjuries(season: number): Promise<InjuryRow[]> {
   const allRows = await fetchCsv(`${NFLVERSE_BASE}/injuries/injuries_${season}.csv`);
   const regRows = allRows.filter((r) => r.season_type === "REG" || r.game_type === "REG");
