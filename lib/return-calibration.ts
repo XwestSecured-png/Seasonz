@@ -96,7 +96,15 @@ export function returnCal(sport: string, rows: BoxRow[], cfg: PropModelConfig, f
     for (let i = 5; i < l.length; i++) {
       const r = l[i];
       const ret = returners.get(r.gameId)?.filter((x) => x.key !== key && x.key.startsWith(`${r.team}|`));
-      if (!ret?.length) continue;
+      const selfBack = returners.get(r.gameId)?.some((x) => x.key === key);
+      if (!ret?.length) {
+        // Baseline: ordinary games (no one returning), every 3rd, for comparison.
+        if (!selfBack && i % 3 === 0) {
+          const split = r.season === testSeason ? "test" : "train";
+          add(`base|${split}`, l.slice(Math.max(0, i - 20), i).map((x) => x.value), cfg.useMinutes ? l.slice(Math.max(0, i - 20), i).map((x) => x.min) : undefined, r.value);
+        }
+        continue;
+      }
       const same = ret.some((x) => x.g === grp(sport, r.position));
       const split = r.season === testSeason ? "test" : "train";
       add(`${same ? "mateSame" : "mateOther"}|${split}`, l.slice(Math.max(0, i - 20), i).map((x) => x.value), cfg.useMinutes ? l.slice(Math.max(0, i - 20), i).map((x) => x.min) : undefined, r.value);
