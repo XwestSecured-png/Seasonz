@@ -136,17 +136,21 @@ export const PROP_MODEL: Record<SportKey, Record<string, PropModelConfig>> = {
   },
   // Hockey (live check on 2025-27 box scores, /api/health/insights?propcal=nhl):
   // Points .621 -> .590, Assists .640 -> .609, Shots .595 -> .563, Saves .594 -> .554.
-  // Goals had too few lines to grade and keeps the old model.
+  // Goals: see below.
   nhl: {
     Points: { dist: "poisson", sdMult: 1.3, shrinkK: 40, useMinutes: false, temper: 0.88 },
     Assists: { dist: "poisson", sdMult: 1.5, shrinkK: 40, useMinutes: false, temper: 0.88 },
     "Shots on Goal": { dist: "poisson", sdMult: 1.1, shrinkK: 40, useMinutes: false, temper: 0.88 },
     Saves: { dist: "negbin", sdMult: 1.2, shrinkK: 40, useMinutes: false, temper: 0.88 },
+    // Goals ran on the original bell curve (too few regular scorers to grade
+    // before). Checked on every skater with 10+ games (1.14.1, ?all=1):
+    // log loss .494 -> .396; 70%+ chances said 86%, hit 87% (was 84% / 92%).
+    Goals: { dist: "negbin", sdMult: 1.5, shrinkK: 40, useMinutes: false },
   },
   // Baseball (live check on 2025-26 box scores): Hits .629 -> .596, Batter K
   // .629 -> .594, Pitcher K .572 -> .550, Hits Allowed .581 -> .563, Walks
   // .643 -> .605, Walks Allowed .599 -> .576, Runs .638 -> .607, Earned Runs
-  // .609 -> .592. Home runs and RBIs had too few lines to grade.
+  // .609 -> .592. Home runs and RBIs: see below.
   mlb: {
     Hits: { dist: "poisson", sdMult: 1.4, shrinkK: 40, useMinutes: false },
     "Runs Scored": { dist: "poisson", sdMult: 1.4, shrinkK: 40, useMinutes: false, temper: 0.88 },
@@ -156,6 +160,12 @@ export const PROP_MODEL: Record<SportKey, Record<string, PropModelConfig>> = {
     "Hits Allowed": { dist: "negbin", sdMult: 0.9, shrinkK: 40, useMinutes: false, temper: 0.88 },
     "Walks Allowed": { dist: "poisson", sdMult: 1.2, shrinkK: 40, useMinutes: false, temper: 0.88 },
     "Earned Runs": { dist: "negbin", sdMult: 1.3, shrinkK: 40, useMinutes: false, temper: 0.88 },
+    // Home runs and RBIs ran on the original bell curve, which badly overrated
+    // "1+" on rare events. Checked on every batter with 10+ games (1.14.1,
+    // ?all=1): Home Runs log loss .459 -> .328 (70%+ chances said 88%, hit
+    // 90%; was 80% / 92%), RBIs .548 -> .473 (said 85%, hit 86%).
+    "Home Runs": { dist: "negbin", sdMult: 1.5, shrinkK: 100, useMinutes: false },
+    RBIs: { dist: "negbin", sdMult: 1.5, shrinkK: 40, useMinutes: false, temper: 0.88 },
   },
 };
 export function propModelFor(sport: SportKey, statType: string): PropModelConfig {

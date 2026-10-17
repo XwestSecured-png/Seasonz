@@ -33,6 +33,30 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.14.1",
+    date: "2026-10-17",
+    title: "Sharper home run, RBI and goal props, plus returns in basketball and hockey",
+    summary: "Home run, RBI and NHL goal props get a new model, and NBA, WNBA, college basketball and NHL props now account for key players back from injury.",
+    changes: [
+      {
+        kind: "improved",
+        title: "New model for home runs, RBIs and NHL goals",
+        whatChanged:
+          "These three props were still on our original bell-curve model, which overrated '1+' on rare events: chances shown as about 80% hit about 92%. They now use a count model built for rare events, checked on every batter and skater with 10+ games. Accuracy improved 28% for home runs, 14% for RBIs and 20% for goals, and shown chances now match how often they hit.",
+        whatItMeans: "Home run, RBI and anytime goal chances are realistic now instead of too pessimistic.",
+        href: "/props",
+      },
+      {
+        kind: "improved",
+        title: "Basketball and hockey props account for returns",
+        whatChanged:
+          "When a key player comes back from injury, his first game is trimmed 5-10% (players usually start slow). In basketball, teammates at his position are trimmed about 10%, since the minutes and shots they picked up while he was out go back to him. These sizes come from checking two seasons of box scores against ordinary games.",
+        whatItMeans: "Fewer Overs on players about to lose their bigger role, and on stars easing back in.",
+        href: "/props",
+      },
+    ],
+  },
+  {
     version: "1.14.0",
     date: "2026-10-17",
     title: "Back-from-injury alerts",
