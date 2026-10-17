@@ -25,15 +25,17 @@ const NFL_SD_MULT: Record<string, number> = { "Pass Yds": 1.3, "Rush Yds": 1.3, 
 // .613 -> .609, Rec .618 -> .610); receptions are a count, so Poisson
 // (.602 -> .582), with a small calibration pull toward 50%.
 export const NFL_PROP_MODEL: Record<string, PropModelConfig> = {
-  "Pass Yds": { dist: "normal", sdMult: 1.3, shrinkK: 5, useMinutes: false, temper: 0.94 },
-  "Rush Yds": { dist: "normal", sdMult: 1.3, shrinkK: 5, useMinutes: false, temper: 0.94 },
-  "Rec Yds": { dist: "normal", sdMult: 1.4, shrinkK: 5, useMinutes: false },
+  // Spread now pulls in the 20-game spread (sdShrinkK 10, multiplier x0.9);
+  // backtest on 2022-26 weekly stats with lines out to 2 sd: Pass .4920 ->
+  // .4812, Rush .5197 -> .5121, Rec .5265 -> .5189, Rush + Rec .5164 -> .5089.
+  "Pass Yds": { dist: "normal", sdMult: 1.17, shrinkK: 5, useMinutes: false, temper: 0.94, sdShrinkK: 10 },
+  "Rush Yds": { dist: "normal", sdMult: 1.17, shrinkK: 5, useMinutes: false, temper: 0.94, sdShrinkK: 10 },
+  "Rec Yds": { dist: "normal", sdMult: 1.26, shrinkK: 5, useMinutes: false, sdShrinkK: 10 },
   Receptions: { dist: "poisson", sdMult: 1.3, shrinkK: 5, useMinutes: false, temper: 0.88 },
   // Rushing + receiving yards. Chosen on 2024-26 weekly stats (248 RB/WR/TE
   // histories, lines at the projection +/- 0.5 and 1 sd): bell curve, 20-game
-  // pull 5, slight calibration pull. Log loss .5698; 70%+ picks said 82.8%,
-  // hit 83.2%.
-  "Rush + Rec Yds": { dist: "normal", sdMult: 1.3, shrinkK: 5, useMinutes: false, temper: 0.94 },
+  // pull 5, slight calibration pull.
+  "Rush + Rec Yds": { dist: "normal", sdMult: 1.17, shrinkK: 5, useMinutes: false, temper: 0.94, sdShrinkK: 10 },
 };
 
 /** A prop is only picked when the model's chance beats the price's implied chance by at least this much. */
@@ -388,7 +390,27 @@ export function marketOverChances(
  * (prop_pick_log) and graded; once a sport has 300+ graded picks the share
  * is re-fit on them daily (lib/model-weights.ts).
  */
-export const PROP_MODEL_WEIGHT_DEFAULT = 0.5;
+export const PROP_MODEL_WEIGHT_DEFAULT = 0.25;
+
+/**
+ * Model share per sport (1.13.0). The first 271 graded live picks (145
+ * separate player-games once alternate lines of the same prop are counted
+ * once) said the 50% share was far too high: picks rated 84% on average hit
+ * 72%, because when the model and the books disagree by a lot, the books
+ * usually know something (a role change, an injury) the box scores don't.
+ * Best shares on that data: NFL ~0.25-0.3, NHL ~0.35, MLB ~0.1, college
+ * football 0. Defaults below; lib/model-weights.ts keeps re-fitting them.
+ */
+export const PROP_MODEL_WEIGHT: Record<string, number> = {
+  nfl: 0.25,
+  nhl: 0.3,
+  mlb: 0.15,
+  ncaaf: 0.15,
+  nba: 0.25,
+  wnba: 0.25,
+  ncaab: 0.2,
+};
+export const propModelWeightDefault = (sport: string) => PROP_MODEL_WEIGHT[sport] ?? PROP_MODEL_WEIGHT_DEFAULT;
 
 /** Market's Over chance from a single posted price (no opposite side), less a typical 4.5% margin. */
 export function oneSidedMarket(overPrice?: number, underPrice?: number): number | undefined {

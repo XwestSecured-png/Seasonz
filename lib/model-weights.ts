@@ -14,7 +14,7 @@ import { SPORTS, PRESEASON, type SportKey } from "./sports/types";
 import { GAME_MODEL } from "./sports/game-model";
 import { currentSeasonYear } from "./sports/espn";
 import { NFL_MODEL_WEIGHT } from "./elo";
-import { PROP_MODEL_WEIGHT_DEFAULT } from "./props-model";
+import { propModelWeightDefault } from "./props-model";
 
 const KEY = "modelWeights";
 export const MIN_N = 300;
@@ -41,16 +41,21 @@ export interface WeightRow {
   model: number;
   market: number;
   won: 0 | 1;
+  /** Row weight (props: 1 / number of alternate lines logged for the same player, stat and game). */
+  w?: number;
 }
 
 /** Log loss of blend weight w on the rows. */
 export function blendLogLoss(rows: WeightRow[], w: number): number {
   let s = 0;
+  let n = 0;
   for (const r of rows) {
     const q = clampP(sigmoid(w * logit(r.model) + (1 - w) * logit(r.market)));
-    s -= r.won * Math.log(q) + (1 - r.won) * Math.log(1 - q);
+    const k = r.w ?? 1;
+    s -= k * (r.won * Math.log(q) + (1 - r.won) * Math.log(1 - q));
+    n += k;
   }
-  return s / Math.max(1, rows.length);
+  return s / Math.max(1e-9, n);
 }
 
 /** Grid search 0..maxW; applies only with enough games and a clear gain. */
@@ -68,6 +73,27 @@ export function fitWeight(rows: WeightRow[], base: number, current: number, maxW
   return { weight, base, n, best: best.w, llCurrent, llBest: best.v, applied: weight !== base };
 }
 
+/**
+ * Props: graded picks come in clusters (a player's alternate lines all hit
+ * or miss together), so they're weighted to one vote per player-game, and
+ * the fitted share moves in gradually: base + (best - base) x n / (n + 150),
+ * n = player-games, starting at 40. One odd week can't swing it.
+ */
+export const PROP_MIN_N = 40;
+const PROP_PRIOR_N = 150;
+export function fitPropWeight(rows: WeightRow[], base: number): Omit<WeightFit, "at"> {
+  const n = Math.round(rows.reduce((a, r) => a + (r.w ?? 1), 0));
+  if (rows.length === 0) return { weight: base, base, n, best: null, llCurrent: null, llBest: null, applied: false };
+  let best = { w: base, v: blendLogLoss(rows, base) };
+  const llBase = best.v;
+  for (let w = 0; w <= 1 + 1e-9; w += 0.01) {
+    const v = blendLogLoss(rows, w);
+    if (v < best.v - 1e-12) best = { w: +w.toFixed(2), v };
+  }
+  const weight = n >= PROP_MIN_N ? +(base + ((best.w - base) * n) / (n + PROP_PRIOR_N)).toFixed(2) : base;
+  return { weight, base, n, best: best.w, llCurrent: llBase, llBest: best.v, applied: weight !== base };
+}
+
 let cache: { at: number; v: WeightStore } | null = null;
 
 export async function getModelWeights(): Promise<WeightStore> {
@@ -81,13 +107,17 @@ export async function getModelWeights(): Promise<WeightStore> {
 /** Props are keyed "prop:<sport>" and may use any share 0..1 (the line isn't as sharp as a game line). */
 const isProp = (key: string) => key.startsWith("prop:");
 const baseFor = (key: string) =>
-  isProp(key) ? PROP_MODEL_WEIGHT_DEFAULT : key === "nfl" ? NFL_MODEL_WEIGHT : (GAME_MODEL[key as SportKey]?.modelWeight ?? 0);
+  isProp(key) ? propModelWeightDefault(key.slice(5)) : key === "nfl" ? NFL_MODEL_WEIGHT : (GAME_MODEL[key as SportKey]?.modelWeight ?? 0);
 
 /** The weight to use now for a sport (bounded; falls back to the coded default). */
 export function weightFor(store: WeightStore, sport: string): number {
   const base = baseFor(sport);
-  const w = store[sport]?.weight;
+  const f = store[sport];
+  const w = f?.weight;
   const max = isProp(sport) ? 1 : MAX_W;
+  // A stored share only counts if it was fitted against today's default
+  // (when a default changes in code, the old fit no longer applies).
+  if (!f || f.base !== base) return base;
   return typeof w === "number" && w >= 0 && w <= max ? w : base;
 }
 
@@ -104,10 +134,22 @@ export async function liveWeightRows(sport: string): Promise<WeightRow[]> {
   const out: WeightRow[] = [];
   if (isProp(sport)) {
     const rows = await db
-      .select({ model: propPickLog.modelOnly, market: propPickLog.market, result: propPickLog.result })
+      .select({
+        model: propPickLog.modelOnly,
+        market: propPickLog.market,
+        result: propPickLog.result,
+        player: propPickLog.player,
+        stat: propPickLog.statType,
+        date: propPickLog.gameDate,
+        week: propPickLog.week,
+      })
       .from(propPickLog)
       .where(and(eq(propPickLog.sport, sport.slice(5)), inArray(propPickLog.result, ["hit", "miss"])));
-    for (const r of rows) if (r.market != null) out.push({ model: r.model, market: r.market, won: r.result === "hit" ? 1 : 0 });
+    const withMarket = rows.filter((r) => r.market != null);
+    const ck = (r: (typeof rows)[number]) => `${r.player}|${r.stat}|${r.date ?? r.week}`;
+    const size = new Map<string, number>();
+    for (const r of withMarket) size.set(ck(r), (size.get(ck(r)) ?? 0) + 1);
+    for (const r of withMarket) out.push({ model: r.model, market: r.market!, won: r.result === "hit" ? 1 : 0, w: 1 / size.get(ck(r))! });
     return out;
   }
   if (sport === "nfl") {
@@ -148,7 +190,7 @@ export async function refitModelWeights(): Promise<string> {
     const base = baseFor(sport);
     const current = weightFor(store, sport);
     const rows = await liveWeightRows(sport);
-    const fit = fitWeight(rows, base, current, isProp(sport) ? 1 : MAX_W);
+    const fit = isProp(sport) ? fitPropWeight(rows, base) : fitWeight(rows, base, current, MAX_W);
     next[sport] = { ...fit, at: new Date().toISOString() };
     msgs.push(`${sport} ${Math.round(fit.weight * 100)}% (n=${fit.n}${fit.best !== null ? `, best ${Math.round(fit.best * 100)}%` : ""})`);
   }
@@ -175,10 +217,11 @@ export async function getWeightReport(): Promise<WeightReport[]> {
     const f = store[sport];
     const current = weightFor(store, sport);
     const n = f?.n ?? 0;
+    const min = isProp(sport) ? PROP_MIN_N : MIN_N;
     const status = !f
       ? "Not tested yet"
-      : n < MIN_N
-        ? `Collecting live games (${n} of ${MIN_N})`
+      : n < min
+        ? `Collecting live ${isProp(sport) ? "player-games" : "games"} (${n} of ${min})`
         : f.applied
           ? "Updated from live results"
           : "Current share holds up";

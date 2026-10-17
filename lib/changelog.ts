@@ -33,6 +33,39 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.13.0",
+    date: "2026-10-17",
+    title: "More honest prop chances in every sport",
+    summary: "Prop chances now lean more on the betting market and less on our model, after our graded picks showed the model was too sure of itself.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Prop chances lean more on the market",
+        whatChanged:
+          "We graded every prop pick the app has listed so far. Picks we rated about 84% hit about 72%. The biggest misses came when our model disagreed sharply with the sportsbooks, which usually means the books knew something (a role change, an injury) that past box scores don't show. Each sport's prop chance now gives the model a 15-30% say instead of 50%, and that share keeps re-tuning itself from graded picks.",
+        whatItMeans:
+          "Fewer 'very likely' props that miss. The chances and verdicts you see should match how often props actually hit, in every sport.",
+        href: "/props",
+      },
+      {
+        kind: "improved",
+        title: "Better spread for yardage props",
+        whatChanged:
+          "Passing, rushing, receiving and rush + rec yardage props now measure how much a player's numbers swing over the last 20 games, not just the last 5. Tested on NFL games from 2022 to now, this improved accuracy on every yardage stat.",
+        whatItMeans: "Long-shot and near-lock yardage chances are more realistic.",
+        href: "/props",
+      },
+      {
+        kind: "improved",
+        title: "Auto-tuning learns sooner and fairer",
+        whatChanged:
+          "When one player's prop is listed at several alternate lines, those lines now count as one result when the app re-tunes itself. Tuning starts after 40 graded player-games instead of 300, and it moves gradually.",
+        whatItMeans: "The model corrects itself within weeks, and one odd game can't swing it.",
+        audience: "admin",
+      },
+    ],
+  },
+  {
     version: "1.12.2",
     date: "2026-10-16",
     title: "More menu fits your phone",

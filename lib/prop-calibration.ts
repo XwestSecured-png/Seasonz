@@ -1,7 +1,7 @@
 // Prop-model check: replays every player's history and asks, game by game,
 // "using only the games before this one, what chance would the model have
 // given the Over at a typical line, and did it hit?" Lines are simulated at
-// the old model's projection and half / one standard deviation either side
+// the old model's projection and up to two standard deviations either side
 // (rounded to .5 like a book's), so every model is graded on the same lines
 // and the check covers the whole range of confidences.
 //
@@ -27,6 +27,8 @@ export interface CalResult {
   legacy: Score;
   current: Score & { model: PropModelConfig };
   best: Score & { model: PropModelConfig };
+  /** Normal stats: the 20-game spread pull (sdShrinkK 10, spread x0.9) on top of the current model. */
+  spreadPull?: Score & { model: PropModelConfig };
 }
 
 const MAX_SAMPLES = 40000;
@@ -44,7 +46,9 @@ export function calibrateStat(series: StatSeries[], floorAbs: number, current: P
   const legacy = LEGACY_PROP_MODEL(current.sdMult);
   const hasMinutes = series.some((s) => s.values.some((x) => x.min != null && x.min > 0));
   const grid = candidates(current.sdMult, hasMinutes).filter((c) => isCount || c.dist === "normal");
-  const models = [legacy, current, ...grid];
+  const pull: PropModelConfig | null =
+    current.dist === "normal" && !current.sdShrinkK ? { ...current, sdMult: +(current.sdMult * 0.9).toFixed(3), sdShrinkK: 10 } : null;
+  const models = [legacy, current, ...grid, ...(pull ? [pull] : [])];
   const acc = models.map(() => ({ ll: 0, br: 0, bn: 0, bp: 0, ba: 0, n: 0 }));
 
   // Evenly thin very large histories so the check fits in one request.
@@ -66,7 +70,7 @@ export function calibrateStat(series: StatSeries[], floorAbs: number, current: P
       const projs = models.map((m) => projectProp(prior, m, floorAbs, m.useMinutes ? pm : undefined));
       if (projs.some((p) => !p)) continue;
       const actual = vals[i];
-      for (const d of [-1, -0.5, 0, 0.5, 1]) {
+      for (const d of [-2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2]) {
         const line = Math.max(0.5, Math.floor(base.mean + (d * base.sd) / legacy.sdMult) + 0.5);
         const hit = actual > line ? 1 : 0;
         models.forEach((m, j) => {
@@ -101,5 +105,6 @@ export function calibrateStat(series: StatSeries[], floorAbs: number, current: P
     legacy: score(0),
     current: { ...score(1), model: current },
     best: { ...score(bestJ), model: models[bestJ] },
+    ...(pull ? { spreadPull: { ...score(models.length - 1), model: pull } } : {}),
   };
 }

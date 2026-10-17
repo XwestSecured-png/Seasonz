@@ -32,6 +32,15 @@ export interface PropModelConfig {
   useMinutes: boolean;
   /** Calibration: chances are pulled toward 50% (log-odds x temper) where the backtest showed overconfidence. */
   temper?: number;
+  /**
+   * Spread from more than the last 5 games: the recent variance is pulled
+   * toward the 20-game variance with this weight in "games" (normal model
+   * only). Five games is too few to measure a player's spread; on NFL
+   * 2022-26 weekly stats, with lines up to 2 sd either side, k=10 (and the
+   * spread multiplier x0.9) cut log loss 1.5-2% on every yardage stat and
+   * brought 85%+ chances in line with results.
+   */
+  sdShrinkK?: number;
 }
 
 /** The model before these upgrades: last-5 average, bell curve. */
@@ -98,7 +107,13 @@ export function projectProp(
   }
 
   const raw = mean(recent);
-  const variance = recent.length > 1 ? recent.reduce((a, v) => a + (v - raw) ** 2, 0) / (recent.length - 1) : 0;
+  const varRecent = recent.length > 1 ? recent.reduce((a, v) => a + (v - raw) ** 2, 0) / (recent.length - 1) : 0;
+  let variance = varRecent;
+  if (cfg.sdShrinkK && long.length > recent.length) {
+    const lr = mean(long);
+    const varLong = long.reduce((a, v) => a + (v - lr) ** 2, 0) / (long.length - 1);
+    variance = (recent.length * varRecent + cfg.sdShrinkK * varLong) / (recent.length + cfg.sdShrinkK);
+  }
   const sd = Math.max(Math.sqrt(variance), Math.max(m * FLOOR_PCT, floorAbs)) * cfg.sdMult;
 
   // Negative-binomial size from the longer window's spread (method of moments).
