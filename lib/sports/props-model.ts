@@ -124,6 +124,10 @@ export const PROP_MODEL: Record<SportKey, Record<string, PropModelConfig>> = {
   // .619 -> .612, Receptions .583 -> .567.
   ncaaf: {
     ...NFL_PROP_MODEL,
+    // The NFL's 20-game spread pull (1.13.0) didn't help in college (live
+    // check, lines out to 2 sd: Rush .5302 -> .5353, Rec .5076 -> .5082,
+    // Rush + Rec .5089 -> .5101), so passing keeps the pre-1.13 settings.
+    "Pass Yds": { dist: "normal", sdMult: 1.3, shrinkK: 5, useMinutes: false, temper: 0.94 },
     "Rec Yds": { dist: "normal", sdMult: 1.4, shrinkK: 40, useMinutes: false },
     "Rush Yds": { dist: "normal", sdMult: 1.3, shrinkK: 40, useMinutes: false },
     Receptions: { dist: "poisson", sdMult: 1.3, shrinkK: 40, useMinutes: false },

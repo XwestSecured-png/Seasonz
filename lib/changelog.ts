@@ -51,7 +51,7 @@ export const RELEASES: Release[] = [
         kind: "improved",
         title: "Better spread for yardage props",
         whatChanged:
-          "Passing, rushing, receiving and rush + rec yardage props now measure how much a player's numbers swing over the last 20 games, not just the last 5. Tested on NFL games from 2022 to now, this improved accuracy on every yardage stat.",
+          "Passing, rushing, receiving and rush + rec yardage props now measure how much a player's numbers swing over the last 20 games, not just the last 5. Tested on NFL games from 2022 to now, this improved accuracy on every NFL yardage stat. College football tested better without it, so college props keep the old method.",
         whatItMeans: "Long-shot and near-lock yardage chances are more realistic.",
         href: "/props",
       },
