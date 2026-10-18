@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { TrustBadge, type TrustView } from "../trust-badge";
 import { Verdict } from "../verdict";
+import { SortSelect } from "./sort-select";
+import { sortScore, type PropSort } from "@/lib/prop-sort";
 
 export interface SportPropRow {
   id: number;
@@ -52,15 +54,35 @@ export function SportPropsExplorer({
     (p) => (team === "All" || p.team === team) && (statType === "All" || p.statType === statType)
   );
 
-  const grouped = new Map<string, Map<string, SportPropRow[]>>();
+  const [sort, setSort] = useState<PropSort>("confidence");
+  const score = (r: SportPropRow) => sortScore(sort, { trust: r.trust, chance: r.modelWinPct, price: r.priceAmerican });
+
+  // Player cards: one per team + player. "Team (A-Z)" keeps the team
+  // sections; every other sort shows one ranked list, best card first.
+  const cards = new Map<string, { team: string; player: string; rows: SportPropRow[] }>();
   for (const p of filtered) {
-    const byPlayer = grouped.get(p.team) ?? new Map<string, SportPropRow[]>();
-    const rows = byPlayer.get(p.player) ?? [];
-    rows.push(p);
-    byPlayer.set(p.player, rows);
-    grouped.set(p.team, byPlayer);
+    const k = `${p.team}|${p.player}`;
+    const c = cards.get(k) ?? { team: p.team, player: p.player, rows: [] };
+    c.rows.push(p);
+    cards.set(k, c);
   }
-  const sortedTeams = Array.from(grouped.keys()).sort();
+  const best = (c: { rows: SportPropRow[] }) => Math.max(...c.rows.map(score));
+  const sections: { team: string | null; cards: { team: string; player: string; rows: SportPropRow[] }[] }[] =
+    sort === "team"
+      ? Array.from(new Set([...cards.values()].map((c) => c.team)))
+          .sort()
+          .map((t) => ({
+            team: t,
+            cards: [...cards.values()].filter((c) => c.team === t).sort((a, b) => a.player.localeCompare(b.player)),
+          }))
+      : [
+          {
+            team: null,
+            cards: [...cards.values()]
+              .map((c) => ({ ...c, rows: [...c.rows].sort((a, b) => score(b) - score(a)) }))
+              .sort((a, b) => best(b) - best(a)),
+          },
+        ];
 
   return (
     <div className="space-y-4">
@@ -95,44 +117,45 @@ export function SportPropsExplorer({
             ))}
           </select>
         </label>
+        <SortSelect value={sort} onChange={setSort} />
         <span className="text-xs text-neutral-500">
           {filtered.length} of {picks.length} picks
         </span>
       </div>
 
-      {sortedTeams.length === 0 ? (
+      {cards.size === 0 ? (
         <p className="text-sm text-neutral-500">No picks match that filter.</p>
       ) : (
-        sortedTeams.map((t) => {
-          const byPlayer = grouped.get(t)!;
-          const players = Array.from(byPlayer.keys()).sort();
-          const isFavTeam = t === favTeam?.code;
+        sections.map((sec) => {
+          const isFavSection = sec.team !== null && sec.team === favTeam?.code;
           return (
-            <div key={t} className="space-y-3">
-              <h3
-                className="text-sm font-semibold border-b pb-1 flex items-center gap-2"
-                style={
-                  isFavTeam
-                    ? { color: favTeam!.primary, borderColor: favTeam!.primary }
-                    : { color: "#e5e5e5", borderColor: "#262626" }
-                }
-              >
-                {t}
-                {isFavTeam && (
-                  <span
-                    className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded"
-                    style={{ backgroundColor: `${favTeam!.primary}26`, color: favTeam!.primary }}
-                  >
-                    Your team
-                  </span>
-                )}
-              </h3>
+            <div key={sec.team ?? "ranked"} className="space-y-3">
+              {sec.team !== null && (
+                <h3
+                  className="text-sm font-semibold border-b pb-1 flex items-center gap-2"
+                  style={
+                    isFavSection
+                      ? { color: favTeam!.primary, borderColor: favTeam!.primary }
+                      : { color: "#e5e5e5", borderColor: "#262626" }
+                  }
+                >
+                  {sec.team}
+                  {isFavSection && (
+                    <span
+                      className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded"
+                      style={{ backgroundColor: `${favTeam!.primary}26`, color: favTeam!.primary }}
+                    >
+                      Your team
+                    </span>
+                  )}
+                </h3>
+              )}
               <div className="grid gap-3 sm:grid-cols-2">
-                {players.map((player) => {
-                  const rows = byPlayer.get(player)!;
+                {sec.cards.map(({ team: t, player, rows }) => {
+                  const isFavTeam = t === favTeam?.code;
                   return (
                     <div
-                      key={player}
+                      key={`${t}|${player}`}
                       className="rounded-md border p-3 space-y-1.5"
                       style={
                         isFavTeam
@@ -140,7 +163,10 @@ export function SportPropsExplorer({
                           : { borderColor: "#262626" }
                       }
                     >
-                      <div className="text-sm font-medium text-neutral-100">{player}</div>
+                      <div className="text-sm font-medium text-neutral-100">
+                        {player}
+                        {sec.team === null && <span className="ml-1.5 text-xs font-normal text-neutral-500">{t}</span>}
+                      </div>
                       <ul className="space-y-1">
                         {rows.map((r) => (
                           <li key={r.id} className="text-xs space-y-1">

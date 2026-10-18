@@ -33,6 +33,22 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.15.0",
+    date: "2026-10-18",
+    title: "Sort props by confidence",
+    summary: "Every prop list now has a Sort by menu, and starts with the props we're most confident in.",
+    changes: [
+      {
+        kind: "new",
+        title: "Sort by confidence, chance, payout or team",
+        whatChanged:
+          "The Props page's model picks (every sport) and the every-line list now have a 'Sort by' menu. 'Most confident' is the default: High trust first, then Medium, then Low, and within each, the props that have hit most often in our backtests. You can also sort by highest chance, best payout, or by team.",
+        whatItMeans: "The props worth looking at first are now at the top instead of scattered by team.",
+        href: "/props",
+      },
+    ],
+  },
+  {
     version: "1.14.1",
     date: "2026-10-17",
     title: "Sharper home run, RBI and goal props, plus returns in basketball and hockey",

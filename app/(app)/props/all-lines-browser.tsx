@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import { MODEL_FAIR_BOOK, fairAmerican, propLegLabel } from "@/lib/football-markets";
 import { Verdict } from "../verdict";
 import { TrustBadge, type TrustView } from "../trust-badge";
+import { SortSelect } from "./sort-select";
+import { sortScore, type PropSort } from "@/lib/prop-sort";
 
 /** Our chance for one posted line and side (lib/prop-score.ts). */
 export interface LineScoreView {
@@ -85,6 +87,7 @@ interface Grouped {
 export function AllLinesBrowser({ lines, scores = {} }: { lines: RawLine[]; scores?: Record<string, LineScoreView> }) {
   const [team, setTeam] = useState("");
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<PropSort>("confidence");
 
   const groups = useMemo(() => {
     const map = new Map<string, Grouped>();
@@ -141,13 +144,22 @@ export function AllLinesBrowser({ lines, scores = {} }: { lines: RawLine[]; scor
   }, [groups, category, team, query]);
 
   const byPlayer = useMemo(() => {
+    // Our chance and trust for a line (trust is only rated on sides we favor).
+    const score = (g: Grouped) => {
+      const sc = scores[`${g.player}|${g.statType}|${g.line}|${g.side}`];
+      const chance = sc?.chance ?? g.modelPct;
+      return sortScore(sort, { trust: sc && sc.chance >= 0.5 ? sc.trust : null, chance, price: g.prices[0]?.priceAmerican ?? null });
+    };
     const m = new Map<string, Grouped[]>();
     for (const g of shown) {
       const k = `${g.team}|${g.player}`;
       m.set(k, [...(m.get(k) ?? []), g]);
     }
-    return Array.from(m.entries());
-  }, [shown]);
+    const entries = Array.from(m.entries());
+    if (sort === "team") return entries;
+    for (const [, rows] of entries) rows.sort((a, b) => score(b) - score(a));
+    return entries.sort((a, b) => score(b[1][0]) - score(a[1][0]));
+  }, [shown, sort, scores]);
 
   if (groups.length === 0) {
     return <p className="text-sm text-neutral-500">No lines posted for this week yet. Check back after the next sync.</p>;
@@ -187,6 +199,7 @@ export function AllLinesBrowser({ lines, scores = {} }: { lines: RawLine[]; scor
           placeholder="Search player…"
           className={`${selectClass} flex-1 min-w-[10rem]`}
         />
+        <SortSelect value={sort} onChange={setSort} />
       </div>
 
       {byPlayer.length === 0 ? (
