@@ -9,6 +9,7 @@
 //   best price for that exact line and side among the main books.
 //
 // Only edges of 2+ points (games) / 3+ points (props) are listed.
+import { gameTrust } from "./prop-trust";
 import { db } from "@/db";
 import { games, oddsLines, propLinesRaw, sportGames, sportOddsLines, sportPropLinesRaw } from "@/db/schema";
 import { and, eq, gt, inArray, lt, max } from "drizzle-orm";
@@ -95,6 +96,7 @@ export async function getBestBetsFeed(windowHours = 36): Promise<FeedItem[]> {
         bestBook: best.book,
         otherPrices: prices.slice(1),
         edge,
+        trust: gameTrust(p, true),
         preseason: g.seasonType === 1,
         href: `/sports/${g.sport}`,
         bet: { label: `${team} ML ${fmt(best.price)} (${best.book})`, sport: g.sport, sportGameId: g.id, market: "ML", selection: team, priceAmerican: best.price },
@@ -126,6 +128,7 @@ export async function getBestBetsFeed(windowHours = 36): Promise<FeedItem[]> {
         bestBook: g.moneylineBook ?? "Book",
         otherPrices: [],
         edge,
+        trust: gameTrust(p, true),
         preseason: false,
         href: "/model-tracker",
         bet: { label: `${team} ML ${fmt(price)}`, sport: "nfl", gameId: g.id, market: "ML", selection: team, priceAmerican: price },

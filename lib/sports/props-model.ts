@@ -110,14 +110,19 @@ const BASKETBALL_PROP_MODEL: Record<string, PropModelConfig> = {
   Steals: { dist: "poisson", sdMult: 1.5, shrinkK: 40, useMinutes: true, temper: 0.88 },
   Blocks: { dist: "poisson", sdMult: 1.5, shrinkK: 40, useMinutes: true, temper: 0.88 },
   Turnovers: { dist: "poisson", sdMult: 1.4, shrinkK: 40, useMinutes: true, temper: 0.88 },
-  "Pts+Reb+Ast": BB_POINTS,
-  "Pts+Reb": BB_POINTS,
-  "Reb+Ast": BB_POINTS,
+  // Combos (1.15.1, live check on NBA and WNBA box scores, lines out to
+  // 2 sd): per-game negative binomial with a light 20-game pull beat the
+  // Points model in both leagues. NBA PRA .4326 -> .4304, P+R .4446 ->
+  // .4433, R+A .4371 -> .4363; WNBA PRA .4264 -> .4251, P+R .443 -> .442.
+  "Pts+Reb+Ast": { dist: "negbin", sdMult: 1.2, shrinkK: 5, useMinutes: false, temper: 0.8 },
+  "Pts+Reb": { dist: "negbin", sdMult: 1.2, shrinkK: 5, useMinutes: false, temper: 0.8 },
+  "Reb+Ast": { dist: "negbin", sdMult: 1.2, shrinkK: 5, useMinutes: false, temper: 0.88 },
 };
 /** The model per sport and stat; anything not listed keeps the original bell-curve model. */
 export const PROP_MODEL: Record<SportKey, Record<string, PropModelConfig>> = {
   nba: BASKETBALL_PROP_MODEL,
-  wnba: BASKETBALL_PROP_MODEL,
+  // WNBA points: a bell curve on per-minute scoring fit better (1.15.1: .4718 -> .4687).
+  wnba: { ...BASKETBALL_PROP_MODEL, Points: { dist: "normal", sdMult: 1.2, shrinkK: 40, useMinutes: true } },
   ncaab: BASKETBALL_PROP_MODEL,
   // College football (live check, 2025-26 box scores): yardage and catches
   // prefer heavier shrinkage than the NFL. Rec Yds .612 -> .603, Rush
@@ -157,9 +162,11 @@ export const PROP_MODEL: Record<SportKey, Record<string, PropModelConfig>> = {
     Walks: { dist: "poisson", sdMult: 1.7, shrinkK: 40, useMinutes: false, temper: 0.88 },
     "Strikeouts (Batter)": { dist: "poisson", sdMult: 1.5, shrinkK: 40, useMinutes: false },
     "Strikeouts (Pitcher)": { dist: "negbin", sdMult: 0.9, shrinkK: 40, useMinutes: false },
-    "Hits Allowed": { dist: "negbin", sdMult: 0.9, shrinkK: 40, useMinutes: false, temper: 0.88 },
+    // 1.15.1 live check: Hits Allowed .4699 -> .4686 (Poisson, stronger pull to 50%).
+    "Hits Allowed": { dist: "poisson", sdMult: 0.9, shrinkK: 40, useMinutes: false, temper: 0.8 },
     "Walks Allowed": { dist: "poisson", sdMult: 1.2, shrinkK: 40, useMinutes: false, temper: 0.88 },
-    "Earned Runs": { dist: "negbin", sdMult: 1.3, shrinkK: 40, useMinutes: false, temper: 0.88 },
+    // 1.15.1 live check: Earned Runs .5194 -> .5162 (bell curve, light 20-game pull).
+    "Earned Runs": { dist: "normal", sdMult: 1.3, shrinkK: 5, useMinutes: false },
     // Home runs and RBIs ran on the original bell curve, which badly overrated
     // "1+" on rare events. Checked on every batter with 10+ games (1.14.1,
     // ?all=1): Home Runs log loss .459 -> .328 (70%+ chances said 88%, hit

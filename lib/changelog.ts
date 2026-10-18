@@ -33,6 +33,38 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.15.1",
+    date: "2026-10-18",
+    title: "Sort Best Bets, build parlays your way, sharper combo props",
+    summary: "Best Bets has a Sort by row, Auto Parlays can be built by confidence, chance or payout, and several props got better-fitting models.",
+    changes: [
+      {
+        kind: "new",
+        title: "Sort Best Bets",
+        whatChanged:
+          "Best Bets now has a 'Sort by' row: biggest edge (the default), most confident, highest chance, best payout, or starting soonest. Game bets now show a trust badge too.",
+        whatItMeans: "Sort by what matters to you: the biggest edge, the safest bet, or what's starting next.",
+        href: "/best-bets",
+      },
+      {
+        kind: "new",
+        title: "Build Auto Parlays your way",
+        whatChanged:
+          "Auto Parlays have a 'Build by' menu. 'Most confident' (the default) picks the legs with the strongest trust scores. 'Highest chance' picks the likeliest legs, and 'Best payout' picks the best-paying legs that still clear the model's bar.",
+        whatItMeans: "Choose between a safer parlay and a bigger payout without building it by hand.",
+        href: "/parlays",
+      },
+      {
+        kind: "improved",
+        title: "Better models for combo and pitcher props",
+        whatChanged:
+          "We re-checked every prop stat in every sport against more model settings. NBA and WNBA combos (Pts+Reb+Ast, Pts+Reb, Reb+Ast), WNBA points, and MLB earned runs and hits allowed switched to settings that tested more accurate. We also tested using the betting market's team point totals in NFL yardage props. It didn't improve accuracy, so it isn't used.",
+        whatItMeans: "Slightly more accurate chances on those props. Everything else was already at its best-tested settings.",
+        href: "/props",
+      },
+    ],
+  },
+  {
     version: "1.15.0",
     date: "2026-10-18",
     title: "Sort props by confidence",

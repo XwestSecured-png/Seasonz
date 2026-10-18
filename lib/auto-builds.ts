@@ -17,6 +17,7 @@
 //    stated as an estimate that assumes the legs are independent.
 //  - When a real sportsbook price exists it's used; otherwise the payout is
 //    the model's fair price and labelled that way.
+import { sortScore } from "./prop-sort";
 import { db } from "@/db";
 import { games, oddsLines, sportGames, sportOddsLines, sportTeamMetrics, teamMetrics } from "@/db/schema";
 import { and, desc, eq, inArray } from "drizzle-orm";
@@ -69,10 +70,15 @@ export interface Build {
   trust: { tier: TrustTier; reason: string };
 }
 
+/** How legs are chosen: most confident (trust first), highest chance, or best payout. */
+export type BuildMode = "confidence" | "chance" | "price";
+
 export interface BuildSet {
   window: "today" | "week";
-  parlays: Build[]; // game picks
-  props: Build[]; // player props
+  parlays: Build[]; // game picks (most confident)
+  props: Build[]; // player props (most confident)
+  /** The same builds for every way of choosing legs. */
+  variants: Record<BuildMode, { parlays: Build[]; props: Build[] }>;
   gameLegPool: number;
   propLegPool: number;
 }
@@ -99,7 +105,7 @@ function combine(legs: BuildLeg[]) {
   return { combinedProb, decimal, american };
 }
 
-function summarize(legs: BuildLeg[], combinedProb: number, kind: "game" | "prop", window: "today" | "week") {
+function summarize(legs: BuildLeg[], combinedProb: number, kind: "game" | "prop", window: "today" | "week", mode: BuildMode) {
   const sports = Array.from(new Set(legs.map((l) => l.sport)));
   const avg = legs.reduce((a, l) => a + l.prob, 0) / legs.length;
   const weakest = legs.reduce((w, l) => (l.prob < w.prob ? l : w));
@@ -110,7 +116,7 @@ function summarize(legs: BuildLeg[], combinedProb: number, kind: "game" | "prop"
       ? "Every leg is a different game"
       : "Every prop is on a different team";
   return (
-    `The model's ${legs.length} strongest ${what} from ${when} slate` +
+    `The model's ${legs.length} ${mode === "confidence" ? "most trusted" : mode === "price" ? "best-paying" : "strongest"} ${what} from ${when} slate` +
     (sports.length > 1 ? ` across ${sports.join(", ")}` : "") +
     `. Each leg averages a ${pctStr(avg)} chance on its own. ${spread}, so one result doesn't drag another down. ` +
     `All ${legs.length} have to hit, which the model puts at about ${pctStr(combinedProb)}` +
@@ -119,9 +125,10 @@ function summarize(legs: BuildLeg[], combinedProb: number, kind: "game" | "prop"
   );
 }
 
-function makeBuilds(pool: BuildLeg[], kind: "game" | "prop", window: "today" | "week"): Build[] {
-  // Preferred-band legs first (strongest first), then fill-in legs.
-  const sorted = [...pool].sort((a, b) => Number(b.preferred) - Number(a.preferred) || b.prob - a.prob);
+function makeBuilds(pool: BuildLeg[], kind: "game" | "prop", window: "today" | "week", mode: BuildMode = "confidence"): Build[] {
+  // Preferred-band legs first, then fill-in legs; within each, ordered by the mode.
+  const score = (l: BuildLeg) => sortScore(mode, { trust: l.trust, chance: l.prob, price: l.priceAmerican });
+  const sorted = [...pool].sort((a, b) => Number(b.preferred) - Number(a.preferred) || score(b) - score(a) || b.prob - a.prob);
   const picked: BuildLeg[] = [];
   const used = new Set<string>();
   for (const leg of sorted) {
@@ -142,7 +149,7 @@ function makeBuilds(pool: BuildLeg[], kind: "game" | "prop", window: "today" | "
       americanOdds: american,
       payoutPer10: Math.round(10 * decimal * 100) / 100,
       weakest: legs.reduce((w, l) => (l.prob < w.prob ? l : w)),
-      summary: summarize(legs, combinedProb, kind, window),
+      summary: summarize(legs, combinedProb, kind, window, mode),
       usesFairPrices: legs.some((l) => l.priceSource === "fair"),
       trust: parlayTrust(legs.map((l) => ({ tier: l.trust.tier, prob: l.prob }))),
     });
@@ -543,10 +550,14 @@ async function computeModelBuilds(window: "today" | "week", filter: BuildSportFi
   const keep = (l: BuildLeg) => filter === "all" || l.sportKey === filter;
   const gamePool = [...nfl, ...others].filter(keep);
   const props = allProps.filter(keep);
+  const variants = Object.fromEntries(
+    (["confidence", "chance", "price"] as const).map((m) => [m, { parlays: makeBuilds(gamePool, "game", window, m), props: makeBuilds(props, "prop", window, m) }])
+  ) as BuildSet["variants"];
   return {
     window,
-    parlays: makeBuilds(gamePool, "game", window),
-    props: makeBuilds(props, "prop", window),
+    parlays: variants.confidence.parlays,
+    props: variants.confidence.props,
+    variants,
     gameLegPool: gamePool.length,
     propLegPool: props.length,
   };

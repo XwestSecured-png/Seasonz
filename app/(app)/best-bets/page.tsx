@@ -6,22 +6,40 @@ import { PageInfo } from "../page-info";
 import { LogBetButton } from "../log-bet-button";
 import { TrustBadge } from "../trust-badge";
 import { Verdict } from "../verdict";
+import { sortScore, type PropSort } from "@/lib/prop-sort";
 
 export const dynamic = "force-dynamic";
 
 const fmt = (p: number) => (p > 0 ? `+${p}` : `${p}`);
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
-export default async function BestBetsPage({ searchParams }: { searchParams: Promise<{ window?: string; kind?: string }> }) {
-  const { window: win, kind } = await searchParams;
+type BetSort = "edge" | "confidence" | "chance" | "price" | "soon";
+const SORTS: { value: BetSort; label: string }[] = [
+  { value: "edge", label: "Biggest edge" },
+  { value: "confidence", label: "Most confident" },
+  { value: "chance", label: "Highest chance" },
+  { value: "price", label: "Best payout" },
+  { value: "soon", label: "Starting soonest" },
+];
+
+export default async function BestBetsPage({ searchParams }: { searchParams: Promise<{ window?: string; kind?: string; sort?: string }> }) {
+  const { window: win, kind, sort: sortParam } = await searchParams;
+  const sort: BetSort = SORTS.some((x) => x.value === sortParam) ? (sortParam as BetSort) : "edge";
   const hours = win === "3d" ? 72 : 36;
   const user = await getCurrentUser();
   const all = await getBestBetsFeed(hours);
-  const items = all.filter((x) => !kind || kind === "all" || x.kind.toLowerCase() === kind);
+  const filtered = all.filter((x) => !kind || kind === "all" || x.kind.toLowerCase() === kind);
+  const keyOf = (x: (typeof all)[number]) =>
+    sort === "edge"
+      ? x.edge
+      : sort === "soon"
+        ? -(x.kickoffAt ? new Date(x.kickoffAt).getTime() : Infinity)
+        : sortScore(sort as PropSort, { trust: x.trust, chance: x.modelPct, price: x.bestPrice });
+  const items = [...filtered].sort((a, b) => keyOf(b) - keyOf(a) || b.edge - a.edge);
 
   const chip = (active: boolean) =>
     `rounded-full px-3 py-1 text-xs font-medium transition-colors ${active ? "bg-sky-600 text-white" : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"}`;
-  const q = (w: string, k: string) => `/best-bets?window=${w}&kind=${k}`;
+  const q = (w: string, k: string, s: string = sort) => `/best-bets?window=${w}&kind=${k}${s === "edge" ? "" : `&sort=${s}`}`;
   const w = win === "3d" ? "3d" : "today";
   const k = kind ?? "all";
 
@@ -54,6 +72,14 @@ export default async function BestBetsPage({ searchParams }: { searchParams: Pro
         {(["all", "game", "prop"] as const).map((x) => (
           <Link key={x} href={q(w, x)} className={chip(k === x)}>
             {x === "all" ? "All" : x === "game" ? "Games" : "Props"}
+          </Link>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="text-xs text-neutral-500 mr-0.5">Sort by</span>
+        {SORTS.map((x) => (
+          <Link key={x.value} href={q(w, k, x.value)} className={chip(sort === x.value)}>
+            {x.label}
           </Link>
         ))}
       </div>
