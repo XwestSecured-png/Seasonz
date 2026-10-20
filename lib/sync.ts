@@ -11,6 +11,7 @@ import {
   parlayPicks,
   factorSnapshots,
   lineHistory,
+  lineArchive,
   userBets,
   propPickLog,
 } from "@/db/schema";
@@ -27,6 +28,7 @@ import {
 } from "./nflverse";
 import { settlePendingBets } from "./bet-settle";
 import { recordNflReturns } from "./injury-returns";
+import { archiveGameLines, archivePropLines, gradeLineArchive } from "./line-archive";
 import { replayNflElo, makeNflEpaLookup, nflEpaAdjPct, type EloGameResult } from "./elo";
 import { noVigHome, logit, sigmoid } from "./sports/game-model";
 import type { ScheduleGame } from "./nflverse";
@@ -334,11 +336,15 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
       const needLog = (
         await db.select({ id: propPickLog.id }).from(propPickLog).where(and(eq(propPickLog.sport, "nfl"), isNull(propPickLog.result))).limit(1)
       ).length;
-      const nflWeekStats = needStats || needLog ? await fetchPlayerWeekStats(season).catch(() => []) : undefined;
+      const needArchive = (
+        await db.select({ id: lineArchive.id }).from(lineArchive).where(and(eq(lineArchive.sport, "nfl"), isNull(lineArchive.result))).limit(1)
+      ).length;
+      const nflWeekStats = needStats || needLog || needArchive ? await fetchPlayerWeekStats(season).catch(() => []) : undefined;
       const bets = await settlePendingBets({ sport: "nfl", nflWeekStats });
       // Logged model props (lib/prop-log.ts), for re-fitting the props blend.
       const logged = needLog ? await gradePropLog("nfl", nflWeekStats) : "";
-      return `${bets} ${logged}`.trim();
+      const archived = needArchive ? await gradeLineArchive("nfl", nflWeekStats) : "";
+      return `${bets} ${logged} ${archived}`.trim();
     })
   );
 
@@ -1100,6 +1106,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
     );
   } else {
     resetOddsProviderTracking();
+    results.push(await logStage("lineArchive", async () => `Archived ${await archiveGameLines("nfl")} game line(s).`));
     results.push(
       await logStage("props", async () => {
         const upcoming = schedule.filter((g) => !g.isFinal);
@@ -1237,6 +1244,8 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
               set: { team: sql`excluded.team`, priceAmerican: sql`excluded.price_american`, fetchedAt: new Date() },
             });
         }
+        // Keep every line's opening and closing price (lib/line-archive.ts).
+        await archivePropLines("nfl", season, week, rawRows).catch(() => 0);
 
         const parlays = buildAutoParlays(picks, season, week);
         await db

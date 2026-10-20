@@ -1262,3 +1262,35 @@ export const injuryReturns = pgTable(
   },
   (t) => ({ key: uniqueIndex("injury_returns_key").on(t.sport, t.season, t.team, t.player, t.detectedOn) })
 );
+
+// Every posted line we've seen, prop and game, with the first price seen
+// (open) and the last price before it came down (close). The raw line
+// tables are replaced each sync; this keeps history for model checks
+// against real lines and closing-line value (lib/line-archive.ts).
+export const lineArchive = pgTable(
+  "line_archive",
+  {
+    id: serial("id").primaryKey(),
+    sport: text("sport").notNull(),
+    season: integer("season").notNull(),
+    week: integer("week").notNull(),
+    market: text("market").notNull(),
+    gameKey: text("game_key").notNull().default(""),
+    player: text("player").notNull(),
+    team: text("team"),
+    statType: text("stat_type").notNull(),
+    line: real("line").notNull(),
+    side: text("side").notNull(),
+    book: text("book").notNull(),
+    openPrice: integer("open_price").notNull(),
+    openAt: timestamp("open_at").notNull().defaultNow(),
+    closePrice: integer("close_price").notNull(),
+    closeAt: timestamp("close_at").notNull().defaultNow(),
+    moves: integer("moves").notNull().default(0),
+    result: text("result"),
+    actual: real("actual"),
+  },
+  (t) => ({
+    key: uniqueIndex("line_archive_key").on(t.sport, t.season, t.week, t.market, t.gameKey, t.player, t.statType, t.line, t.side, t.book),
+  })
+);

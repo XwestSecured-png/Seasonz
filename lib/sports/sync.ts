@@ -8,6 +8,7 @@
 // "Multi-sport tables" comment and lib/sports/espn.ts's caveat about this
 // being unverified against live ESPN data until the first real Vercel sync.
 import { db } from "@/db";
+import { archiveGameLines, archivePropLines, gradeLineArchive } from "../line-archive";
 import { detectSportReturns, recentReturns, type ReportRow } from "../injury-returns";
 import {
   sportTeams,
@@ -1085,6 +1086,8 @@ export async function runSportSync(
               set: { team: sql`excluded.team`, priceAmerican: sql`excluded.price_american`, fetchedAt: new Date() },
             });
         }
+        // Keep every line's opening and closing price (lib/line-archive.ts).
+        await archivePropLines(sport, year, week, rawRows).catch(() => 0);
 
         const loggedN = await logPropPicks(sport, year, week, picks).catch(() => 0);
         // Projections for every player with a posted line, so the Props page
@@ -1108,11 +1111,13 @@ export async function runSportSync(
   // Probable starters, ESPN/FanDuel/BetMGM lines, weather, and the win model.
   results.push(...(await runModelStages(sport, year, logStage)));
 
+  results.push(await logStage(`${sport}:lineArchive`, async () => `Archived ${await archiveGameLines(sport)} game line(s).`));
   results.push(await logStage(`${sport}:propGrading`, () => gradePendingPropPicks(sport)));
   // Logged bets (game bets and props) for this sport — lib/bet-settle.ts.
   results.push(await logStage(`${sport}:gradeBets`, () => settlePendingBets({ sport })));
   // Logged model props (lib/prop-log.ts), for re-fitting the props blend.
   results.push(await logStage(`${sport}:gradePropLog`, () => gradePropLog(sport)));
+  results.push(await logStage(`${sport}:gradeLineArchive`, () => gradeLineArchive(sport)));
 
   return results;
 }
