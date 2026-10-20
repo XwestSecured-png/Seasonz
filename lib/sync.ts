@@ -1141,7 +1141,17 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         const injuryHistory = await fetchInjuryHistory(season).catch(() => []);
         const returners = findReturners(playerStats, injuryHistory, week);
         await recordNflReturns(season, returners, playerStats).catch(() => 0);
-        const averages = computeSeasonAverages(playerStats, schedule, week, priorStats, snapTrends(snaps), returners);
+        // Forecast wind at outdoor stadiums this week (passing/receiving trim).
+        const windByTeam = new Map<string, number>();
+        for (const g of await db
+          .select({ home: games.homeTeam, away: games.awayTeam, roof: games.roof, wind: games.windMph })
+          .from(games)
+          .where(and(eq(games.season, season), eq(games.week, week)))) {
+          if (g.wind == null || (g.roof && !/outdoor|open/i.test(g.roof))) continue;
+          windByTeam.set(g.home, g.wind);
+          windByTeam.set(g.away, g.wind);
+        }
+        const averages = computeSeasonAverages(playerStats, schedule, week, priorStats, snapTrends(snaps), returners, windByTeam);
 
         // A player marked OUT or DOUBTFUL for this game shouldn't get a prop
         // pick at all — their season stats say nothing about a game they

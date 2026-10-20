@@ -102,6 +102,21 @@ export interface PlayerSeasonAverage {
   snapTrend?: number;
   /** Back-from-injury adjustment applied to the projection, when any. */
   returnAdj?: { kind: "self" | "teammate"; who: string; factor: number };
+  /** Wind trim applied to the projection (below 1), when any. */
+  windFactor?: number;
+}
+
+/**
+ * Wind (1.17.0): passing and receiving yards drop in strong wind. Backtest
+ * on 2020-23 weekly stats (checked on 2024-25), outdoor games, nflverse's
+ * game-time wind: trimming 1.5% per mph above 10 mph cut log loss on Pass
+ * Yds .5701 -> .5654 and Rec Yds .5795 -> .5784 on 2024-25. Floor 70%.
+ * Uses the stored pre-game forecast (lib/weather-forecast.ts) for upcoming games.
+ */
+export const WIND_TRIM_PER_MPH = 0.015;
+export function windFactor(statType: string, windMph: number | undefined): number {
+  if (!windMph || (statType !== "Pass Yds" && statType !== "Rec Yds")) return 1;
+  return Math.max(0.7, 1 - WIND_TRIM_PER_MPH * Math.max(0, windMph - 10));
 }
 
 /** A key player expected back this week after missing games while listed Out. */
@@ -274,7 +289,9 @@ export function computeSeasonAverages(
   /** Snap-share trend by player (snapTrends); missing = no adjustment. */
   snapTrend: Map<string, number> = new Map(),
   /** Key players back from injury this week (findReturners). */
-  returners: Returner[] = []
+  returners: Returner[] = [],
+  /** Forecast wind (mph) at each team's game this week, outdoor stadiums only. */
+  windByTeam: Map<string, number> = new Map()
 ): Map<string, PlayerSeasonAverage> {
   const returningSelf = new Map(returners.map((r) => [r.player, r]));
   const posOf = new Map<string, string>();
@@ -337,7 +354,8 @@ export function computeSeasonAverages(
       const mate = returners.find((r) => r.team === team && r.player !== player && posGroup(r.position) === g);
       if (mate) returnAdj = { kind: "teammate", who: mate.player, factor: RETURN_TEAMMATE[statType] };
     }
-    const projection = proj.mean * oppFactor * Math.pow(trend, SNAP_TREND_POWER) * (returnAdj?.factor ?? 1);
+    const wind = windFactor(statType, windByTeam.get(team));
+    const projection = proj.mean * oppFactor * Math.pow(trend, SNAP_TREND_POWER) * (returnAdj?.factor ?? 1) * wind;
 
     out.set(key, {
       player,
@@ -352,6 +370,7 @@ export function computeSeasonAverages(
       values: [...sorted].reverse().map((g) => g.value),
       snapTrend: snapTrend.get(snapKey(player)),
       returnAdj,
+      windFactor: wind < 1 ? wind : undefined,
     });
   }
   return out;
@@ -614,6 +633,9 @@ export function buildPropPicks(
     const matchup = opponentThisWeek.get(avg.team);
     const marketSide = mk === undefined ? null : side === "Over" ? mk : 1 - mk;
     const trust = avg.values ? propTrust("nfl", modelOnly, trustFeatures(avg.values, g.line, side), marketSide ?? americanToImpliedProb(price)) : undefined;
+    if (trust && avg.windFactor !== undefined) {
+      trust.reasons.push(`Windy game forecast: projection trimmed ${Math.round((1 - avg.windFactor) * 100)}%`);
+    }
     if (trust && avg.returnAdj) {
       trust.reasons.push(
         avg.returnAdj.kind === "self"

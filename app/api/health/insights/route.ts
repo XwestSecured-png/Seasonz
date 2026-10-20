@@ -13,6 +13,8 @@ import { currentSeasonYear } from "@/lib/sports/espn";
 import { etWeekWindow, inWindow } from "@/lib/week-window";
 import { calibrateStat } from "@/lib/prop-calibration";
 import { returnCal, type BoxRow } from "@/lib/return-calibration";
+import { signalCal, type SignalRow } from "@/lib/signal-calibration";
+import { sgpCal } from "@/lib/sgp-calibration";
 import { STAT_EXTRACTORS } from "@/lib/sports/stat-extract";
 import { STDDEV_FLOOR_ABS, propModelFor, minutesOf } from "@/lib/sports/props-model";
 import { NFL_STDDEV_FLOOR_ABS, NFL_PROP_MODEL } from "@/lib/props-model";
@@ -109,6 +111,69 @@ export async function GET(req: NextRequest) {
       }
     }
     return NextResponse.json(trustBacktest(all) ?? { error: "not enough samples", n: all.length });
+  }
+  // Same-game correlations for hockey/baseball (lib/sgp-calibration.ts): ?sgpcal=nhl.
+  const sgpcal = req.nextUrl.searchParams.get("sgpcal");
+  if (sgpcal) {
+    const sport = sgpcal as SportKey;
+    const season = currentSeasonYear(sport);
+    const raw = await db
+      .select({
+        gameId: sportPlayerGameStats.gameId,
+        team: sportPlayerGameStats.team,
+        player: sportPlayerGameStats.player,
+        stats: sportPlayerGameStats.stats,
+        kickoffAt: sportGames.kickoffAt,
+        home: sportGames.homeTeam,
+        homeScore: sportGames.homeScore,
+        awayScore: sportGames.awayScore,
+      })
+      .from(sportPlayerGameStats)
+      .innerJoin(sportGames, eq(sportGames.id, sportPlayerGameStats.gameId))
+      .where(and(eq(sportPlayerGameStats.sport, sport), inArray(sportPlayerGameStats.season, [season - 1, season]), eq(sportGames.isFinal, true)));
+    const fams = STAT_EXTRACTORS[sport].map((e) => ({ name: e.statType, extract: e.extract }));
+    return NextResponse.json(
+      sgpCal(
+        raw.map((r) => ({ ...r, at: r.kickoffAt?.getTime() ?? 0, stats: r.stats as Record<string, string> })),
+        fams
+      )
+    );
+  }
+  // Game-day signal check (lib/signal-calibration.ts): ?signalcal=mlb[&stat=Hits].
+  const signalcal = req.nextUrl.searchParams.get("signalcal");
+  if (signalcal) {
+    const sport = signalcal as SportKey;
+    const season = currentSeasonYear(sport);
+    const raw = await db
+      .select({
+        id: sportPlayerGameStats.id,
+        gameId: sportPlayerGameStats.gameId,
+        team: sportPlayerGameStats.team,
+        player: sportPlayerGameStats.player,
+        position: sportPlayerGameStats.position,
+        season: sportPlayerGameStats.season,
+        stats: sportPlayerGameStats.stats,
+        kickoffAt: sportGames.kickoffAt,
+        home: sportGames.homeTeam,
+        homeWinPre: sportGames.homeWinPctPre,
+        eloHome: sportGames.eloHomePre,
+        eloAway: sportGames.eloAwayPre,
+      })
+      .from(sportPlayerGameStats)
+      .innerJoin(sportGames, eq(sportGames.id, sportPlayerGameStats.gameId))
+      .where(and(eq(sportPlayerGameStats.sport, sport), inArray(sportPlayerGameStats.season, [season - 1, season]), eq(sportGames.isFinal, true)));
+    const only = req.nextUrl.searchParams.get("stat");
+    const rows: SignalRow[] = raw.map((r) => ({
+      ...r,
+      at: r.kickoffAt?.getTime() ?? 0,
+      stats: r.stats as Record<string, unknown>,
+      homeWinPre: r.team === r.home ? r.homeWinPre : r.homeWinPre === null ? null : 1 - r.homeWinPre,
+      oppElo: r.team === r.home ? r.eloAway : r.eloHome,
+    }));
+    const defs = STAT_EXTRACTORS[sport]
+      .filter((e) => !only || e.statType === only)
+      .map((e) => ({ statType: e.statType, extract: e.extract, cfg: propModelFor(sport, e.statType), floor: STDDEV_FLOOR_ABS[sport][e.statType] ?? 1 }));
+    return NextResponse.json({ season, rows: rows.length, results: signalCal(sport, rows, defs, season, minutesOf) });
   }
   // Back-from-injury check (lib/return-calibration.ts): ?returncal=nba[&stat=Points].
   const returncal = req.nextUrl.searchParams.get("returncal");
