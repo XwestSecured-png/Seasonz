@@ -1116,7 +1116,15 @@ export async function runSportSync(
             .filter((a) => a.proj && a.cfg && a.values && withLines.has(`${a.player}|${a.statType}`))
             .map((a) => ({ player: a.player, team: a.team, statType: a.statType, data: { proj: a.proj!, cfg: a.cfg!, values: a.values!, minutes: a.minutes } }))
         ).catch(() => 0);
-        return `Props: ${thisWeekEvents.length} event(s), ${allProps.length} raw line(s), ${picks.length} pick(s) at 70%+ (model ${Math.round(propWeight * 100)}% / market blend; ${loggedN} logged), for week ${week}.`;
+        const gdNote = [
+          gameDay.backups?.size ? `${gameDay.backups.size} backup(s) stepping in` : "",
+          gameDay.oppPitcher?.size ? `${gameDay.oppPitcher.size} opposing-starter matchup(s)` : "",
+          gameDay.park?.size ? `${gameDay.park.size} park factor(s)` : "",
+          gameDay.oppEloZ?.size ? `${gameDay.oppEloZ.size} opponent-strength adjustment(s)` : "",
+        ]
+          .filter(Boolean)
+          .join(", ");
+        return `Props: ${thisWeekEvents.length} event(s), ${allProps.length} raw line(s), ${picks.length} pick(s) at 70%+ (model ${Math.round(propWeight * 100)}% / market blend; ${loggedN} logged), for week ${week}.${gdNote ? ` Game-day: ${gdNote}.` : ""}`;
       })
     );
   }
