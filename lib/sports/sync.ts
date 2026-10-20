@@ -8,6 +8,8 @@
 // "Multi-sport tables" comment and lib/sports/espn.ts's caveat about this
 // being unverified against live ESPN data until the first real Vercel sync.
 import { db } from "@/db";
+import { buildGameDayContext } from "./game-day";
+import { STAT_EXTRACTORS } from "./stat-extract";
 import { archiveGameLines, archivePropLines, gradeLineArchive } from "../line-archive";
 import { detectSportReturns, recentReturns, type ReportRow } from "../injury-returns";
 import {
@@ -921,6 +923,8 @@ export async function runSportSync(
             stats: sportPlayerGameStats.stats,
             position: sportPlayerGameStats.position,
             kickoffAt: sportGames.kickoffAt,
+            gameId: sportPlayerGameStats.gameId,
+            home: sportGames.homeTeam,
           })
           .from(sportPlayerGameStats)
           .innerJoin(sportGames, eq(sportGames.id, sportPlayerGameStats.gameId))
@@ -946,7 +950,15 @@ export async function runSportSync(
           position: r.position,
           at: r.detectedAt.getTime(),
         }));
-        const averages = computeSportSeasonAverages(sport, statRows, schedule, week, returners);
+        // Opposing pitcher, park and opponent strength (lib/sports/game-day.ts).
+        const gameDay = buildGameDayContext(
+          sport,
+          thisWeekGames,
+          allGameRows,
+          rawStatRows.map((r) => ({ player: r.player, team: r.team, gameId: r.gameId, home: r.home, t: r.kickoffAt?.getTime() ?? 0, stats: r.stats as Record<string, string> })),
+          STAT_EXTRACTORS[sport]
+        );
+        const averages = computeSportSeasonAverages(sport, statRows, schedule, week, returners, gameDay);
         // A player whose last team (from box scores) isn't in the game his
         // line was posted for has changed teams; drop him rather than show
         // him on the wrong team.

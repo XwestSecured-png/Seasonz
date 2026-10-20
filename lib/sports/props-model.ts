@@ -6,6 +6,7 @@
 // bar. The two math primitives that don't depend on any sport-specific
 // field name (winProbability / americanToImpliedProb) are imported from
 // lib/props-model.ts rather than duplicated.
+import { gameDayFactor, type GameDayContext } from "./game-day";
 import { propTrust, calibrateTrust, trustFeatures, type Trust } from "../prop-trust";
 import type { PropOutcome } from "../odds";
 import { winProbability, americanToImpliedProb, MIN_PROP_EDGE, NFL_PROP_MODEL, isPlaceholderLine, marketOverChances, blendPropChance, oneSidedMarket, PROP_MODEL_WEIGHT_DEFAULT } from "../props-model";
@@ -251,6 +252,8 @@ export interface SportPlayerSeasonAverage {
   minutes?: (number | null)[];
   /** Back-from-injury adjustment applied to the projection, when any. */
   returnAdj?: { kind: "self" | "teammate"; who: string; factor: number };
+  /** Game-day adjustment (opposing pitcher, park, opponent strength), when it moved the number 5%+. */
+  gameDayReason?: string;
 }
 
 /** A key player back from injury (lib/injury-returns.ts), with when he came off the Out list. */
@@ -354,7 +357,9 @@ export function computeSportSeasonAverages(
   schedule: SportScheduleGame[],
   upcomingWeek: number,
   /** Key players back from injury (recent injury_returns rows). */
-  returners: SportReturner[] = []
+  returners: SportReturner[] = [],
+  /** Opposing pitcher, park and opponent strength this week (lib/sports/game-day.ts). */
+  gameDay?: GameDayContext
 ): Map<string, SportPlayerSeasonAverage> {
   const extractors = STAT_EXTRACTORS[sport];
   const floors = STDDEV_FLOOR_ABS[sport];
@@ -375,6 +380,9 @@ export function computeSportSeasonAverages(
     for (const { statType, extract } of extractors) {
       const value = extract(row.stats);
       if (value === null || value < 0) continue;
+      // Goalie saves props are for starts: relief outings (under 40 minutes)
+      // dragged the average down. Live check: log loss -1.3% / -2.9%.
+      if (sport === "nhl" && statType === "Saves" && min !== null && min < 40) continue;
       const key = `${row.player}|${statType}`;
       const list = byKey.get(key) ?? [];
       list.push({ team: row.team, week: row.week, t: row.t ?? 0, value, min });
@@ -416,7 +424,8 @@ export function computeSportSeasonAverages(
       const mate = pending.find((r) => r.team === team && r.player !== player && bbGroup(r.position ?? posOf.get(r.player)) === g);
       if (mate) returnAdj = { kind: "teammate", who: mate.player, factor: mateF[statType] };
     }
-    const projection = proj.mean * oppFactor * (returnAdj?.factor ?? 1);
+    const gd = gameDayFactor(gameDay, team, statType);
+    const projection = proj.mean * oppFactor * (returnAdj?.factor ?? 1) * gd.factor;
 
     out.set(key, {
       player,
@@ -431,6 +440,7 @@ export function computeSportSeasonAverages(
       values: chrono.map((g) => g.value),
       minutes: chrono.map((g) => g.min),
       returnAdj,
+      gameDayReason: gd.reason ?? undefined,
     });
   }
   return out;
@@ -531,6 +541,7 @@ export function buildSportPropPicks(
             trustShift
           )
         : undefined;
+    if (trust && avg.gameDayReason) trust.reasons.push(avg.gameDayReason);
     if (trust && avg.returnAdj) {
       trust.reasons.push(
         avg.returnAdj.kind === "self"
