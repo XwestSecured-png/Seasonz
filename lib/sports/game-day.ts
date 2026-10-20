@@ -25,9 +25,14 @@ export interface GameDayContext {
   park?: Map<string, Record<string, number>>;
   /** College football: per team this week, the opponent's Elo vs average, in 100s. */
   oppEloZ?: Map<string, number>;
+  /** Basketball: bench players moving into a starter's spot (key "team|player" -> the starter who's out). */
+  backups?: Map<string, string>;
 }
 
 export interface GameDayRow {
+  /** Row id: ESPN lists starters first, so the first five saved per team-game started. */
+  id?: number;
+  position?: string | null;
   player: string;
   team: string;
   gameId: number;
@@ -58,9 +63,12 @@ export function buildGameDayContext(
   weekGames: WeekGame[],
   seasonGames: { eloHomePre: number | null; eloAwayPre: number | null }[],
   rows: GameDayRow[],
-  extractors: { statType: string; extract: (s: Record<string, string>) => number | null }[]
+  extractors: { statType: string; extract: (s: Record<string, string>) => number | null }[],
+  /** Players listed Out this week ("team|player"). */
+  out: Set<string> = new Set()
 ): GameDayContext {
   const ctx: GameDayContext = {};
+  if (sport === "nba" || sport === "wnba" || sport === "ncaab") ctx.backups = basketballBackups(weekGames, rows, out);
   if (sport === "mlb") {
     // Opposing probable starters.
     const starts = rows.filter((r) => "IP" in r.stats && innings(r.stats.IP) >= 3);
@@ -143,16 +151,99 @@ export function buildGameDayContext(
   return ctx;
 }
 
+/**
+ * Basketball (1.17.0): when a usual starter (7+ starts in his last 10
+ * games, played in one of the team's last 3) is listed Out, the bench
+ * player at his position (guard / forward / center) with the most minutes
+ * lately moves into his spot. Live check, with box-score absences standing
+ * in for the injury report: that player beat his projection by ~20% (NBA
+ * Pts+Reb+Ast log loss -5.6%, Points -3.7%; WNBA Pts+Reb+Ast -4.4% / -5.8%).
+ * Used a little below the best fit (the report doesn't always match who
+ * actually starts).
+ */
+const BACKUP_BOOST: Record<string, number> = {
+  Points: 1.12,
+  "Pts+Reb+Ast": 1.15,
+  "Pts+Reb": 1.15,
+  "Reb+Ast": 1.15,
+  Rebounds: 1.08,
+  Assists: 1.1,
+  "3-Pointers Made": 1.08,
+  Steals: 1.05,
+  Turnovers: 1.08,
+};
+const bbGroup = (p: string | null | undefined) => {
+  const x = (p ?? "").toUpperCase();
+  return x.startsWith("C") ? "C" : x.startsWith("G") || x === "PG" || x === "SG" ? "G" : "F";
+};
+function basketballBackups(weekGames: WeekGame[], rows: GameDayRow[], out: Set<string>): Map<string, string> {
+  const res = new Map<string, string>();
+  if (out.size === 0) return res;
+  const playing = new Set(weekGames.flatMap((g) => [g.homeTeam, g.awayTeam]));
+  // Starters: first five rows saved per team-game.
+  const byTG = new Map<string, GameDayRow[]>();
+  for (const r of rows) {
+    if (!playing.has(r.team) || r.id === undefined) continue;
+    (byTG.get(`${r.gameId}|${r.team}`) ?? byTG.set(`${r.gameId}|${r.team}`, []).get(`${r.gameId}|${r.team}`)!).push(r);
+  }
+  const started = new Set<number>();
+  const teamGames = new Map<string, { gameId: number; t: number }[]>();
+  for (const [k, l] of byTG) {
+    l.sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
+    l.slice(0, 5).forEach((r) => started.add(r.id!));
+    const team = k.slice(k.indexOf("|") + 1);
+    (teamGames.get(team) ?? teamGames.set(team, []).get(team)!).push({ gameId: l[0].gameId, t: l[0].t });
+  }
+  const minutes = (r: GameDayRow) => {
+    const m = Number(r.stats.MIN);
+    return Number.isFinite(m) ? m : 0;
+  };
+  for (const [team, tg] of teamGames) {
+    tg.sort((a, b) => a.t - b.t);
+    const recent = new Set(tg.slice(-3).map((x) => x.gameId));
+    const players = new Map<string, GameDayRow[]>();
+    for (const g of tg) for (const r of byTG.get(`${g.gameId}|${team}`) ?? []) (players.get(r.player) ?? players.set(r.player, []).get(r.player)!).push(r);
+    const info = [...players.entries()].map(([player, l]) => {
+      const last = l.slice(-10);
+      return {
+        player,
+        pos: bbGroup(l[l.length - 1].position),
+        n: last.length,
+        rate: last.filter((r) => started.has(r.id!)).length / Math.max(1, last.length),
+        min: last.reduce((a, r) => a + minutes(r), 0) / Math.max(1, last.length),
+        active: l.some((r) => recent.has(r.gameId)),
+      };
+    });
+    const used = new Set<string>();
+    for (const s of info) {
+      if (!out.has(`${team}|${s.player}`) || s.n < 5 || s.rate < 0.7 || !s.active) continue;
+      const pick = info
+        .filter((c) => c.pos === s.pos && c.active && c.n >= 5 && c.rate < 0.5 && !used.has(c.player) && !out.has(`${team}|${c.player}`))
+        .sort((a, b) => b.min - a.min)[0];
+      if (pick) {
+        used.add(pick.player);
+        res.set(`${team}|${pick.player}`, s.player);
+      }
+    }
+  }
+  return res;
+}
+
 const PITCHER_K_POW: Record<string, number> = { "Strikeouts (Batter)": 0.45 };
 const PITCHER_H_POW: Record<string, number> = { Hits: 0.25, "Runs Scored": 0.4, RBIs: 0.45, "Home Runs": 0.35 };
 const PARK_POW: Record<string, number> = { Hits: 0.55, "Home Runs": 0.4, RBIs: 0.45, "Runs Scored": 0.4 };
 const ELO_C: Record<string, number> = { "Rush Yds": 0.04, "Rush + Rec Yds": 0.02 };
 
 /** The combined game-day multiplier for one player's stat, with a reason when it moves the number 5%+. */
-export function gameDayFactor(ctx: GameDayContext | undefined, team: string, statType: string): { factor: number; reason: string | null } {
+export function gameDayFactor(ctx: GameDayContext | undefined, team: string, statType: string, player?: string): { factor: number; reason: string | null } {
   if (!ctx) return { factor: 1, reason: null };
   let f = 1;
   const why: string[] = [];
+  const replacing = player ? ctx.backups?.get(`${team}|${player}`) : undefined;
+  if (replacing && BACKUP_BOOST[statType]) {
+    f *= BACKUP_BOOST[statType];
+    why.push(`stepping in for ${replacing} (Out)`);
+  }
   const op = ctx.oppPitcher?.get(team);
   if (op) {
     const k = PITCHER_K_POW[statType] ? Math.pow(op.k, PITCHER_K_POW[statType]) : 1;

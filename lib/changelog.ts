@@ -33,6 +33,62 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.17.0",
+    date: "2026-10-19",
+    title: "Smarter game-day props in every sport",
+    summary: "Props now react to who's starting, who's pitching, the ballpark, the wind and the opponent. The app also keeps every line it sees and tunes itself stat by stat.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Basketball: backups stepping into the lineup",
+        whatChanged:
+          "When a usual starter is listed Out, the bench player at his position who's been getting the most minutes moves into his spot, and his projection goes up 8-15%. Checked on two seasons of NBA and WNBA games: those players beat their usual numbers by about 20%. This made combo props (Pts+Reb+Ast) 4-6% more accurate.",
+        whatItMeans: "Fewer Unders on players about to play big minutes. The trust details show 'stepping in for…' when it applies.",
+        href: "/props",
+      },
+      {
+        kind: "improved",
+        title: "MLB: the opposing pitcher and the ballpark",
+        whatChanged:
+          "Batter props now account for the opposing probable starter's strikeout and hit rates over his last 15 starts, and for the ballpark (hits, home runs, RBIs and runs at that park vs the league).",
+        whatItMeans: "A batter facing an ace in a pitcher-friendly park is projected lower, and vice versa.",
+        href: "/props?sport=mlb",
+      },
+      {
+        kind: "improved",
+        title: "NHL goalie saves, NFL wind, college rushing",
+        whatChanged:
+          "Goalie saves props now project from the goalie's starts only; relief outings were dragging the average down (2-3% more accurate). NFL passing and receiving yards are trimmed 1.5% per mph of forecast wind above 10 mph at outdoor stadiums. College rushing yards now account for opponent strength.",
+        whatItMeans: "More realistic numbers in the spots where game conditions matter most.",
+        href: "/props",
+      },
+      {
+        kind: "improved",
+        title: "Same-game parlays for hockey and baseball",
+        whatChanged:
+          "The parlay builder's same-game math now uses measured links for NHL and MLB, from about 6,000 games: a hitter's home run and RBIs (0.61), points and assists (0.78), a pitcher's hits and earned runs allowed (0.65), a batter vs the opposing pitcher, and so on.",
+        whatItMeans: "Same-game parlay chances in hockey and baseball are no longer treated as independent, so they're more honest.",
+        href: "/parlays",
+      },
+      {
+        kind: "new",
+        title: "Every line saved, plus stat-by-stat self-tuning",
+        whatChanged:
+          "The app now keeps every prop and game line it sees, with its opening and closing price, and grades each one after the game. The model's share in each prop now tunes itself per stat, not just per sport, and trust scores correct themselves from graded results.",
+        whatItMeans: "The model keeps learning where it beats the books and where it doesn't, stat by stat.",
+        audience: "admin",
+      },
+      {
+        kind: "improved",
+        title: "Tested and not used",
+        whatChanged:
+          "We also tested MLB batting-order position, blowout risk in basketball, NFL target share and air yards, and opponent strength for college passing and receiving. None improved accuracy, so they aren't used.",
+        whatItMeans: "Only changes that tested better made it in.",
+        audience: "admin",
+      },
+    ],
+  },
+  {
     version: "1.16.0",
     date: "2026-10-19",
     title: "Anytime TD parlays and stat picking",

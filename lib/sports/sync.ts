@@ -925,6 +925,7 @@ export async function runSportSync(
             kickoffAt: sportGames.kickoffAt,
             gameId: sportPlayerGameStats.gameId,
             home: sportGames.homeTeam,
+            id: sportPlayerGameStats.id,
           })
           .from(sportPlayerGameStats)
           .innerJoin(sportGames, eq(sportGames.id, sportPlayerGameStats.gameId))
@@ -950,13 +951,31 @@ export async function runSportSync(
           position: r.position,
           at: r.detectedAt.getTime(),
         }));
+        // Same OUT/DOUBTFUL-style availability gate as NFL (lib/sync.ts),
+        // against whatever this sport's injury reports actually say — see
+        // db/schema.ts's sportInjuryReports comment on why status is kept
+        // as ESPN's own free-text vocabulary rather than forced into NFL's
+        // fixed set. An empty table here (no injury data synced yet for
+        // this sport) makes this an honest no-op, not a fabricated gate.
+        const injuryRows = await db
+          .select()
+          .from(sportInjuryReports)
+          .where(and(eq(sportInjuryReports.sport, sport), eq(sportInjuryReports.season, year)));
+        const OUT_STATUSES = new Set(["OUT", "IR", "INJURED RESERVE", "DOUBTFUL"]);
+        const unavailable = new Set(
+          injuryRows
+            .filter((r) => OUT_STATUSES.has(r.status.trim().toUpperCase()))
+            .map((r) => `${r.team}|${r.player}`)
+        );
+
         // Opposing pitcher, park and opponent strength (lib/sports/game-day.ts).
         const gameDay = buildGameDayContext(
           sport,
           thisWeekGames,
           allGameRows,
-          rawStatRows.map((r) => ({ player: r.player, team: r.team, gameId: r.gameId, home: r.home, t: r.kickoffAt?.getTime() ?? 0, stats: r.stats as Record<string, string> })),
-          STAT_EXTRACTORS[sport]
+          rawStatRows.map((r) => ({ id: r.id, player: r.player, team: r.team, position: r.position, gameId: r.gameId, home: r.home, t: r.kickoffAt?.getTime() ?? 0, stats: r.stats as Record<string, string> })),
+          STAT_EXTRACTORS[sport],
+          unavailable
         );
         const averages = computeSportSeasonAverages(sport, statRows, schedule, week, returners, gameDay);
         // A player whose last team (from box scores) isn't in the game his
@@ -975,23 +994,6 @@ export async function runSportSync(
           const teams = eventTeamsByPlayer.get(avg.player);
           if (teams && !teams.has(avg.team)) averages.delete(key);
         }
-
-        // Same OUT/DOUBTFUL-style availability gate as NFL (lib/sync.ts),
-        // against whatever this sport's injury reports actually say — see
-        // db/schema.ts's sportInjuryReports comment on why status is kept
-        // as ESPN's own free-text vocabulary rather than forced into NFL's
-        // fixed set. An empty table here (no injury data synced yet for
-        // this sport) makes this an honest no-op, not a fabricated gate.
-        const injuryRows = await db
-          .select()
-          .from(sportInjuryReports)
-          .where(and(eq(sportInjuryReports.sport, sport), eq(sportInjuryReports.season, year)));
-        const OUT_STATUSES = new Set(["OUT", "IR", "INJURED RESERVE", "DOUBTFUL"]);
-        const unavailable = new Set(
-          injuryRows
-            .filter((r) => OUT_STATUSES.has(r.status.trim().toUpperCase()))
-            .map((r) => `${r.team}|${r.player}`)
-        );
 
         const propWeight = weightFor(await getModelWeights().catch(() => ({})), `prop:${sport}`);
         const weightStore = await getModelWeights().catch(() => ({}));

@@ -424,7 +424,7 @@ export function computeSportSeasonAverages(
       const mate = pending.find((r) => r.team === team && r.player !== player && bbGroup(r.position ?? posOf.get(r.player)) === g);
       if (mate) returnAdj = { kind: "teammate", who: mate.player, factor: mateF[statType] };
     }
-    const gd = gameDayFactor(gameDay, team, statType);
+    const gd = gameDayFactor(gameDay, team, statType, player);
     const projection = proj.mean * oppFactor * (returnAdj?.factor ?? 1) * gd.factor;
 
     out.set(key, {
