@@ -343,3 +343,48 @@ export function signalCal(sport: string, rows: SignalRow[], stats: StatDef[], te
   }
   return {};
 }
+
+/**
+ * Round 2 (/api/health/insights?signalcal=<sport>&set=context): player-level
+ * context the model doesn't use yet, every sport:
+ *   rest: second night of a back-to-back (under ~30 hours since his last
+ *         game) or 3+ days off, vs his usual rhythm;
+ *   venue: home or away (his average mixes both).
+ * Each is a multiplier on the projection, best fit on a grid.
+ */
+export function contextCal(sport: string, rows: SignalRow[], stats: StatDef[], testSeason: number, minutesOf: (s: Record<string, string>) => number | null) {
+  const acc: Acc = {};
+  const add = scorer(acc);
+  rows.sort((a, b) => a.at - b.at || a.id - b.id);
+  const split = (r: SignalRow) => (r.season === testSeason ? "test" : "train");
+  const M = [0.9, 0.93, 0.95, 0.97, 1, 1.03, 1.05, 1.07, 1.1];
+  const thin = sport === "mlb" ? 3 : 1;
+  for (const st of stats) {
+    const byPlayer = new Map<string, SignalRow[]>();
+    for (const r of rows) {
+      if (st.extract(r.stats as Record<string, string>) === null) continue;
+      (byPlayer.get(`${r.team}|${r.player}`) ?? byPlayer.set(`${r.team}|${r.player}`, []).get(`${r.team}|${r.player}`)!).push(r);
+    }
+    for (const l of byPlayer.values()) {
+      const vals = l.map((r) => st.extract(r.stats as Record<string, string>) ?? 0);
+      const mins = l.map((r) => minutesOf(r.stats as Record<string, string>));
+      if (vals.filter((v) => v > 0).length < vals.length * 0.4) continue;
+      for (let i = 8; i < l.length; i++) {
+        if (i % thin !== 0) continue;
+        if (st.cfg.useMinutes && !((mins[i] ?? 0) > 0)) continue;
+        const r = l[i];
+        const lo = Math.max(0, i - 20);
+        const prior = vals.slice(lo, i);
+        const pm = st.cfg.useMinutes ? mins.slice(lo, i) : undefined;
+        const s = split(r);
+        const hours = (r.at - l[i - 1].at) / 3600_000;
+        if (sport !== "mlb" && hours > 0) {
+          if (hours < 30) add(`${st.statType}|backToBack|${s}`, M, prior, pm, st.cfg, st.floor, vals[i], (m) => m);
+          else if (hours >= 72 && hours < 24 * 10) add(`${st.statType}|rested3plus|${s}`, M, prior, pm, st.cfg, st.floor, vals[i], (m) => m);
+        }
+        add(`${st.statType}|${r.team === r.home ? "home" : "away"}|${s}`, M, prior, pm, st.cfg, st.floor, vals[i], (m) => m);
+      }
+    }
+  }
+  return report(acc);
+}

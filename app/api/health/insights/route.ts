@@ -13,7 +13,7 @@ import { currentSeasonYear } from "@/lib/sports/espn";
 import { etWeekWindow, inWindow } from "@/lib/week-window";
 import { calibrateStat } from "@/lib/prop-calibration";
 import { returnCal, type BoxRow } from "@/lib/return-calibration";
-import { signalCal, type SignalRow } from "@/lib/signal-calibration";
+import { signalCal, contextCal, type SignalRow } from "@/lib/signal-calibration";
 import { sgpCal } from "@/lib/sgp-calibration";
 import { STAT_EXTRACTORS } from "@/lib/sports/stat-extract";
 import { STDDEV_FLOOR_ABS, propModelFor, minutesOf } from "@/lib/sports/props-model";
@@ -173,7 +173,9 @@ export async function GET(req: NextRequest) {
     const defs = STAT_EXTRACTORS[sport]
       .filter((e) => !only || e.statType === only)
       .map((e) => ({ statType: e.statType, extract: e.extract, cfg: propModelFor(sport, e.statType), floor: STDDEV_FLOOR_ABS[sport][e.statType] ?? 1 }));
-    return NextResponse.json({ season, rows: rows.length, results: signalCal(sport, rows, defs, season, minutesOf) });
+    const set = req.nextUrl.searchParams.get("set");
+    const results = set === "context" ? contextCal(sport, rows, defs, season, minutesOf) : signalCal(sport, rows, defs, season, minutesOf);
+    return NextResponse.json({ season, rows: rows.length, results });
   }
   // Back-from-injury check (lib/return-calibration.ts): ?returncal=nba[&stat=Points].
   const returncal = req.nextUrl.searchParams.get("returncal");
