@@ -19,7 +19,10 @@
 //    the model's fair price and labelled that way.
 import { sortScore } from "./prop-sort";
 import { db } from "@/db";
-import { games, oddsLines, sportGames, sportOddsLines, sportTeamMetrics, teamMetrics } from "@/db/schema";
+import { games, oddsLines, propLinesRaw, sportGames, sportOddsLines, sportTeamMetrics, teamMetrics } from "@/db/schema";
+import { PICKEM_BOOKS, blendPropChance } from "./props-model";
+import { MODEL_FAIR_BOOK } from "./football-markets";
+import { getModelWeights, weightFor } from "./model-weights";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { SPORTS, type SportKey } from "./sports/types";
 import { currentSeasonYear } from "./sports/espn";
@@ -39,6 +42,13 @@ const MAX_PROP_PROB = 0.9;
 const FILL_MIN_PROB = 0.52;
 const FILL_MAX_PROB = 0.96;
 const inBand = (p: number, lo: number, hi: number) => p >= lo && p <= hi;
+// Touchdown props are long shots by nature (a top back scores in ~half his
+// games), so a TD-only parlay uses its own band: 20%+ to be listed, 30%+ to
+// be preferred. They only enter the all-stats parlays when they clear the
+// usual 52% floor.
+const TD_FILL_MIN_PROB = 0.2;
+const TD_MIN_PROB = 0.3;
+const isTd = (stat: string | null | undefined) => stat === "Anytime TD" || stat === "2+ TDs";
 const OTHER_SPORTS: SportKey[] = ["nba", "wnba", "nhl", "mlb", "ncaaf", "ncaab"];
 
 export interface BuildLeg {
@@ -55,6 +65,8 @@ export interface BuildLeg {
   priceSource: "book" | "fair";
   reasons: string[]; // why the model likes it, most important first
   teamKey: string; // for "one per game / team" spacing
+  /** Prop stat type ("Anytime TD", "Rec Yds", "Points"...), for building one-stat parlays. */
+  stat?: string;
   trust: Pick<Trust, "tier" | "adj" | "reasons" | "hits" | "of">;
 }
 
@@ -78,7 +90,9 @@ export interface BuildSet {
   parlays: Build[]; // game picks (most confident)
   props: Build[]; // player props (most confident)
   /** The same builds for every way of choosing legs. */
-  variants: Record<BuildMode, { parlays: Build[]; props: Build[] }>;
+  variants: Record<BuildMode, { parlays: Build[]; props: Build[]; propsByStat: Record<string, Build[]> }>;
+  /** Stat types with 2+ prop legs, for the "Stat" menu (Anytime TD first). */
+  propStats: { stat: string; legs: number }[];
   gameLegPool: number;
   propLegPool: number;
 }
@@ -109,7 +123,8 @@ function summarize(legs: BuildLeg[], combinedProb: number, kind: "game" | "prop"
   const sports = Array.from(new Set(legs.map((l) => l.sport)));
   const avg = legs.reduce((a, l) => a + l.prob, 0) / legs.length;
   const weakest = legs.reduce((w, l) => (l.prob < w.prob ? l : w));
-  const what = kind === "game" ? "game picks" : "player props";
+  const oneStat = kind === "prop" && legs.every((l) => l.stat && l.stat === legs[0].stat) ? legs[0].stat : null;
+  const what = kind === "game" ? "game picks" : oneStat ? `${oneStat} picks` : "player props";
   const when = window === "today" ? "today's" : "this week's";
   const spread =
     kind === "game"
@@ -382,6 +397,46 @@ async function otherSportGameLegs(window: "today" | "week"): Promise<BuildLeg[]>
 
 // ---------- player prop legs ----------
 
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+const impliedOf = (a: number) => (a < 0 ? -a / (-a + 100) : 100 / (a + 100));
+
+/**
+ * Real sportsbook prices for NFL touchdown props this week: the best "Yes"
+ * price and the books' average no-vig chance (one-sided books less a typical
+ * 4.5% margin). Pick'em apps and the model's own fair line are left out.
+ */
+async function nflTdBookPrices(season: number, week: number): Promise<Map<string, { price: number; book: string; market: number }>> {
+  const raw = await db
+    .select({ player: propLinesRaw.player, statType: propLinesRaw.statType, side: propLinesRaw.side, book: propLinesRaw.book, price: propLinesRaw.priceAmerican })
+    .from(propLinesRaw)
+    .where(and(eq(propLinesRaw.season, season), eq(propLinesRaw.week, week), inArray(propLinesRaw.statType, ["Anytime TD", "2+ TDs"])));
+  const by = new Map<string, Map<string, { yes?: number; no?: number }>>();
+  for (const r of raw) {
+    if (r.price == null || r.book === MODEL_FAIR_BOOK || PICKEM_BOOKS.has(r.book)) continue;
+    const k = `${norm(r.player)}|${r.statType}`;
+    const books = by.get(k) ?? by.set(k, new Map()).get(k)!;
+    const b = books.get(r.book) ?? {};
+    if (/^(yes|over)$/i.test(r.side)) b.yes = r.price;
+    else if (/^(no|under)$/i.test(r.side)) b.no = r.price;
+    books.set(r.book, b);
+  }
+  const out = new Map<string, { price: number; book: string; market: number }>();
+  for (const [k, books] of by) {
+    let best: { price: number; book: string } | null = null;
+    const chances: number[] = [];
+    for (const [book, b] of books) {
+      if (b.yes === undefined) continue;
+      if (!best || b.yes > best.price) best = { price: b.yes, book };
+      const y = impliedOf(b.yes);
+      chances.push(b.no !== undefined ? y / (y + impliedOf(b.no)) : y / 1.045);
+    }
+    if (!best || chances.length === 0) continue;
+    const market = Math.min(0.97, Math.max(0.03, chances.reduce((a, c) => a + c, 0) / chances.length));
+    out.set(k, { ...best, market });
+  }
+  return out;
+}
+
 async function propLegs(window: "today" | "week"): Promise<BuildLeg[]> {
   const legs: BuildLeg[] = [];
   const today = etDate(new Date());
@@ -404,6 +459,8 @@ async function propLegs(window: "today" | "week"): Promise<BuildLeg[]> {
       .select()
       .from(oddsLines)
       .where(and(eq(oddsLines.season, season), eq(oddsLines.week, week)));
+    const tdBooks = await nflTdBookPrices(season, week);
+    const propWeight = weightFor(await getModelWeights().catch(() => ({})), "prop:nfl");
     for (const r of rows) {
       if (!r.player || !r.team || !r.statType || r.line === null) continue;
       const g = gameByTeam.get(r.team);
@@ -411,9 +468,14 @@ async function propLegs(window: "today" | "week"): Promise<BuildLeg[]> {
       if (g.kickoffAt && g.kickoffAt.getTime() <= Date.now()) continue;
       if (window === "today" && !(g.kickoffAt && etDate(g.kickoffAt) === today)) continue;
       const isModelOnly = r.source === "MODEL" || r.priceAmerican === null;
-      const prob = r.modelWinPct ?? (isModelOnly ? r.edgePct : null);
-      if (prob === null || !inBand(prob, FILL_MIN_PROB, FILL_MAX_PROB)) continue;
-      const preferred = inBand(prob, MIN_PROP_PROB, MAX_PROP_PROB);
+      const td = isTd(r.statType);
+      let prob = r.modelWinPct ?? (isModelOnly ? r.edgePct : null);
+      // Touchdown props: blend the model with the books' own price when books post one.
+      const tdBook = td ? tdBooks.get(`${norm(r.player)}|${r.statType}`) : undefined;
+      const modelProb = prob;
+      if (prob !== null && tdBook) prob = blendPropChance(prob, tdBook.market, propWeight);
+      if (prob === null || !inBand(prob, td ? TD_FILL_MIN_PROB : FILL_MIN_PROB, FILL_MAX_PROB)) continue;
+      const preferred = inBand(prob, td ? TD_MIN_PROB : MIN_PROP_PROB, MAX_PROP_PROB);
       const opp = g.homeTeam === r.team ? g.awayTeam : g.homeTeam;
       const reasons: string[] = [];
       const statLabel =
@@ -426,7 +488,11 @@ async function propLegs(window: "today" | "week"): Promise<BuildLeg[]> {
         );
       }
       reasons.push(`Matchup: ${r.team} vs ${opp}${g.homeTeam === r.team ? " at home" : " on the road"}.`);
-      if (!isModelOnly && r.priceAmerican !== null) {
+      if (tdBook) {
+        reasons.push(
+          `Best price ${tdBook.price > 0 ? "+" : ""}${tdBook.price} at ${tdBook.book}. The books put it at ${pctStr(tdBook.market)}, the model at ${pctStr(modelProb ?? prob)}; combined: ${pctStr(prob)}.`
+        );
+      } else if (!isModelOnly && r.priceAmerican !== null) {
         const implied = r.impliedProbPct !== null ? r.impliedProbPct / 100 : null;
         reasons.push(
           `${r.book ?? "Book"} price ${r.priceAmerican > 0 ? "+" : ""}${r.priceAmerican}` +
@@ -452,11 +518,16 @@ async function propLegs(window: "today" | "week"): Promise<BuildLeg[]> {
         matchup: `${g.awayTeam} @ ${g.homeTeam}`,
         startsAt: g.kickoffAt ? g.kickoffAt.toISOString() : null,
         prob,
-        priceAmerican: !isModelOnly && r.priceAmerican !== null ? r.priceAmerican : probToFairAmerican(prob),
-        priceSource: !isModelOnly && r.priceAmerican !== null ? "book" : "fair",
+        priceAmerican: tdBook ? tdBook.price : !isModelOnly && r.priceAmerican !== null ? r.priceAmerican : probToFairAmerican(prob),
+        priceSource: tdBook || (!isModelOnly && r.priceAmerican !== null) ? "book" : "fair",
         reasons,
         teamKey: `nfl-${r.team}`,
-        trust: !isModelOnly && r.trust ? (r.trust as Trust) : modelOnlyTrust(prob),
+        stat: r.statType,
+        trust: tdBook
+          ? { ...modelOnlyTrust(prob), tier: "Medium", reasons: ["Model blended with real sportsbook prices"] }
+          : !isModelOnly && r.trust
+            ? (r.trust as Trust)
+            : modelOnlyTrust(prob),
       });
     }
   }
@@ -514,6 +585,7 @@ async function propLegs(window: "today" | "week"): Promise<BuildLeg[]> {
         priceSource: "book",
         reasons,
         teamKey: `${sport}-${r.team}`,
+        stat: r.statType,
         trust: (r.trust as Trust | null) ?? modelOnlyTrust(prob),
       });
     }
@@ -549,15 +621,33 @@ async function computeModelBuilds(window: "today" | "week", filter: BuildSportFi
   ]);
   const keep = (l: BuildLeg) => filter === "all" || l.sportKey === filter;
   const gamePool = [...nfl, ...others].filter(keep);
-  const props = allProps.filter(keep);
+  const allStatProps = allProps.filter(keep);
+  // All-stats parlays use the usual floor; one-stat parlays (e.g. Anytime TD) use each stat's own band.
+  const props = allStatProps.filter((l) => l.prob >= FILL_MIN_PROB);
+  const statCounts = new Map<string, number>();
+  for (const l of allStatProps) if (l.stat) statCounts.set(l.stat, (statCounts.get(l.stat) ?? 0) + 1);
+  const stats = [...statCounts.entries()]
+    .filter(([, n]) => n >= 2)
+    .sort((a, b) => Number(b[0] === "Anytime TD") - Number(a[0] === "Anytime TD") || b[1] - a[1])
+    .map(([stat, legs]) => ({ stat, legs }));
   const variants = Object.fromEntries(
-    (["confidence", "chance", "price"] as const).map((m) => [m, { parlays: makeBuilds(gamePool, "game", window, m), props: makeBuilds(props, "prop", window, m) }])
+    (["confidence", "chance", "price"] as const).map((m) => [
+      m,
+      {
+        parlays: makeBuilds(gamePool, "game", window, m),
+        props: makeBuilds(props, "prop", window, m),
+        propsByStat: Object.fromEntries(
+          stats.map(({ stat }) => [stat, makeBuilds(allStatProps.filter((l) => l.stat === stat), "prop", window, m)])
+        ),
+      },
+    ])
   ) as BuildSet["variants"];
   return {
     window,
     parlays: variants.confidence.parlays,
     props: variants.confidence.props,
     variants,
+    propStats: stats,
     gameLegPool: gamePool.length,
     propLegPool: props.length,
   };

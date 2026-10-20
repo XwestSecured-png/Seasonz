@@ -33,6 +33,30 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.16.0",
+    date: "2026-10-19",
+    title: "Anytime TD parlays and stat picking",
+    summary: "Auto Parlays can now be built from one stat, including an Anytime TD parlay priced at real sportsbook odds.",
+    changes: [
+      {
+        kind: "new",
+        title: "Anytime TD parlay",
+        whatChanged:
+          "Auto Parlays' player props section has an Anytime TD option. It builds 2- to 8-leg touchdown parlays, one player per team, from players with a 20%+ chance to score (30%+ preferred). Each leg's chance blends the TD model with the real sportsbooks' price, and the payout uses the best real price available.",
+        whatItMeans: "Touchdown scorers used to be left out because they rarely clear 52%. Now you get a real TD parlay with honest odds.",
+        href: "/parlays",
+      },
+      {
+        kind: "new",
+        title: "Pick the stat for a props parlay",
+        whatChanged:
+          "Choose 'All stats' or one stat (Rec Yds, Points, Shots on Goal...) and the props parlay is built from that stat only. It works with the Build by menu (most confident, highest chance, best payout).",
+        whatItMeans: "Build the parlay you'd actually bet, like an all-receiving-yards parlay, without picking legs by hand.",
+        href: "/parlays",
+      },
+    ],
+  },
+  {
     version: "1.15.1",
     date: "2026-10-18",
     title: "Sort Best Bets, build parlays your way, sharper combo props",

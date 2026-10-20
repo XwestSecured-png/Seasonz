@@ -156,6 +156,7 @@ function Section({
   titlePrefix,
   sportsbookPrefs,
   allowedCategories,
+  controls,
 }: {
   heading: string;
   builds: Build[];
@@ -164,6 +165,7 @@ function Section({
   titlePrefix: string;
   sportsbookPrefs: Sportsbook[];
   allowedCategories: SportsbookCategory[];
+  controls?: React.ReactNode;
 }) {
   const [size, setSize] = useState<number>(
     builds.find((b) => b.size === 3)?.size ?? builds[0]?.size ?? 2,
@@ -175,6 +177,7 @@ function Section({
         <h2 className="text-base font-semibold">{heading}</h2>
         <span className="text-xs text-neutral-500">{pool} qualifying legs</span>
       </div>
+      {controls}
       {builds.length === 0 ? (
         <p className="rounded-md border border-neutral-800 px-3 py-3 text-sm text-neutral-500">
           {emptyText}
@@ -241,6 +244,12 @@ export function BuildsView({
   const v = base.variants?.[mode];
   const set = v ? { ...base, parlays: v.parlays, props: v.props } : base;
   const label = tab === "today" ? "Today's" : "This week's";
+  const [stat, setStat] = useState("");
+  const statOptions = base.propStats ?? [];
+  const statPicked = stat && statOptions.some((o) => o.stat === stat) ? stat : "";
+  const propBuilds = statPicked ? (v?.propsByStat?.[statPicked] ?? []) : set.props;
+  const propPool = statPicked ? (statOptions.find((o) => o.stat === statPicked)?.legs ?? 0) : set.propLegPool;
+  const statName = statPicked === "Anytime TD" ? "anytime TD" : statPicked;
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
@@ -294,18 +303,52 @@ export function BuildsView({
         allowedCategories={allowedCategories}
       />
       <Section
-        key={`${tab}-${mode}-props`}
-        heading={`${label} best player props`}
-        builds={set.props}
-        pool={set.propLegPool}
-        titlePrefix={`${label} player props`}
+        key={`${tab}-${mode}-${statPicked}-props`}
+        heading={statPicked ? `${label} best ${statName} parlay` : `${label} best player props`}
+        builds={propBuilds}
+        pool={propPool}
+        titlePrefix={statPicked ? `${label} ${statName} parlay` : `${label} player props`}
         emptyText={
-          tab === "today"
-            ? "No player props qualify for today's games yet. Check This week."
-            : "No player props qualify yet. Props appear once the weekly sync has run."
+          statPicked
+            ? `Not enough ${statName} picks ${tab === "today" ? "today" : "this week"} to build a parlay.`
+            : tab === "today"
+              ? "No player props qualify for today's games yet. Check This week."
+              : "No player props qualify yet. Props appear once the weekly sync has run."
         }
         sportsbookPrefs={sportsbookPrefs}
         allowedCategories={allowedCategories}
+        controls={
+          statOptions.length > 0 ? (
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Stat">
+                {[{ stat: "", legs: 0 }, ...statOptions].map((o) => (
+                  <button
+                    key={o.stat || "all"}
+                    type="button"
+                    role="tab"
+                    aria-selected={statPicked === o.stat}
+                    onClick={() => setStat(o.stat)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                      statPicked === o.stat
+                        ? "bg-sky-600 text-white"
+                        : o.stat === "Anytime TD"
+                          ? "bg-emerald-950 text-emerald-300 ring-1 ring-emerald-800/60 hover:bg-emerald-900"
+                          : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
+                    }`}
+                  >
+                    {o.stat || "All stats"}
+                  </button>
+                ))}
+              </div>
+              {statPicked === "Anytime TD" && (
+                <p className="text-xs text-neutral-500">
+                  Touchdown legs are long shots by nature (a top running back scores in about half their games), so this parlay
+                  takes players at 20%+ and prefers 30%+. Chances blend the model with real sportsbook prices.
+                </p>
+              )}
+            </div>
+          ) : null
+        }
       />
     </div>
   );
