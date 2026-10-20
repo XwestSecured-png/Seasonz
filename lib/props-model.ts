@@ -114,6 +114,17 @@ export interface PlayerSeasonAverage {
  * Uses the stored pre-game forecast (lib/weather-forecast.ts) for upcoming games.
  */
 export const WIND_TRIM_PER_MPH = 0.015;
+
+/**
+ * Level calibration (1.17.1): projections ran a little high across the
+ * board, home and away alike. Backtest on 2020-23 weekly stats, checked on
+ * 2024-25 (lines up to 1.5 sd either side): best factors and 2024-25 log
+ * loss, Pass Yds x0.98 (.4934 -> .4929), Rec Yds x0.95 (.5254 -> .5237),
+ * Rush Yds x0.95 (.5206 -> .5186), Rush + Rec x0.95 (.5267 -> .5253),
+ * Receptions x0.96 (.4772 -> .4765). A lopsided (gamma or lognormal) curve
+ * was tested instead and did worse.
+ */
+export const NFL_LEVEL: Record<string, number> = { "Pass Yds": 0.98, "Rec Yds": 0.95, "Rush Yds": 0.95, "Rush + Rec Yds": 0.95, Receptions: 0.96 };
 export function windFactor(statType: string, windMph: number | undefined): number {
   if (!windMph || (statType !== "Pass Yds" && statType !== "Rec Yds")) return 1;
   return Math.max(0.7, 1 - WIND_TRIM_PER_MPH * Math.max(0, windMph - 10));
@@ -355,7 +366,7 @@ export function computeSeasonAverages(
       if (mate) returnAdj = { kind: "teammate", who: mate.player, factor: RETURN_TEAMMATE[statType] };
     }
     const wind = windFactor(statType, windByTeam.get(team));
-    const projection = proj.mean * oppFactor * Math.pow(trend, SNAP_TREND_POWER) * (returnAdj?.factor ?? 1) * wind;
+    const projection = proj.mean * oppFactor * Math.pow(trend, SNAP_TREND_POWER) * (returnAdj?.factor ?? 1) * wind * (NFL_LEVEL[statType] ?? 1);
 
     out.set(key, {
       player,

@@ -33,6 +33,30 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.17.1",
+    date: "2026-10-20",
+    title: "Home, road and back-to-backs",
+    summary: "Props now account for where the game is and how tired the team is, but only where the numbers held up over two seasons.",
+    changes: [
+      {
+        kind: "improved",
+        title: "NHL: back-to-backs and the road",
+        whatChanged:
+          "On the second night of a back-to-back, shots on goal are projected 6% lower and points and assists 8% lower. On the road, shots are 5% lower. At home, goals are 5% higher and goalie saves 3% lower, because home goalies face fewer shots. Each held up on last season and this one (up to 2% more accurate).",
+        whatItMeans: "Fewer Overs on tired skaters. The trust details say 'second night of a back-to-back' or 'on the road' when it applies.",
+        href: "/props?sport=nhl",
+      },
+      {
+        kind: "improved",
+        title: "WNBA road games and NFL yardage levels",
+        whatChanged:
+          "WNBA points are projected 5% lower on the road, and rebounds 3% lower. NFL yardage and receptions projections were running slightly high across two seasons, so they've been brought down 2-5%.",
+        whatItMeans: "Slightly fewer Overs in these spots. NBA, MLB and college showed no reliable home/away or rest effect, so nothing changed there.",
+        href: "/props",
+      },
+    ],
+  },
+  {
     version: "1.17.0",
     date: "2026-10-19",
     title: "Smarter game-day props in every sport",

@@ -27,6 +27,8 @@ export interface GameDayContext {
   oppEloZ?: Map<string, number>;
   /** Basketball: bench players moving into a starter's spot (key "team|player" -> the starter who's out). */
   backups?: Map<string, string>;
+  /** Per team this week: playing at home, and on the second night of a back-to-back. */
+  venue?: Map<string, { home: boolean; b2b: boolean }>;
 }
 
 export interface GameDayRow {
@@ -44,6 +46,7 @@ export interface GameDayRow {
 interface WeekGame {
   homeTeam: string;
   awayTeam: string;
+  kickoffAt?: Date | null;
   eloHomePre: number | null;
   eloAwayPre: number | null;
   extra: unknown;
@@ -61,7 +64,7 @@ const innings = (ip: unknown) => {
 export function buildGameDayContext(
   sport: string,
   weekGames: WeekGame[],
-  seasonGames: { eloHomePre: number | null; eloAwayPre: number | null }[],
+  seasonGames: { eloHomePre: number | null; eloAwayPre: number | null; homeTeam?: string; awayTeam?: string; kickoffAt?: Date | null }[],
   rows: GameDayRow[],
   extractors: { statType: string; extract: (s: Record<string, string>) => number | null }[],
   /** Players listed Out this week ("team|player"). */
@@ -69,6 +72,19 @@ export function buildGameDayContext(
 ): GameDayContext {
   const ctx: GameDayContext = {};
   if (sport === "nba" || sport === "wnba" || sport === "ncaab") ctx.backups = basketballBackups(weekGames, rows, out);
+  // Home/away and back-to-backs (each team's next game this week).
+  ctx.venue = new Map();
+  const next = [...weekGames].filter((g) => g.kickoffAt && g.kickoffAt.getTime() > Date.now()).sort((a, b) => a.kickoffAt!.getTime() - b.kickoffAt!.getTime());
+  for (const g of next) {
+    for (const [team, home] of [[g.homeTeam, true], [g.awayTeam, false]] as const) {
+      if (ctx.venue.has(team)) continue;
+      const kick = g.kickoffAt!.getTime();
+      const prev = seasonGames
+        .filter((x) => (x.homeTeam === team || x.awayTeam === team) && x.kickoffAt && x.kickoffAt.getTime() < kick)
+        .reduce((a, x) => Math.max(a, x.kickoffAt!.getTime()), 0);
+      ctx.venue.set(team, { home, b2b: prev > 0 && kick - prev < 30 * 3600_000 });
+    }
+  }
   if (sport === "mlb") {
     // Opposing probable starters.
     const starts = rows.filter((r) => "IP" in r.stats && innings(r.stats.IP) >= 3);
@@ -229,16 +245,50 @@ function basketballBackups(weekGames: WeekGame[], rows: GameDayRow[], out: Set<s
   return res;
 }
 
+/**
+ * Home/away and back-to-backs (1.17.1), kept only where the live check
+ * (/api/health/insights?signalcal=<sport>&set=context) agreed on last
+ * season and this one: NHL shots on goal x0.95 on the road and x0.94 on the
+ * second night of a back-to-back (log loss -0.2% / -0.3%), points and
+ * assists x0.92 on back-to-backs (-1.2% / -1.9% this season), goals x1.05
+ * at home, goalie saves x0.97 at home (home goalies face fewer shots);
+ * WNBA points x0.95 and rebounds x0.97 on the road. NBA had no current
+ * season to confirm with yet, and baseball and college football showed nothing.
+ */
+const CONTEXT: Partial<Record<string, Record<string, { away?: number; home?: number; b2b?: number }>>> = {
+  nhl: {
+    "Shots on Goal": { away: 0.95, b2b: 0.94 },
+    Points: { b2b: 0.92 },
+    Assists: { b2b: 0.92 },
+    Goals: { home: 1.05 },
+    Saves: { home: 0.97 },
+  },
+  wnba: { Points: { away: 0.95 }, Rebounds: { away: 0.97 } },
+};
+
 const PITCHER_K_POW: Record<string, number> = { "Strikeouts (Batter)": 0.45 };
 const PITCHER_H_POW: Record<string, number> = { Hits: 0.25, "Runs Scored": 0.4, RBIs: 0.45, "Home Runs": 0.35 };
 const PARK_POW: Record<string, number> = { Hits: 0.55, "Home Runs": 0.4, RBIs: 0.45, "Runs Scored": 0.4 };
 const ELO_C: Record<string, number> = { "Rush Yds": 0.04, "Rush + Rec Yds": 0.02 };
 
 /** The combined game-day multiplier for one player's stat, with a reason when it moves the number 5%+. */
-export function gameDayFactor(ctx: GameDayContext | undefined, team: string, statType: string, player?: string): { factor: number; reason: string | null } {
+export function gameDayFactor(ctx: GameDayContext | undefined, team: string, statType: string, player?: string, sport?: string): { factor: number; reason: string | null } {
   if (!ctx) return { factor: 1, reason: null };
   let f = 1;
   const why: string[] = [];
+  const ven = ctx.venue?.get(team);
+  const cx = sport ? CONTEXT[sport]?.[statType] : undefined;
+  if (ven && cx) {
+    if (ven.home && cx.home) f *= cx.home;
+    if (!ven.home && cx.away) {
+      f *= cx.away;
+      why.push("on the road");
+    }
+    if (ven.b2b && cx.b2b) {
+      f *= cx.b2b;
+      why.push("second night of a back-to-back");
+    }
+  }
   const replacing = player ? ctx.backups?.get(`${team}|${player}`) : undefined;
   if (replacing && BACKUP_BOOST[statType]) {
     f *= BACKUP_BOOST[statType];
