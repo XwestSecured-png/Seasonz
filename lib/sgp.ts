@@ -14,12 +14,14 @@
 // opponents, and the game's result against the closing spread and total.
 //   Football: nflverse weekly stats 2018-25 (2,700+ team-games).
 //   Basketball: every NBA (2,627) and WNBA (656) game of 2025-26.
-// Hockey and baseball pairings aren't measured yet, so those legs are
-// treated as independent. See scripts/backtest-game-model/README.md.
+//   Hockey and baseball (1.17.0): every NHL (1,406) and MLB (4,832) game of
+//   2025-27 in the app's own box scores (lib/sgp-calibration.ts,
+//   /api/health/insights?sgpcal=nhl|mlb), by stat rather than family.
+// See scripts/backtest-game-model/README.md.
 //
 // Client-safe: no server imports.
 
-export type SgpSport = "football" | "basketball" | "other";
+export type SgpSport = "football" | "basketball" | "hockey" | "baseball" | "other";
 
 export interface SgpLeg {
   /** Same value for legs in the same game. */
@@ -134,6 +136,109 @@ const BB_COVER: Partial<Record<BbFam, number>> = { PTS: 0.15, REB: 0.1, AST: 0.1
 const BB_WIN: Partial<Record<BbFam, number>> = { PTS: 0.1, REB: 0.07, AST: 0.09, PRA: 0.12, "3PM": 0.05 };
 const BB_TOTAL: Partial<Record<BbFam, number>> = { PTS: 0.19, REB: -0.05, AST: 0.14, PRA: 0.17, "3PM": 0.13 };
 
+// Hockey and baseball, keyed by stat type (measured; |r| < 0.03 left out).
+interface StatTables {
+  same: Record<string, number>;
+  mate: Record<string, number>;
+  opp: Record<string, number>;
+  win: Record<string, number>;
+  total: Record<string, number>;
+}
+const HK: StatTables = {
+  same: {
+    [pairKey("Goals", "Points")]: 0.58,
+    [pairKey("Assists", "Points")]: 0.78,
+    [pairKey("Goals", "Shots on Goal")]: 0.3,
+    [pairKey("Points", "Shots on Goal")]: 0.19,
+  },
+  mate: {
+    [pairKey("Goals", "Points")]: 0.05,
+    [pairKey("Assists", "Goals")]: 0.07,
+    [pairKey("Points", "Points")]: 0.09,
+    [pairKey("Assists", "Points")]: 0.08,
+    [pairKey("Assists", "Assists")]: 0.04,
+  },
+  opp: {
+    [pairKey("Goals", "Saves")]: -0.07,
+    [pairKey("Points", "Saves")]: -0.11,
+    [pairKey("Assists", "Saves")]: -0.09,
+    [pairKey("Saves", "Shots on Goal")]: 0.15,
+    [pairKey("Saves", "Saves")]: -0.11,
+  },
+  win: { Goals: 0.13, Saves: 0.19, Points: 0.2, Assists: 0.16 },
+  total: { Goals: 0.15, Saves: -0.14, Points: 0.23, Assists: 0.19, "Shots on Goal": 0.04 },
+};
+const MLB: StatTables = {
+  same: {
+    [pairKey("Hits", "RBIs")]: 0.45,
+    [pairKey("Hits", "Walks")]: -0.05,
+    [pairKey("Hits", "Home Runs")]: 0.35,
+    [pairKey("Home Runs", "RBIs")]: 0.61,
+    [pairKey("Hits", "Runs Scored")]: 0.49,
+    [pairKey("RBIs", "Runs Scored")]: 0.39,
+    [pairKey("Runs Scored", "Walks")]: 0.17,
+    [pairKey("Home Runs", "Runs Scored")]: 0.49,
+    [pairKey("Earned Runs", "Hits Allowed")]: 0.65,
+    [pairKey("Hits", "Strikeouts (Batter)")]: -0.15,
+    [pairKey("RBIs", "Strikeouts (Batter)")]: -0.07,
+    [pairKey("Earned Runs", "Walks Allowed")]: 0.24,
+    [pairKey("Strikeouts (Batter)", "Walks")]: -0.1,
+    [pairKey("Hits Allowed", "Walks Allowed")]: 0.07,
+    [pairKey("Home Runs", "Strikeouts (Batter)")]: -0.06,
+    [pairKey("Runs Scored", "Strikeouts (Batter)")]: -0.1,
+    [pairKey("Earned Runs", "Strikeouts (Pitcher)")]: -0.07,
+  },
+  mate: {
+    [pairKey("Hits", "Hits")]: 0.06,
+    [pairKey("Hits", "RBIs")]: 0.07,
+    [pairKey("RBIs", "RBIs")]: 0.05,
+    [pairKey("RBIs", "Walks")]: 0.04,
+    [pairKey("Hits", "Runs Scored")]: 0.1,
+    [pairKey("RBIs", "Runs Scored")]: 0.13,
+    [pairKey("Runs Scored", "Runs Scored")]: 0.13,
+    [pairKey("Runs Scored", "Walks")]: 0.04,
+    [pairKey("Home Runs", "Runs Scored")]: 0.05,
+  },
+  opp: {
+    [pairKey("Earned Runs", "Runs Scored")]: 0.16,
+    [pairKey("Hits", "Hits Allowed")]: 0.13,
+    [pairKey("Earned Runs", "RBIs")]: 0.12,
+    [pairKey("Hits Allowed", "Runs Scored")]: 0.12,
+    [pairKey("Walks", "Walks Allowed")]: 0.12,
+    [pairKey("Strikeouts (Batter)", "Strikeouts (Pitcher)")]: 0.1,
+    [pairKey("Earned Runs", "Hits")]: 0.1,
+    [pairKey("Hits Allowed", "RBIs")]: 0.09,
+    [pairKey("Earned Runs", "Home Runs")]: 0.07,
+    [pairKey("Hits Allowed", "Home Runs")]: 0.05,
+    [pairKey("Runs Scored", "Walks Allowed")]: 0.05,
+    [pairKey("RBIs", "Walks Allowed")]: 0.04,
+    [pairKey("Earned Runs", "Walks")]: 0.03,
+  },
+  win: {
+    Hits: 0.16,
+    RBIs: 0.19,
+    Walks: 0.07,
+    "Home Runs": 0.11,
+    "Earned Runs": -0.23,
+    "Runs Scored": 0.25,
+    "Hits Allowed": -0.18,
+    "Walks Allowed": -0.08,
+    "Strikeouts (Batter)": -0.05,
+    "Strikeouts (Pitcher)": 0.05,
+  },
+  total: {
+    Hits: 0.2,
+    RBIs: 0.23,
+    Walks: 0.08,
+    "Home Runs": 0.14,
+    "Earned Runs": 0.25,
+    "Runs Scored": 0.31,
+    "Hits Allowed": 0.19,
+    "Walks Allowed": 0.07,
+    "Strikeouts (Pitcher)": -0.04,
+  },
+};
+
 /** +1 when the leg wins on the stat going UP (Over/Yes), -1 when it wins on it going down. */
 const dir = (side?: string) => (side === "Under" || side === "No" ? -1 : 1);
 
@@ -152,6 +257,23 @@ export function legCorrelation(sport: SgpSport, a: SgpLeg, b: SgpLeg): number {
   }
   if (a.kind !== "prop") return legCorrelation(sport, b, a);
   // a is a prop from here on.
+  if (sport === "hockey" || sport === "baseball") {
+    const T = sport === "hockey" ? HK : MLB;
+    const sa = a.statType ?? "";
+    const da = dir(a.side);
+    if (b.kind === "prop") {
+      const sb = b.statType ?? "";
+      let r = 0;
+      if (a.player && a.player === b.player) r = sa === sb ? 0.95 : (T.same[pairKey(sa, sb)] ?? 0);
+      else if (a.team && a.team === b.team) r = T.mate[pairKey(sa, sb)] ?? 0;
+      else r = T.opp[pairKey(sa, sb)] ?? 0;
+      return r * da * dir(b.side);
+    }
+    if (b.kind === "total") return (T.total[sa] ?? 0) * da * dir(b.side);
+    const backsOwnTeam = b.team != null && a.team != null ? (b.team === a.team ? 1 : -1) : 0;
+    // Puck line / run line move with winning; measured against the win.
+    return (T.win[sa] ?? 0) * da * backsOwnTeam;
+  }
   const fam = (s?: string) => (sport === "football" ? footballFamily(s ?? "") : basketballFamily(s ?? ""));
   const fa = fam(a.statType);
   if (fa === "other") return 0;

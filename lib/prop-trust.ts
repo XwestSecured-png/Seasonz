@@ -136,6 +136,20 @@ export function propTrust(sport: string, p: number, f: TrustFeatures, implied: n
   return { adj, tier, hits: f.hits, of: f.of, games: f.n, reasons };
 }
 
+/**
+ * Live calibration: shifts a prop's trust score by the sport's fitted
+ * log-odds correction (lib/model-weights.ts, from graded picks) and re-tiers it.
+ */
+export function calibrateTrust(t: Trust, shift: number): Trust {
+  if (!shift) return t;
+  const a = Math.min(0.999, Math.max(0.001, t.adj));
+  const adj = 1 / (1 + Math.exp(-(Math.log(a / (1 - a)) + shift)));
+  const capped = t.reasons.some((r) => r.includes("above the betting market"));
+  let tier: TrustTier = adj >= TRUST_HIGH && t.games >= 5 ? "High" : adj >= TRUST_MEDIUM ? "Medium" : "Low";
+  if (capped && tier === "High") tier = "Medium";
+  return { ...t, adj, tier };
+}
+
 /** Trust for a game leg (moneyline/spread/total): the blended chance is already market-anchored. */
 export function gameTrust(p: number, hasLine: boolean): Trust {
   const tier: TrustTier = !hasLine ? (p >= 0.75 ? "Medium" : "Low") : p >= 0.72 ? "High" : p >= 0.62 ? "Medium" : "Low";

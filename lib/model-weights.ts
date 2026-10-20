@@ -94,6 +94,55 @@ export function fitPropWeight(rows: WeightRow[], base: number): Omit<WeightFit, 
   return { weight, base, n, best: best.w, llCurrent: llBase, llBest: best.v, applied: weight !== base };
 }
 
+/** Per-stat props share: the stat's own fit when it has one against today's sport share, else the sport's. */
+export function propWeightFn(store: WeightStore, sport: string): (stat: string) => number {
+  const sportW = weightFor(store, `prop:${sport}`);
+  return (stat: string) => {
+    const f = store[`prop:${sport}:${stat}`];
+    return f && f.applied && Math.abs(f.base - sportW) < 1e-9 && f.weight >= 0 && f.weight <= 1 ? f.weight : sportW;
+  };
+}
+
+const TRUST_MIN_N = 50;
+const TRUST_PRIOR_N = 200;
+/** Log-odds shift that best fits graded picks' trust scores to results (shrunk toward 0). */
+async function fitTrustShift(sport: string): Promise<Omit<WeightFit, "at"> | null> {
+  const rows = await db
+    .select({ adj: propPickLog.trustAdj, result: propPickLog.result, player: propPickLog.player, stat: propPickLog.statType, date: propPickLog.gameDate, week: propPickLog.week })
+    .from(propPickLog)
+    .where(and(eq(propPickLog.sport, sport), inArray(propPickLog.result, ["hit", "miss"])));
+  const usable = rows.filter((r) => r.adj != null);
+  if (usable.length === 0) return null;
+  const ck = (r: (typeof usable)[number]) => `${r.player}|${r.stat}|${r.date ?? r.week}`;
+  const size = new Map<string, number>();
+  for (const r of usable) size.set(ck(r), (size.get(ck(r)) ?? 0) + 1);
+  const ll = (c: number) => {
+    let s = 0;
+    let n = 0;
+    for (const r of usable) {
+      const w = 1 / size.get(ck(r))!;
+      const q = clampP(sigmoid(logit(r.adj!) + c));
+      s -= w * (r.result === "hit" ? Math.log(q) : Math.log(1 - q));
+      n += w;
+    }
+    return s / n;
+  };
+  let best = { c: 0, v: ll(0) };
+  for (let c = -1.5; c <= 1.5001; c += 0.05) {
+    const v = ll(c);
+    if (v < best.v - 1e-12) best = { c: +c.toFixed(2), v };
+  }
+  const n = size.size;
+  const weight = n >= TRUST_MIN_N ? +((best.c * n) / (n + TRUST_PRIOR_N)).toFixed(3) : 0;
+  return { weight, base: 0, n, best: best.c, llCurrent: ll(0), llBest: best.v, applied: weight !== 0 };
+}
+
+/** Live trust shift (log-odds) for a sport; 0 until enough graded picks. */
+export function trustShiftFor(store: WeightStore, sport: string): number {
+  const f = store[`trust:${sport}`];
+  return f && typeof f.weight === "number" && Math.abs(f.weight) <= 1.5 ? f.weight : 0;
+}
+
 let cache: { at: number; v: WeightStore } | null = null;
 
 export async function getModelWeights(): Promise<WeightStore> {
@@ -130,7 +179,7 @@ const keyLabel = (key: string) => {
 };
 
 /** Live graded games with a locked model-only and market number. */
-export async function liveWeightRows(sport: string): Promise<WeightRow[]> {
+export async function liveWeightRows(sport: string, stat?: string): Promise<WeightRow[]> {
   const out: WeightRow[] = [];
   if (isProp(sport)) {
     const rows = await db
@@ -145,7 +194,7 @@ export async function liveWeightRows(sport: string): Promise<WeightRow[]> {
       })
       .from(propPickLog)
       .where(and(eq(propPickLog.sport, sport.slice(5)), inArray(propPickLog.result, ["hit", "miss"])));
-    const withMarket = rows.filter((r) => r.market != null);
+    const withMarket = rows.filter((r) => r.market != null && (!stat || r.stat === stat));
     const ck = (r: (typeof rows)[number]) => `${r.player}|${r.stat}|${r.date ?? r.week}`;
     const size = new Map<string, number>();
     for (const r of withMarket) size.set(ck(r), (size.get(ck(r)) ?? 0) + 1);
@@ -194,6 +243,31 @@ export async function refitModelWeights(): Promise<string> {
     next[sport] = { ...fit, at: new Date().toISOString() };
     msgs.push(`${sport} ${Math.round(fit.weight * 100)}% (n=${fit.n}${fit.best !== null ? `, best ${Math.round(fit.best * 100)}%` : ""})`);
   }
+  // Per-stat shares: each stat starts from its sport's share and moves toward
+  // its own best fit as its graded player-games come in.
+  for (const sport of ALL_KEYS.filter(isProp)) {
+    const sportW = next[sport]?.weight ?? baseFor(sport);
+    const stats = await db
+      .selectDistinct({ stat: propPickLog.statType })
+      .from(propPickLog)
+      .where(and(eq(propPickLog.sport, sport.slice(5)), inArray(propPickLog.result, ["hit", "miss"])));
+    for (const { stat } of stats) {
+      const rows = await liveWeightRows(sport, stat);
+      const fit = fitPropWeight(rows, sportW);
+      next[`${sport}:${stat}`] = { ...fit, at: new Date().toISOString() };
+      if (fit.applied) msgs.push(`${sport}:${stat} ${Math.round(fit.weight * 100)}% (n=${fit.n})`);
+    }
+  }
+  // Trust calibration: one log-odds shift per sport on the trust score's
+  // backtested chance, fitted on graded picks and moved in gradually.
+  for (const s of ["nfl", ...OTHER]) {
+    const fit = await fitTrustShift(s);
+    if (fit) {
+      next[`trust:${s}`] = { ...fit, at: new Date().toISOString() };
+      if (fit.applied) msgs.push(`trust:${s} shift ${fit.weight.toFixed(2)} (n=${fit.n})`);
+    }
+  }
+
   await db
     .insert(appSettings)
     .values({ key: KEY, value: next })

@@ -2,7 +2,7 @@ import type { PlayerWeekStats, DefensivePlayerWeekStats, ScheduleGame, SnapRow }
 import type { PropOutcome } from "./odds";
 import { MIN_MODEL_WIN_PCT } from "./confidence";
 import { projectProp, propChance, type PropModelConfig, type Projection } from "./prop-dist";
-import { propTrust, trustFeatures, type Trust } from "./prop-trust";
+import { propTrust, calibrateTrust, trustFeatures, type Trust } from "./prop-trust";
 
 // A one- or two-game season average is too small a sample to trust over a
 // book's own (much larger) model — require a few games first.
@@ -573,9 +573,12 @@ export function buildPropPicks(
   schedule: ScheduleGame[],
   upcomingWeek: number,
   unavailable: Set<string> = new Set(),
-  /** Model share of the model/market blend (lib/model-weights.ts, "prop:nfl"). */
-  modelWeight = PROP_MODEL_WEIGHT_DEFAULT
+  /** Model share of the model/market blend (lib/model-weights.ts, "prop:nfl"), or one per stat. */
+  modelWeight: number | ((statType: string) => number) = PROP_MODEL_WEIGHT_DEFAULT,
+  /** Live trust correction (log-odds, lib/model-weights.ts "trust:nfl"). */
+  trustShift = 0
 ): PropPick[] {
+  const weightOf = (stat: string) => (typeof modelWeight === "function" ? modelWeight(stat) : modelWeight);
   const opponentThisWeek = new Map<string, { opponent: string; gameDate: string | null }>();
   for (const g of schedule) {
     if (g.week !== upcomingWeek) continue;
@@ -619,7 +622,7 @@ export function buildPropPicks(
     // No book posts both sides of this line (often an alt line): estimate
     // the market from this book's one price, less a typical 4.5% margin.
     const mk = market.get(`${g.player}|${g.statType}|${g.line}`) ?? oneSidedMarket(g.overPrice, g.underPrice);
-    const pOver = mk === undefined ? pOverModel : blendPropChance(pOverModel, mk, modelWeight);
+    const pOver = mk === undefined ? pOverModel : blendPropChance(pOverModel, mk, weightOf(g.statType));
     const side: "Over" | "Under" = pOver >= 0.5 ? "Over" : "Under";
     const modelWinPct = side === "Over" ? pOver : 1 - pOver;
     const modelOnly = side === "Over" ? pOverModel : 1 - pOverModel;
@@ -632,7 +635,9 @@ export function buildPropPicks(
 
     const matchup = opponentThisWeek.get(avg.team);
     const marketSide = mk === undefined ? null : side === "Over" ? mk : 1 - mk;
-    const trust = avg.values ? propTrust("nfl", modelOnly, trustFeatures(avg.values, g.line, side), marketSide ?? americanToImpliedProb(price)) : undefined;
+    const trust = avg.values
+      ? calibrateTrust(propTrust("nfl", modelOnly, trustFeatures(avg.values, g.line, side), marketSide ?? americanToImpliedProb(price)), trustShift)
+      : undefined;
     if (trust && avg.windFactor !== undefined) {
       trust.reasons.push(`Windy game forecast: projection trimmed ${Math.round((1 - avg.windFactor) * 100)}%`);
     }

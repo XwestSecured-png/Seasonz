@@ -69,7 +69,7 @@ import {
   computeDefensiveProjections,
 } from "./props-model";
 import { getTeamByFullName } from "./team-colors";
-import { getModelWeights, weightFor } from "./model-weights";
+import { getModelWeights, weightFor, propWeightFn, trustShiftFor } from "./model-weights";
 import { projectTouchdowns, impliedPoints } from "./td-model";
 import { buildScoringBoard, saveScoringBoard } from "./scoring-board";
 import { gradePropLog, logPropPicks } from "./prop-log";
@@ -1165,7 +1165,8 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
             .map((r) => `${r.team}|${r.player}`)
         );
         const propWeight = weightFor(await getModelWeights().catch(() => ({})), "prop:nfl");
-        const picks = buildPropPicks(allProps, averages, schedule, week, unavailable, propWeight);
+        const weightStore = await getModelWeights().catch(() => ({}));
+        const picks = buildPropPicks(allProps, averages, schedule, week, unavailable, propWeightFn(weightStore, "nfl"), trustShiftFor(weightStore, "nfl"));
 
         // This week's book-line picks only: the model-only rows (anytime TD,
         // turnovers, defense) written by the modelProps stage stay. Deleting

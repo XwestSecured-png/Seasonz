@@ -198,7 +198,64 @@ export function signalCal(sport: string, rows: SignalRow[], stats: StatDef[], te
   if (sport === "nba" || sport === "wnba" || sport === "ncaab") {
     const started = new Set<number>();
     for (const l of byGameTeam.values()) l.slice(0, 5).forEach((r) => started.add(r.id));
-    const M = [0.85, 0.9, 0.95, 1, 1.05, 1.1, 1.15, 1.2, 1.3];
+    const M = [0.85, 0.9, 0.95, 1, 1.05, 1.1, 1.15, 1.2, 1.3, 1.4];
+    // Deployable version (known before tip from the injury report): a usual
+    // starter is missing, so the bench player at his position with the most
+    // recent minutes moves up. Box-score absence stands in for "listed Out".
+    const grp = (p: string | null) => {
+      const x = (p ?? "").toUpperCase();
+      return x.startsWith("C") ? "C" : x.startsWith("G") || x === "PG" || x === "SG" ? "G" : "F";
+    };
+    const teamGames = new Map<string, { gameId: number; at: number }[]>();
+    for (const [k, l] of byGameTeam) {
+      const [g, t] = k.split("|");
+      (teamGames.get(t) ?? teamGames.set(t, []).get(t)!).push({ gameId: +g, at: l[0].at });
+    }
+    for (const l of teamGames.values()) l.sort((a, b) => a.at - b.at);
+    const history = new Map<string, { gameId: number; start: boolean; min: number }[]>();
+    const posOf = new Map<string, string>();
+    for (const r of rows) if (r.position) posOf.set(r.player, grp(r.position));
+    const backups = new Set<number>(); // row ids of promoted backups
+    for (const [team, tg] of teamGames) {
+      for (let gi = 0; gi < tg.length; gi++) {
+        const rowsHere = byGameTeam.get(`${tg[gi].gameId}|${team}`) ?? [];
+        const present = new Set(rowsHere.map((r) => r.player));
+        // Usual starters who played one of the team's last 3 games but not this one.
+        const recentIds = new Set(tg.slice(Math.max(0, gi - 3), gi).map((x) => x.gameId));
+        const missing: string[] = [];
+        for (const [key, h] of history) {
+          if (!key.startsWith(`${team}|`)) continue;
+          const pl = key.slice(team.length + 1);
+          if (present.has(pl)) continue;
+          const last10 = h.slice(-10);
+          if (last10.length < 5 || last10.filter((x) => x.start).length < 7 * (last10.length / 10)) continue;
+          if (!last10.some((x) => recentIds.has(x.gameId))) continue;
+          missing.push(pl);
+        }
+        if (missing.length) {
+          const used = new Set<number>();
+          for (const m of missing) {
+            const g = posOf.get(m);
+            const cands = rowsHere
+              .filter((r) => !used.has(r.id) && grp(r.position) === g)
+              .map((r) => {
+                const h = (history.get(`${team}|${r.player}`) ?? []).slice(-10);
+                return { r, rate: h.length ? h.filter((x) => x.start).length / h.length : 1, min: mean(h.map((x) => x.min)), n: h.length };
+              })
+              .filter((c) => c.n >= 5 && c.rate < 0.5)
+              .sort((a, b) => b.min - a.min);
+            if (cands[0]) {
+              backups.add(cands[0].r.id);
+              used.add(cands[0].r.id);
+            }
+          }
+        }
+        for (const r of rowsHere) {
+          const k = `${team}|${r.player}`;
+          (history.get(k) ?? history.set(k, []).get(k)!).push({ gameId: r.gameId, start: started.has(r.id), min: minutesOf(r.stats as Record<string, string>) ?? 0 });
+        }
+      }
+    }
     const K = [0, 0.1, 0.2, 0.3, 0.4, 0.6];
     for (const st of stats) {
       const byPlayer = new Map<string, SignalRow[]>();
@@ -216,6 +273,7 @@ export function signalCal(sport: string, rows: SignalRow[], stats: StatDef[], te
           const s = split(r);
           const rate = mean(l.slice(Math.max(0, i - 10), i).map((x) => (started.has(x.id) ? 1 : 0)));
           const nowStart = started.has(r.id);
+          if (backups.has(r.id)) add(`${st.statType}|starterOutBackup|${s}`, M, prior, pm, st.cfg, st.floor, v, (m) => m);
           if (nowStart && rate < 0.5) add(`${st.statType}|promotedToStarter|${s}`, M, prior, pm, st.cfg, st.floor, v, (m) => m);
           else if (!nowStart && rate >= 0.5) add(`${st.statType}|benched|${s}`, M, prior, pm, st.cfg, st.floor, v, (m) => m);
           if (r.homeWinPre !== null && rate >= 0.5 && nowStart) {

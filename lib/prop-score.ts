@@ -6,8 +6,8 @@ import { propProjections } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { propChance, type PropModelConfig, type Projection } from "./prop-dist";
 import { blendPropChance, isPlaceholderLine, marketOverChances, oneSidedMarket } from "./props-model";
-import { propTrust, trustFeatures, type TrustTier } from "./prop-trust";
-import { getModelWeights, weightFor } from "./model-weights";
+import { propTrust, calibrateTrust, trustFeatures, type TrustTier } from "./prop-trust";
+import { getModelWeights, propWeightFn, trustShiftFor } from "./model-weights";
 
 export interface StoredProjection {
   proj: Projection;
@@ -67,7 +67,9 @@ export async function scoreLines(
     .where(and(eq(propProjections.sport, sport), eq(propProjections.season, season), eq(propProjections.week, week)));
   if (projRows.length === 0) return {};
   const proj = new Map(projRows.map((r) => [`${r.player}|${r.statType}`, r.data as StoredProjection]));
-  const weight = weightFor(await getModelWeights().catch(() => ({})), `prop:${sport}`);
+  const store = await getModelWeights().catch(() => ({}));
+  const weightOf = propWeightFn(store, sport);
+  const shift = trustShiftFor(store, sport);
 
   // Per-book Over/Under pairs, for the market consensus.
   const groups = new Map<string, { player: string; statType: string; book: string; line: number; overPrice?: number; underPrice?: number }>();
@@ -103,12 +105,12 @@ export async function scoreLines(
     const pOverModel = propChance(p.proj, l.line, p.cfg, "Over");
     const lk = `${l.player}|${l.statType}|${l.line}`;
     const mk = market.get(lk) ?? oneSided.get(lk);
-    const pOver = mk === undefined ? pOverModel : blendPropChance(pOverModel, mk, weight);
+    const pOver = mk === undefined ? pOverModel : blendPropChance(pOverModel, mk, weightOf(l.statType));
     const chance = side === "Over" ? pOver : 1 - pOver;
     const modelOnly = side === "Over" ? pOverModel : 1 - pOverModel;
     const marketSide = mk === undefined ? null : side === "Over" ? mk : 1 - mk;
     const played = p.values.map((v, i) => ({ v, m: p.minutes?.[i] ?? null })).filter((x) => !p.cfg.useMinutes || x.m === null || x.m > 0);
-    const t = propTrust(sport, modelOnly, trustFeatures(played.map((x) => x.v), l.line, side, played.map((x) => x.m)), marketSide);
+    const t = calibrateTrust(propTrust(sport, modelOnly, trustFeatures(played.map((x) => x.v), l.line, side, played.map((x) => x.m)), marketSide), shift);
     out[key] = { chance, modelOnly, market: marketSide, trust: { tier: t.tier, reasons: t.reasons }, projection: p.proj.mean };
   }
   return out;

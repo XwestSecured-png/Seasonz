@@ -21,6 +21,7 @@ export interface LoggablePick {
   modelOnly?: number;
   market?: number | null;
   gameDate: string | null;
+  trust?: { adj: number } | null;
 }
 
 /** Saves this sync's picks (one row per player/stat/line/side). Rows already graded are never touched. */
@@ -44,6 +45,7 @@ export async function logPropPicks(sport: string, season: number, week: number, 
       modelOnly: p.modelOnly ?? p.modelWinPct,
       market: p.market ?? null,
       final: p.modelWinPct,
+      trustAdj: p.trust?.adj ?? null,
       gameDate: p.gameDate,
       team: p.team,
       loggedAt: new Date(),
@@ -62,6 +64,7 @@ export async function logPropPicks(sport: string, season: number, week: number, 
           modelOnly: sql`excluded.model_only`,
           market: sql`excluded.market`,
           final: sql`excluded.final`,
+          trustAdj: sql`excluded.trust_adj`,
           gameDate: sql`excluded.game_date`,
           team: sql`excluded.team`,
           loggedAt: sql`excluded.logged_at`,

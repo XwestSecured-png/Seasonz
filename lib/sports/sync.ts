@@ -29,7 +29,7 @@ import { replaySportElo, type SportEloGame } from "./sport-elo";
 import { makeTeamResolver } from "./team-match";
 import { gradePropLog, logPropPicks } from "../prop-log";
 import { saveProjections } from "../prop-score";
-import { getModelWeights, weightFor } from "../model-weights";
+import { getModelWeights, weightFor, propWeightFn, trustShiftFor } from "../model-weights";
 import { settlePendingBets } from "../bet-settle";
 import { SPORTS, PRESEASON, PRESEASON_SPORTS, type SportKey } from "./types";
 import {
@@ -982,7 +982,8 @@ export async function runSportSync(
         );
 
         const propWeight = weightFor(await getModelWeights().catch(() => ({})), `prop:${sport}`);
-        const picks = buildSportPropPicks(allProps, averages, schedule, week, unavailable, propWeight);
+        const weightStore = await getModelWeights().catch(() => ({}));
+        const picks = buildSportPropPicks(allProps, averages, schedule, week, unavailable, propWeightFn(weightStore, sport), trustShiftFor(weightStore, sport));
 
         await db
           .delete(sportOddsLines)
