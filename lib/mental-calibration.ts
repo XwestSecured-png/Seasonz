@@ -206,6 +206,7 @@ export function propMentalCal(
   minutesOf: (s: Record<string, string>) => number | null
 ) {
   const before = teamTimeline(sport, games, teamErr);
+  const dbg = { players: 0, kept: 0, noGame: 0, scored: 0 };
   const gameById = new Map(games.map((g) => [g.id, g]));
   const M = [0.9, 0.93, 0.95, 0.97, 1, 1.03, 1.05, 1.07, 1.1];
   const acc: Acc = {};
@@ -250,16 +251,22 @@ export function propMentalCal(
       (byPlayer.get(k) ?? byPlayer.set(k, []).get(k)!).push(r);
     }
     for (const l of byPlayer.values()) {
+      dbg.players++;
       const vals = l.map((r) => st.extract(r.stats) ?? 0);
       const mins = l.map((r) => minutesOf(r.stats));
       if (vals.filter((v) => v > 0).length < vals.length * 0.4) continue;
+      dbg.kept++;
       // Running "clutch" residuals in close-expected games.
       const clutch: number[] = [];
       for (let i = 0; i < l.length; i++) {
         const r = l[i];
         const g = gameById.get(r.gameId);
         const b = before.get(r.gameId);
-        if (!g || !b) continue;
+        if (!g || !b) {
+          dbg.noGame++;
+          continue;
+        }
+        if (i >= 8) dbg.scored++;
         const isHome = r.team === g.homeTeam;
         const p = isHome ? b.prob : 1 - b.prob;
         const tossup = p > 0.42 && p < 0.58;
@@ -319,5 +326,5 @@ export function propMentalCal(
       }
     }
   }
-  return report(acc, 1, 0);
+  return { ...report(acc, 1, 0), _debug: dbg } as Record<string, unknown>;
 }

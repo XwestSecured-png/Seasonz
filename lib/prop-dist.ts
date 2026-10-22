@@ -41,6 +41,12 @@ export interface PropModelConfig {
    * brought 85%+ chances in line with results.
    */
   sdShrinkK?: number;
+  /**
+   * Expected minutes (useMinutes): the last 5 games' minutes pulled toward
+   * the 20-game average with this weight in "games" (1.19.0). 0/undefined =
+   * last 5 only.
+   */
+  minShrinkK?: number;
 }
 
 /** The model before these upgrades: last-5 average, bell curve. */
@@ -100,7 +106,9 @@ export function projectProp(
     const rateRecent = recent.reduce((a, b) => a + b, 0) / Math.max(1, rMin.reduce((a, b) => a + b, 0));
     const rateLong = long.reduce((a, b) => a + b, 0) / Math.max(1, lMin.reduce((a, b) => a + b, 0));
     const rate = (WINDOW * rateRecent + cfg.shrinkK * rateLong) / (WINDOW + cfg.shrinkK);
-    m = rate * recencyMean(rMin);
+    const k = cfg.minShrinkK ?? 0;
+    const lMinMean = lMin.reduce((a, b) => a + b, 0) / Math.max(1, lMin.length);
+    m = rate * (k > 0 ? (WINDOW * recencyMean(rMin) + k * lMinMean) / (WINDOW + k) : recencyMean(rMin));
   } else {
     const r = recencyMean(recent);
     m = (WINDOW * r + cfg.shrinkK * mean(long)) / (WINDOW + cfg.shrinkK);

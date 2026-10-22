@@ -16,6 +16,8 @@ import { returnCal, type BoxRow } from "@/lib/return-calibration";
 import { signalCal, contextCal, type SignalRow } from "@/lib/signal-calibration";
 import { sgpCal } from "@/lib/sgp-calibration";
 import { gameMentalCal, propMentalCal, errorsOf, type MentalGame } from "@/lib/mental-calibration";
+import { minutesCal } from "@/lib/minutes-calibration";
+import { marketRows, marketHoldout, fitMarket } from "@/lib/market-learn";
 import { STAT_EXTRACTORS } from "@/lib/sports/stat-extract";
 import { STDDEV_FLOOR_ABS, propModelFor, minutesOf } from "@/lib/sports/props-model";
 import { NFL_STDDEV_FLOOR_ABS, NFL_PROP_MODEL } from "@/lib/props-model";
@@ -140,6 +142,12 @@ export async function GET(req: NextRequest) {
       )
     );
   }
+  // Market learning check (lib/market-learn.ts): ?marketcal=nba.
+  const marketcal = req.nextUrl.searchParams.get("marketcal");
+  if (marketcal) {
+    const rows = await marketRows(marketcal);
+    return NextResponse.json({ holdout: marketHoldout(rows), all: fitMarket(rows) });
+  }
   // Mental toughness / human error check (lib/mental-calibration.ts): ?mentalcal=nba[&set=games][&stat=Points].
   const mentalcal = req.nextUrl.searchParams.get("mentalcal");
   if (mentalcal) {
@@ -162,6 +170,14 @@ export async function GET(req: NextRequest) {
       const k = `${r.gameId}|${r.team}`;
       const t = teamErr.get(k) ?? [0, 0];
       teamErr.set(k, [t[0] + e[0], t[1] + e[1]]);
+    }
+    if (req.nextUrl.searchParams.get("set") === "minutes") {
+      const only0 = req.nextUrl.searchParams.get("stat");
+      const defs0 = STAT_EXTRACTORS[sport]
+        .filter((e) => !only0 || e.statType === only0)
+        .map((e) => ({ statType: e.statType, extract: e.extract, cfg: propModelFor(sport, e.statType), floor: STDDEV_FLOOR_ABS[sport][e.statType] ?? 1 }));
+      const rows0 = raw.map((r) => ({ gameId: r.gameId, team: r.team, player: r.player, season: r.season, at: r.kickoffAt?.getTime() ?? 0, stats: r.stats as Record<string, string> }));
+      return NextResponse.json({ season, results: minutesCal(sport, games, rows0, defs0, season, minutesOf) });
     }
     if (req.nextUrl.searchParams.get("set") === "games") return NextResponse.json({ season, games: games.length, results: gameMentalCal(sport, games, teamErr, season) });
     const only = req.nextUrl.searchParams.get("stat");

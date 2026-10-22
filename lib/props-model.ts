@@ -602,6 +602,18 @@ export function isPlaceholderLine(book: string, overPrice?: number, underPrice?:
  * the market" check compares against (one book's price, especially an alt
  * line or a pick'em app, isn't the market).
  */
+/**
+ * How much each book counts in the market's no-vig chance (1.19.0). On the
+ * first graded week of the line archive (NBA and NHL props, the same props
+ * compared book vs the rest of the board), prediction markets and exchanges
+ * beat the board: Kalshi log loss .553 vs .593 (NBA) and .469 vs .483 (NHL),
+ * Polymarket .529 vs .538, Novig .555 vs .561 (NHL); Pinnacle matched it.
+ * Weighting them 3x / 2x cut the market's log loss 0.3-0.5% in both leagues
+ * on both halves of the week. Everyone else counts once.
+ */
+export const BOOK_WEIGHT: Record<string, number> = { Kalshi: 3, Polymarket: 3, "Polymarket US": 3, Novig: 2, ProphetX: 2, Pinnacle: 2 };
+export const bookWeight = (book: string) => BOOK_WEIGHT[book] ?? 1;
+
 export function marketOverChances(
   groups: Iterable<{ player: string; statType: string; book: string; line: number; overPrice?: number; underPrice?: number }>
 ): Map<string, number> {
@@ -613,8 +625,9 @@ export function marketOverChances(
     if (o + u < 0.98 || o + u > 1.3) continue; // stale or one-sided board
     const k = `${g.player}|${g.statType}|${g.line}`;
     const a = acc.get(k) ?? { s: 0, n: 0 };
-    a.s += o / (o + u);
-    a.n++;
+    const w = bookWeight(g.book);
+    a.s += w * (o / (o + u));
+    a.n += w;
     acc.set(k, a);
   }
   return new Map([...acc].map(([k, a]) => [k, a.s / a.n]));
