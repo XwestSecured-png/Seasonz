@@ -104,6 +104,8 @@ export interface PlayerSeasonAverage {
   returnAdj?: { kind: "self" | "teammate"; who: string; factor: number };
   /** Wind trim applied to the projection (below 1), when any. */
   windFactor?: number;
+  /** Efficiency regression (1.18.0): factor applied and the plain-English reason. */
+  efficiency?: { factor: number; reason: string };
 }
 
 /**
@@ -125,6 +127,97 @@ export const WIND_TRIM_PER_MPH = 0.015;
  * was tested instead and did worse.
  */
 export const NFL_LEVEL: Record<string, number> = { "Pass Yds": 0.98, "Rec Yds": 0.95, "Rush Yds": 0.95, "Rush + Rec Yds": 0.95, Receptions: 0.96 };
+/**
+ * Efficiency regression (1.18.0). A player's yards come from volume times
+ * efficiency, and efficiency (yards per carry, per target, catch rate,
+ * yards after contact, the offense's yards per play) swings a lot from
+ * season to season, so a player running hot on it tends to come back down
+ * while his volume holds. Measured on nflverse weekly stats 2020-26 (train
+ * 2020-23, test 2024-26), this season's rates vs the league, log loss at
+ * lines around the projection:
+ *   Rush Yds: (yards per carry)^-0.3 x (yards after contact per carry)^-0.1
+ *             -0.6% both splits.
+ *   Rec Yds:  (yards per target)^-0.3 x (catch rate)^-0.3, -0.9% both.
+ *   Receptions: (catch rate)^-0.3, -0.3/-0.4%.
+ *   Pass Yds: (team yards per play)^-0.2 x (yards per attempt)^-0.1, -0.4/-0.6%.
+ * Yards after the catch added nothing on top of yards per target (+0.04% on
+ * the older seasons), and opponent missed tackles / yards-after-contact
+ * allowed added nothing beyond the opponent adjustment, so they're not used.
+ */
+export const EFF_LEAGUE = { ypc: 4.3, ypt: 7.5, catchRate: 0.65, ypa: 6.8 };
+const effX = (r: number) => Math.min(1.6, Math.max(0.6, r));
+export function efficiencyFactor(
+  statType: string,
+  season: PlayerWeekStats[],
+  teamYppRatio: number | undefined,
+  ycoRatio: number | undefined
+): { factor: number; reason: string } | undefined {
+  const sum = (f: (r: PlayerWeekStats) => number | undefined) => season.reduce((a, r) => a + (f(r) ?? 0), 0);
+  let f = 1;
+  const why: string[] = [];
+  const pct = (x: number) => `${x >= 1 ? "+" : ""}${Math.round((x - 1) * 100)}%`;
+  if (statType === "Rush Yds") {
+    const car = sum((r) => r.carries);
+    if (car < 25) return undefined;
+    const ypc = sum((r) => r.rushYds) / car / EFF_LEAGUE.ypc;
+    f *= effX(ypc) ** -0.3;
+    why.push(`${(ypc * EFF_LEAGUE.ypc).toFixed(1)} yards per carry (${pct(ypc)} vs league)`);
+    if (ycoRatio !== undefined) {
+      f *= effX(ycoRatio) ** -0.1;
+      why.push(`yards after contact ${pct(ycoRatio)} vs league`);
+    }
+  } else if (statType === "Rec Yds" || statType === "Receptions") {
+    const tgt = sum((r) => r.targets);
+    const rec = sum((r) => r.receptions);
+    if (rec < 10 || tgt <= 0) return undefined;
+    const cr = rec / tgt / EFF_LEAGUE.catchRate;
+    f *= effX(cr) ** -0.3;
+    if (statType === "Rec Yds") {
+      const ypt = sum((r) => r.recYds) / tgt / EFF_LEAGUE.ypt;
+      f *= effX(ypt) ** -0.3;
+      why.push(`${(ypt * EFF_LEAGUE.ypt).toFixed(1)} yards per target (${pct(ypt)} vs league)`);
+    }
+    why.push(`catch rate ${Math.round(cr * EFF_LEAGUE.catchRate * 100)}%`);
+  } else if (statType === "Pass Yds") {
+    const att = sum((r) => r.attempts);
+    if (att < 60) return undefined;
+    const ypa = sum((r) => r.passYds) / att / EFF_LEAGUE.ypa;
+    f *= effX(ypa) ** -0.1;
+    why.push(`${(ypa * EFF_LEAGUE.ypa).toFixed(1)} yards per attempt`);
+    if (teamYppRatio !== undefined) {
+      f *= effX(teamYppRatio) ** -0.2;
+      why.push(`offense ${pct(teamYppRatio)} yards per play vs league`);
+    }
+  } else return undefined;
+  f = Math.min(1.15, Math.max(0.85, f));
+  if (Math.abs(f - 1) < 0.02) return undefined;
+  return {
+    factor: f,
+    reason: `${f < 1 ? "Running hot" : "Running cold"} on efficiency (${why.join(", ")}): projection ${f < 1 ? "trimmed" : "raised"} ${Math.round(Math.abs(1 - f) * 100)}% since these rates tend to even out`,
+  };
+}
+
+/** Each team's yards per play this season vs the league (QB passing + all rushing over attempts, sacks and carries). */
+export function teamYardsPerPlay(rows: PlayerWeekStats[]): Map<string, number> {
+  const t = new Map<string, { y: number; p: number }>();
+  let Y = 0;
+  let P = 0;
+  for (const r of rows) {
+    const y = (r.position === "QB" ? r.passYds : 0) + r.rushYds;
+    const p = (r.attempts ?? 0) + (r.position === "QB" ? r.sacksTaken : 0) + (r.carries ?? 0);
+    const e = t.get(r.team) ?? { y: 0, p: 0 };
+    e.y += y;
+    e.p += p;
+    t.set(r.team, e);
+    Y += y;
+    P += p;
+  }
+  const lg = P > 0 ? Y / P : 0;
+  const out = new Map<string, number>();
+  for (const [k, e] of t) if (e.p >= 150 && lg > 0) out.set(k, e.y / e.p / lg);
+  return out;
+}
+
 export function windFactor(statType: string, windMph: number | undefined): number {
   if (!windMph || (statType !== "Pass Yds" && statType !== "Rec Yds")) return 1;
   return Math.max(0.7, 1 - WIND_TRIM_PER_MPH * Math.max(0, windMph - 10));
@@ -302,8 +395,20 @@ export function computeSeasonAverages(
   /** Key players back from injury this week (findReturners). */
   returners: Returner[] = [],
   /** Forecast wind (mph) at each team's game this week, outdoor stadiums only. */
-  windByTeam: Map<string, number> = new Map()
+  windByTeam: Map<string, number> = new Map(),
+  /** Yards after contact this season (fetchRushAfterContact); empty = skip that part. */
+  rushAfterContact: Map<string, { carries: number; yco: number }> = new Map()
 ): Map<string, PlayerSeasonAverage> {
+  const ypp = teamYardsPerPlay(rows);
+  let ycoC = 0;
+  let ycoY = 0;
+  for (const v of rushAfterContact.values()) {
+    ycoC += v.carries;
+    ycoY += v.yco;
+  }
+  const ycoLg = ycoC > 0 ? ycoY / ycoC : 0;
+  const seasonRows = new Map<string, PlayerWeekStats[]>();
+  for (const r of rows) (seasonRows.get(r.player) ?? seasonRows.set(r.player, []).get(r.player)!).push(r);
   const returningSelf = new Map(returners.map((r) => [r.player, r]));
   const posOf = new Map<string, string>();
   for (const r of rows) posOf.set(r.player, r.position);
@@ -366,7 +471,9 @@ export function computeSeasonAverages(
       if (mate) returnAdj = { kind: "teammate", who: mate.player, factor: RETURN_TEAMMATE[statType] };
     }
     const wind = windFactor(statType, windByTeam.get(team));
-    const projection = proj.mean * oppFactor * Math.pow(trend, SNAP_TREND_POWER) * (returnAdj?.factor ?? 1) * wind * (NFL_LEVEL[statType] ?? 1);
+    const yco = rushAfterContact.get(`${snapKey(player)}|${team}`);
+    const eff = efficiencyFactor(statType, (seasonRows.get(player) ?? []).filter((r) => r.team === team), ypp.get(team), yco && yco.carries >= 25 && ycoLg > 0 ? yco.yco / yco.carries / ycoLg : undefined);
+    const projection = proj.mean * oppFactor * Math.pow(trend, SNAP_TREND_POWER) * (returnAdj?.factor ?? 1) * wind * (NFL_LEVEL[statType] ?? 1) * (eff?.factor ?? 1);
 
     out.set(key, {
       player,
@@ -382,6 +489,7 @@ export function computeSeasonAverages(
       snapTrend: snapTrend.get(snapKey(player)),
       returnAdj,
       windFactor: wind < 1 ? wind : undefined,
+      efficiency: eff,
     });
   }
   return out;
@@ -649,6 +757,7 @@ export function buildPropPicks(
     const trust = avg.values
       ? calibrateTrust(propTrust("nfl", modelOnly, trustFeatures(avg.values, g.line, side), marketSide ?? americanToImpliedProb(price)), trustShift)
       : undefined;
+    if (trust && avg.efficiency) trust.reasons.push(avg.efficiency.reason);
     if (trust && avg.windFactor !== undefined) {
       trust.reasons.push(`Windy game forecast: projection trimmed ${Math.round((1 - avg.windFactor) * 100)}%`);
     }

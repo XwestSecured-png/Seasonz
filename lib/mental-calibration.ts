@@ -139,14 +139,14 @@ function teamTimeline(sport: SportKey, games: MentalGame[], teamErr: Map<string,
 }
 
 type Acc = Record<string, { grid: number[]; ll: number[]; n: number }>;
-function report(acc: Acc, zero: number) {
+function report(acc: Acc, zero: number, zero2?: number) {
   const out: Record<string, { n: number; best: number; base: number; bestLl: number; gainPct: number }> = {};
   for (const [k, a] of Object.entries(acc)) {
     let bj = 0;
     a.ll.forEach((v, j) => {
       if (v < a.ll[bj]) bj = j;
     });
-    const z = a.grid.indexOf(zero);
+    const z = a.grid.indexOf(zero) >= 0 ? a.grid.indexOf(zero) : a.grid.indexOf(zero2 ?? zero);
     out[k] = {
       n: a.n,
       best: a.grid[bj],
@@ -222,6 +222,24 @@ export function propMentalCal(
       a.n++;
     }
   };
+  // Continuous versions: streak = (last-3 average / 20-game average)^-a;
+  // opponent mistakes = exp(c * opponent's recent error z-score).
+  const SA = [0, 0.05, 0.1, 0.15, 0.2, 0.3];
+  const OC = [-0.08, -0.06, -0.04, -0.02, 0, 0.02, 0.04, 0.06, 0.08];
+  const addF = (key: string, grid: number[], fac: (g: number) => number, prior: number[], mins: (number | null)[] | undefined, cfg: PropModelConfig, floor: number, actual: number) => {
+    const p = projectProp(prior, cfg, floor, mins);
+    if (!p || p.mean <= 0) return;
+    const a = (acc[key] ??= { grid, ll: grid.map(() => 0), n: 0 });
+    for (const d of [-1, -0.5, 0, 0.5, 1]) {
+      const line = Math.max(0.5, Math.floor(p.mean + d * p.sd) + 0.5);
+      const y = actual > line ? 1 : 0;
+      grid.forEach((g, j) => {
+        const f = fac(g);
+        a.ll[j] += ll(y, propChance({ ...p, mean: p.mean * f, sd: cfg.dist === "normal" ? p.sd * Math.sqrt(f) : p.sd }, line, cfg, "Over"));
+      });
+      a.n++;
+    }
+  };
   const thin = sport === "mlb" ? 3 : 1;
   rows.sort((a, b) => a.at - b.at);
   for (const st of stats) {
@@ -285,10 +303,21 @@ export function propMentalCal(
             else if (eb < -0.5) go("oppErrB_lo");
           }
           if (me.errA.length >= 5 && mean(me.errA) > 0.5) go("ownErrA_hi");
+          const pmF = st.cfg.useMinutes ? mins.slice(lo, i) : undefined;
+          if (m > 0) {
+            const x = Math.min(2, Math.max(0.5, (mean(last3) + 0.25 * m) / (1.25 * m)));
+            addF(`${st.statType}|STREAK_a|${s}`, SA, (a) => x ** -a, prior, pmF, st.cfg, st.floor, vals[i]);
+          }
+          if (opp.errA.length >= 5) {
+            const za = Math.max(-2, Math.min(2, mean(opp.errA) * Math.sqrt(opp.errA.length)));
+            const zb = Math.max(-2, Math.min(2, mean(opp.errB) * Math.sqrt(opp.errB.length)));
+            addF(`${st.statType}|OPPERR_A_c|${s}`, OC, (c) => Math.exp(c * za), prior, pmF, st.cfg, st.floor, vals[i]);
+            addF(`${st.statType}|OPPERR_B_c|${s}`, OC, (c) => Math.exp(c * zb), prior, pmF, st.cfg, st.floor, vals[i]);
+          }
         }
         if (tossup && i >= 8) clutch.push(resid);
       }
     }
   }
-  return report(acc, 1);
+  return report(acc, 1, 0);
 }

@@ -363,9 +363,22 @@ export interface SgpResult {
   linkedPairs: number;
   /** Strongest link, for the explanation. */
   strongest: { a: number; b: number; r: number } | null;
+  /** Simulated games behind the correlated number (0 = no links, plain math). */
+  simulations?: number;
 }
 
-export function parlayChance(sport: SgpSport, legs: SgpLeg[], samples = 40000): SgpResult {
+/**
+ * Simulation size (1.18.0): at least 100,000 games, then more in batches
+ * until the estimate's own error is within 0.5% of itself (a 1-in-20 parlay
+ * needs about 760,000), capped at 500,000 so the slip stays quick on a phone. Before it was a flat 40,000,
+ * which left long parlays with a few percent of simulation noise.
+ */
+const SIM_MIN = 100_000;
+const SIM_MAX = 500_000;
+const SIM_BATCH = 50_000;
+const SIM_REL_ERR = 0.005;
+
+export function parlayChance(sport: SgpSport, legs: SgpLeg[], samples?: number): SgpResult {
   const n = legs.length;
   const independent = legs.reduce((p, l) => p * l.prob, 1);
   const R: number[][] = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
@@ -395,7 +408,17 @@ export function parlayChance(sport: SgpSport, legs: SgpLeg[], samples = 40000): 
   const rand = rng(n * 7919 + Math.round(independent * 1e6));
   const z = new Array(n).fill(0);
   let hits = 0;
-  for (let s = 0; s < samples; s++) {
+  let s = 0;
+  const done = () => {
+    if (samples !== undefined) return s >= samples;
+    if (s < SIM_MIN) return false;
+    if (s >= SIM_MAX) return true;
+    const p = hits / s;
+    return p > 0 && Math.sqrt((1 - p) / (p * s)) <= SIM_REL_ERR;
+  };
+  while (!done()) {
+  const end = s + (samples !== undefined ? samples - s : SIM_BATCH);
+  for (; s < end; s++) {
     // Box-Muller normals
     for (let i = 0; i < n; i += 2) {
       const u1 = Math.max(1e-12, rand());
@@ -412,7 +435,8 @@ export function parlayChance(sport: SgpSport, legs: SgpLeg[], samples = 40000): 
     }
     if (all) hits++;
   }
-  return { independent, correlated: hits / samples, linkedPairs, strongest };
+  }
+  return { independent, correlated: hits / s, linkedPairs, strongest, simulations: s };
 }
 
 /** A leg's chance from its American price, with a typical two-way book margin (about 4.5%) taken out. */

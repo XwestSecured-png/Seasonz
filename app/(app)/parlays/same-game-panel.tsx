@@ -66,6 +66,7 @@ export function SameGamePanel({ sport, legs }: { sport: SgpSport; legs: Leg[] })
         {up
           ? "Sportsbooks know this too: a same-game parlay usually pays less than the multiplied odds above, so compare the book's SGP price with the chance here."
           : "Each leg's chance comes from its price with a typical book margin removed; links are measured from past box scores."}
+        {result.simulations ? ` Based on ${result.simulations.toLocaleString()} simulated games.` : ""}
       </div>
     </div>
   );

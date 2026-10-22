@@ -25,6 +25,7 @@ import {
   fetchDefPlayerWeekStats,
   fetchAllRegSeasonGames,
   fetchTeamWeekStats,
+  fetchRushAfterContact,
 } from "./nflverse";
 import { settlePendingBets } from "./bet-settle";
 import { recordNflReturns } from "./injury-returns";
@@ -1151,7 +1152,8 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
           windByTeam.set(g.home, g.wind);
           windByTeam.set(g.away, g.wind);
         }
-        const averages = computeSeasonAverages(playerStats, schedule, week, priorStats, snapTrends(snaps), returners, windByTeam);
+        const rushAfterContact = await fetchRushAfterContact(season).catch(() => new Map<string, { carries: number; yco: number }>());
+        const averages = computeSeasonAverages(playerStats, schedule, week, priorStats, snapTrends(snaps), returners, windByTeam, rushAfterContact);
 
         // A player marked OUT or DOUBTFUL for this game shouldn't get a prop
         // pick at all — their season stats say nothing about a game they

@@ -198,6 +198,10 @@ export interface PlayerWeekStats {
   // Opportunities, for the touchdown model (lib/td-model.ts).
   carries?: number;
   targets?: number;
+  /** Pass attempts (QBs). */
+  attempts?: number;
+  /** Receiving yards after the catch. */
+  recYac?: number;
   passTds?: number;
   // Touchdowns scored BY this player (rushing + receiving only — not
   // passing, since "anytime TD scorer" props are about the player crossing
@@ -248,6 +252,8 @@ export async function fetchPlayerWeekStats(season: number): Promise<PlayerWeekSt
       rushRecYds: Number(r.rushing_yards || 0) + Number(r.receiving_yards || 0),
       carries: Number(r.carries || 0),
       targets: Number(r.targets || 0),
+      attempts: Number(r.attempts || 0),
+      recYac: Number(r.receiving_yards_after_catch || 0),
       passTds: Number(r.passing_tds || 0),
       rushingTds: Number(r.rushing_tds || 0),
       receivingTds: Number(r.receiving_tds || 0),
@@ -421,4 +427,22 @@ export async function fetchSnapCounts(season: number): Promise<SnapRow[]> {
   return rows
     .filter((r) => r.game_type === "REG" && Number(r.offense_snaps || 0) > 0)
     .map((r) => ({ week: Number(r.week), team: r.team, player: r.player, offensePct: Number(r.offense_pct || 0) }));
+}
+
+/**
+ * Rushing yards after contact this season (Pro Football Reference via
+ * nflverse), per player: key = lowercase letters of the name + "|" + team.
+ */
+export async function fetchRushAfterContact(season: number): Promise<Map<string, { carries: number; yco: number }>> {
+  const rows = await fetchCsv(`${NFLVERSE_BASE}/pfr_advstats/advstats_week_rush_${season}.csv`);
+  const out = new Map<string, { carries: number; yco: number }>();
+  for (const r of rows) {
+    if (r.game_type && r.game_type !== "REG") continue;
+    const k = `${(r.pfr_player_name ?? "").toLowerCase().replace(/[^a-z]/g, "")}|${r.team}`;
+    const t = out.get(k) ?? { carries: 0, yco: 0 };
+    t.carries += Number(r.carries || 0);
+    t.yco += Number(r.rushing_yards_after_contact || 0);
+    out.set(k, t);
+  }
+  return out;
 }
