@@ -33,6 +33,51 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.18.0",
+    date: "2026-10-22",
+    title: "Efficiency, streaks and opponent mistakes",
+    summary: "Props now account for players running hot or cold on efficiency, streaks that tend to even out, and opponents who rarely make mistakes. Same-game parlays run up to 500,000 simulations.",
+    changes: [
+      {
+        kind: "improved",
+        title: "NFL: yards per carry, per target, per play and after contact",
+        whatChanged:
+          "A player's yards are volume times efficiency, and efficiency swings a lot. A back averaging well above the league in yards per carry or yards after contact, a receiver with a high catch rate or yards per target, or a QB on a hot offense (yards per play) usually comes back toward normal while his volume holds. Projections now lean that way. Tested on 2020-23 and checked on 2024-26: 0.4-0.9% more accurate.",
+        whatItMeans: "Fewer Overs on players riding an unsustainable efficiency run, more on volume players who've been unlucky. The trust details say 'Running hot/cold on efficiency' with the numbers.",
+        href: "/props",
+      },
+      {
+        kind: "improved",
+        title: "Hot and cold streaks",
+        whatChanged:
+          "After 3 big games, the next one tends to come in lower than the projection said, and after 3 quiet ones, higher. Projections now correct for that in the NFL (passing and receiving), NBA, WNBA, NHL and MLB (hits, batter strikeouts, earned runs), at strengths measured on two seasons.",
+        whatItMeans: "Less chasing of the hot hand. The trust details say 'Hot streak' or 'Cold streak' when it applies.",
+        href: "/props",
+      },
+      {
+        kind: "improved",
+        title: "Basketball: opponents who rarely turn it over",
+        whatChanged: "Steals, blocks, threes, assists and points are trimmed a little against teams that rarely turn the ball over (and raised against sloppy ones), based on each opponent's last 10 games.",
+        whatItMeans: "Better steals and points lines against careful teams.",
+        href: "/props?sport=nba",
+      },
+      {
+        kind: "improved",
+        title: "More same-game parlay simulations",
+        whatChanged: "Same-game parlays now simulate at least 100,000 games and keep going until the answer is precise to within 0.5% of itself (up to 500,000). Before it was a flat 40,000, which left long parlays with a few percent of noise. The slip shows how many games were simulated.",
+        whatItMeans: "Steadier same-game parlay chances, especially for 4+ legs.",
+        href: "/parlays",
+      },
+      {
+        kind: "improved",
+        title: "What we tested and didn't use",
+        whatChanged:
+          "\"Clutch\" records and mental toughness: teams and players who did well in close games did NOT keep doing so. Their next close games were average or worse, in every sport, so a close-game record is luck, not a trait. Bouncing back after a loss, a blowout, or a bad game: no reliable effect. Human errors: NFL turnovers and penalties were already in the game model; opponent missed tackles, yards after catch, basketball fouls, and hockey giveaways and penalty minutes added nothing on top of what's already there.",
+        whatItMeans: "The model ignores these on purpose, because the data says they don't predict the next game.",
+      },
+    ],
+  },
+  {
     version: "1.17.1",
     date: "2026-10-20",
     title: "Home, road and back-to-backs",

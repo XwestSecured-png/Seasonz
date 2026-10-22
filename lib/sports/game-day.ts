@@ -29,6 +29,8 @@ export interface GameDayContext {
   backups?: Map<string, string>;
   /** Per team this week: playing at home, and on the second night of a back-to-back. */
   venue?: Map<string, { home: boolean; b2b: boolean }>;
+  /** Basketball: this week's opponent's recent turnover rate (z-score, last 10 games, scaled by sqrt(games)), keyed by the team facing them. */
+  oppTurnovers?: Map<string, number>;
 }
 
 export interface GameDayRow {
@@ -85,6 +87,7 @@ export function buildGameDayContext(
       ctx.venue.set(team, { home, b2b: prev > 0 && kick - prev < 30 * 3600_000 });
     }
   }
+  if (sport === "nba" || sport === "wnba") ctx.oppTurnovers = opponentTurnovers(weekGames, rows);
   if (sport === "mlb") {
     // Opposing probable starters.
     const starts = rows.filter((r) => "IP" in r.stats && innings(r.stats.IP) >= 3);
@@ -266,6 +269,44 @@ const CONTEXT: Partial<Record<string, Record<string, { away?: number; home?: num
   wnba: { Points: { away: 0.95 }, Rebounds: { away: 0.97 } },
 };
 
+/**
+ * Opponent mistakes (1.18.0): a team that rarely turns the ball over gives
+ * up fewer steals, fast-break points and threes. Factor = exp(c * z), z =
+ * the opponent's turnovers over its last 10 games vs the league. Measured
+ * in /api/health/insights?mentalcal=wnba|nba on last season and this one
+ * (WNBA both, NBA last season); halved from the fitted strength because the
+ * opponent adjustment already catches part of it. Fouls and hockey
+ * giveaways/penalty minutes showed nothing consistent.
+ */
+const OPP_TO_C: Record<string, number> = { Steals: 0.04, Blocks: 0.03, "3-Pointers Made": 0.02, Assists: 0.02, Points: 0.02, Turnovers: -0.03 };
+
+function opponentTurnovers(weekGames: WeekGame[], rows: GameDayRow[]): Map<string, number> {
+  const tg = new Map<string, { team: string; t: number; to: number }>();
+  for (const r of rows) {
+    const k = `${r.gameId}|${r.team}`;
+    const e = tg.get(k) ?? tg.set(k, { team: r.team, t: r.t, to: 0 }).get(k)!;
+    e.to += N(r.stats.TO);
+  }
+  const all = [...tg.values()].map((x) => x.to);
+  const m = all.reduce((a, b) => a + b, 0) / Math.max(1, all.length);
+  const sd = Math.sqrt(all.reduce((a, b) => a + (b - m) ** 2, 0) / Math.max(1, all.length - 1)) || 1;
+  const byTeam = new Map<string, { t: number; to: number }[]>();
+  for (const x of tg.values()) (byTeam.get(x.team) ?? byTeam.set(x.team, []).get(x.team)!).push(x);
+  const z = new Map<string, number>();
+  for (const [team, l] of byTeam) {
+    const last = l.sort((a, b) => a.t - b.t).slice(-10);
+    if (last.length < 5) continue;
+    const mz = last.reduce((a, x) => a + (x.to - m) / sd, 0) / last.length;
+    z.set(team, Math.max(-2, Math.min(2, mz * Math.sqrt(last.length))));
+  }
+  const out = new Map<string, number>();
+  for (const g of weekGames) {
+    if (z.has(g.awayTeam) && !out.has(g.homeTeam)) out.set(g.homeTeam, z.get(g.awayTeam)!);
+    if (z.has(g.homeTeam) && !out.has(g.awayTeam)) out.set(g.awayTeam, z.get(g.homeTeam)!);
+  }
+  return out;
+}
+
 const PITCHER_K_POW: Record<string, number> = { "Strikeouts (Batter)": 0.45 };
 const PITCHER_H_POW: Record<string, number> = { Hits: 0.25, "Runs Scored": 0.4, RBIs: 0.45, "Home Runs": 0.35 };
 const PARK_POW: Record<string, number> = { Hits: 0.55, "Home Runs": 0.4, RBIs: 0.45, "Runs Scored": 0.4 };
@@ -293,6 +334,12 @@ export function gameDayFactor(ctx: GameDayContext | undefined, team: string, sta
   if (replacing && BACKUP_BOOST[statType]) {
     f *= BACKUP_BOOST[statType];
     why.push(`stepping in for ${replacing} (Out)`);
+  }
+  const oz = ctx.oppTurnovers?.get(team);
+  if (oz !== undefined && OPP_TO_C[statType]) {
+    const x = Math.exp(OPP_TO_C[statType] * oz);
+    if (Math.abs(x - 1) >= 0.04) why.push(oz > 0 ? "opponent turns it over a lot" : "opponent rarely turns it over");
+    f *= x;
   }
   const op = ctx.oppPitcher?.get(team);
   if (op) {

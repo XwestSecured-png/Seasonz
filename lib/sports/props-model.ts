@@ -10,7 +10,7 @@ import { gameDayFactor, type GameDayContext } from "./game-day";
 import { propTrust, calibrateTrust, trustFeatures, type Trust } from "../prop-trust";
 import type { PropOutcome } from "../odds";
 import { winProbability, americanToImpliedProb, MIN_PROP_EDGE, NFL_PROP_MODEL, isPlaceholderLine, marketOverChances, blendPropChance, oneSidedMarket, PROP_MODEL_WEIGHT_DEFAULT } from "../props-model";
-import { projectProp, propChance, LEGACY_PROP_MODEL, type PropModelConfig, type Projection } from "../prop-dist";
+import { projectProp, propChance, LEGACY_PROP_MODEL, streakFactor, streakReason, type PropModelConfig, type Projection } from "../prop-dist";
 import { MIN_MODEL_WIN_PCT } from "../confidence";
 import { STAT_EXTRACTORS } from "./stat-extract";
 import type { SportKey } from "./types";
@@ -254,6 +254,8 @@ export interface SportPlayerSeasonAverage {
   returnAdj?: { kind: "self" | "teammate"; who: string; factor: number };
   /** Game-day adjustment (opposing pitcher, park, opponent strength), when it moved the number 5%+. */
   gameDayReason?: string;
+  /** Streak correction applied (only when 3%+). */
+  streak?: number;
 }
 
 /** A key player back from injury (lib/injury-returns.ts), with when he came off the Out list. */
@@ -350,6 +352,20 @@ function computeOpponentAllowedFactors(
   return factors;
 }
 
+/**
+ * Hot and cold streaks even out (1.18.0, lib/prop-dist.ts streakFactor).
+ * Fitted per stat on last season and this one in the app's box scores
+ * (/api/health/insights?mentalcal=<sport>), kept only where both seasons
+ * agreed: log loss -0.1 to -0.4% (NBA's current season agreed but is small).
+ * College sports and stats with no agreement are left alone.
+ */
+export const STREAK_POW: Partial<Record<SportKey, Record<string, number>>> = {
+  nhl: { Assists: 0.15, Goals: 0.2, Points: 0.1 },
+  wnba: { Points: 0.1, Rebounds: 0.1, Turnovers: 0.1, "Pts+Reb": 0.15, "Pts+Reb+Ast": 0.15, "Reb+Ast": 0.15 },
+  nba: { Points: 0.15, Rebounds: 0.15, Turnovers: 0.1, "Pts+Reb": 0.2, "Pts+Reb+Ast": 0.15, "Reb+Ast": 0.2 },
+  mlb: { Hits: 0.1, "Strikeouts (Batter)": 0.15, "Earned Runs": 0.15 },
+};
+
 /** Same reasoning as lib/props-model.ts's computeSeasonAverages, generalized over this sport's STAT_EXTRACTORS. */
 export function computeSportSeasonAverages(
   sport: SportKey,
@@ -425,7 +441,8 @@ export function computeSportSeasonAverages(
       if (mate) returnAdj = { kind: "teammate", who: mate.player, factor: mateF[statType] };
     }
     const gd = gameDayFactor(gameDay, team, statType, player, sport);
-    const projection = proj.mean * oppFactor * (returnAdj?.factor ?? 1) * gd.factor;
+    const streak = streakFactor(chrono.map((g) => g.value), STREAK_POW[sport]?.[statType]);
+    const projection = proj.mean * oppFactor * (returnAdj?.factor ?? 1) * gd.factor * streak;
 
     out.set(key, {
       player,
@@ -441,6 +458,7 @@ export function computeSportSeasonAverages(
       minutes: chrono.map((g) => g.min),
       returnAdj,
       gameDayReason: gd.reason ?? undefined,
+      streak: Math.abs(streak - 1) >= 0.03 ? streak : undefined,
     });
   }
   return out;
@@ -542,6 +560,7 @@ export function buildSportPropPicks(
           )
         : undefined;
     if (trust && avg.gameDayReason) trust.reasons.push(avg.gameDayReason);
+    if (trust && avg.streak) trust.reasons.push(streakReason(avg.streak));
     if (trust && avg.returnAdj) {
       trust.reasons.push(
         avg.returnAdj.kind === "self"
