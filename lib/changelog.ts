@@ -33,6 +33,53 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.19.0",
+    date: "2026-10-22",
+    title: "Minutes first, sharper market, and a model that learns",
+    summary: "Basketball props now start from expected minutes, the market number leans on the sharpest books, and the app re-learns the market's Over bias and how hard to lean on its own adjustments every day.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Basketball: minutes first",
+        whatChanged:
+          "Every NBA and WNBA prop (including Pts+Reb+Ast and the other combos) is now per-minute production times expected minutes, and expected minutes blend the last 5 games with the last 20 instead of the last 5 alone. One short or long night no longer swings a player's whole projection. Checked on every box score of the last two seasons: points 0.3-0.5% more accurate, rebounds 0.6-0.8%.",
+        whatItMeans: "Steadier projections after blowouts, foul trouble or a single big-minutes game.",
+        href: "/props?sport=nba",
+      },
+      {
+        kind: "improved",
+        title: "The sharpest books count more",
+        whatChanged:
+          "We graded every prop line from the past week, book by book, on the same props. Prediction markets and exchanges (Kalshi, Polymarket, Novig, ProphetX) and Pinnacle were the most accurate, so they now count 2-3x in the market's number. That made the market number 0.3-0.5% more accurate in the NBA and NHL.",
+        whatItMeans: "The 'market' half of every prop chance is a better starting point.",
+        href: "/props",
+      },
+      {
+        kind: "new",
+        title: "Learns the Over bias and line moves every day",
+        whatChanged:
+          "Bettors like Overs, so books shade them: last week NBA Overs priced at 47% hit 45%. Every night the app now re-fits that bias per sport from its own graded line archive and moves it in gradually. It also tracks whether props that moved between open and close keep moving; the first week was mixed, so that part waits for more data (1,500 graded player-games) before it's used.",
+        whatItMeans: "Slightly more Unders where the market overprices Overs, and the correction grows or shrinks with the evidence.",
+        href: "/props",
+      },
+      {
+        kind: "new",
+        title: "Learns how hard to lean on its own adjustments",
+        whatChanged:
+          "Every pick now logs its chance with and without the matchup, game-day, efficiency and streak adjustments. Once 100+ player-games are graded, the app fits how strongly those adjustments should count (softer or stronger) per sport and keeps re-fitting it nightly.",
+        whatItMeans: "If the adjustments over- or under-react in real results, the model corrects itself.",
+        href: "/props",
+      },
+      {
+        kind: "improved",
+        title: "Tested and not used",
+        whatChanged:
+          "The game's over/under (pace) as a player-prop factor didn't hold up across both seasons in the NBA, WNBA or NHL, and hockey ice time didn't beat the current per-game projection. College football didn't have enough box scores per player to test the newest factors yet.",
+        whatItMeans: "Nothing changes there until the data supports it.",
+      },
+    ],
+  },
+  {
     version: "1.18.0",
     date: "2026-10-22",
     title: "Efficiency, streaks and opponent mistakes",

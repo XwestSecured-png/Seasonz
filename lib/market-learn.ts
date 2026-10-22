@@ -23,6 +23,8 @@ import { bookWeight, isPlaceholderLine, americanToImpliedProb } from "./props-mo
 
 export const MKT_MIN_N = 300;
 export const MKT_PRIOR_N = 1500;
+/** Line-move continuation is noisier (first week: helped on one half, hurt on the other), so it waits for more graded player-games. */
+export const MKT_MOVE_MIN_N = 1500;
 
 const clampP = (p: number) => Math.min(0.995, Math.max(0.005, p));
 const logit = (p: number) => Math.log(clampP(p) / (1 - clampP(p)));
@@ -136,7 +138,8 @@ export function fitMarket(rows: MarketRow[]): MarketFit {
       if (v < best.v - 1e-12) best = { b: +b.toFixed(2), m: +m.toFixed(1), v };
     }
   const s = n >= MKT_MIN_N ? n / (n + MKT_PRIOR_N) : 0;
-  return { n, bias: +(best.b * s).toFixed(3), move: +(best.m * s).toFixed(3), fitBias: best.b, fitMove: best.m, llBase, llFit: best.v };
+  const sm = n >= MKT_MOVE_MIN_N ? s : 0;
+  return { n, bias: +(best.b * s).toFixed(3), move: +(best.m * sm).toFixed(3), fitBias: best.b, fitMove: best.m, llBase, llFit: best.v };
 }
 
 /** Train on the older half (by game time), score both settings on the newer half. */

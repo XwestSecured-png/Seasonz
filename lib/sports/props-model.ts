@@ -103,28 +103,37 @@ export const PROP_SD_MULT: Record<SportKey, Record<string, number>> = {
 // hard toward the 20-game average; "temper" pulls chances toward 50%
 // where the count model ran a little overconfident. Combos (P+R+A etc.)
 // weren't separately tested and use the Points model.
-const BB_POINTS: PropModelConfig = { dist: "negbin", sdMult: 1.2, shrinkK: 40, useMinutes: true, temper: 0.8 };
+// Expected minutes (1.19.0): last 5 games' minutes pulled toward the
+// 20-game average with weight 5 (minShrinkK). Live check on every NBA and
+// WNBA box score of the last two seasons (/api/health/insights?mentalcal=
+// <sport>&set=minutes): NBA last season Points .5529 -> .5504, Rebounds
+// .5442 -> .5402, 3PM .557 -> .5552; WNBA both seasons Points -0.3/-0.4%,
+// Rebounds -0.7/-0.6%. Combos switched to per-minute too (WNBA R+A .5274 ->
+// .5244, NBA P+R .5318 -> .5288 this season). Hockey ice time and a
+// game-total (pace) factor didn't hold up across both seasons.
+const MIN_K = 5;
+const BB_POINTS: PropModelConfig = { dist: "negbin", sdMult: 1.2, shrinkK: 40, useMinutes: true, temper: 0.8, minShrinkK: MIN_K };
 const BASKETBALL_PROP_MODEL: Record<string, PropModelConfig> = {
   Points: BB_POINTS,
-  Rebounds: { dist: "poisson", sdMult: 1.1, shrinkK: 40, useMinutes: true, temper: 0.8 },
-  Assists: { dist: "poisson", sdMult: 1.1, shrinkK: 40, useMinutes: true, temper: 0.8 },
-  "3-Pointers Made": { dist: "poisson", sdMult: 1.3, shrinkK: 40, useMinutes: true, temper: 0.88 },
-  Steals: { dist: "poisson", sdMult: 1.5, shrinkK: 40, useMinutes: true, temper: 0.88 },
-  Blocks: { dist: "poisson", sdMult: 1.5, shrinkK: 40, useMinutes: true, temper: 0.88 },
-  Turnovers: { dist: "poisson", sdMult: 1.4, shrinkK: 40, useMinutes: true, temper: 0.88 },
+  Rebounds: { dist: "poisson", sdMult: 1.1, shrinkK: 40, useMinutes: true, temper: 0.8, minShrinkK: MIN_K },
+  Assists: { dist: "poisson", sdMult: 1.1, shrinkK: 40, useMinutes: true, temper: 0.8, minShrinkK: MIN_K },
+  "3-Pointers Made": { dist: "poisson", sdMult: 1.3, shrinkK: 40, useMinutes: true, temper: 0.88, minShrinkK: MIN_K },
+  Steals: { dist: "poisson", sdMult: 1.5, shrinkK: 40, useMinutes: true, temper: 0.88, minShrinkK: MIN_K },
+  Blocks: { dist: "poisson", sdMult: 1.5, shrinkK: 40, useMinutes: true, temper: 0.88, minShrinkK: MIN_K },
+  Turnovers: { dist: "poisson", sdMult: 1.4, shrinkK: 40, useMinutes: true, temper: 0.88, minShrinkK: MIN_K },
   // Combos (1.15.1, live check on NBA and WNBA box scores, lines out to
   // 2 sd): per-game negative binomial with a light 20-game pull beat the
   // Points model in both leagues. NBA PRA .4326 -> .4304, P+R .4446 ->
   // .4433, R+A .4371 -> .4363; WNBA PRA .4264 -> .4251, P+R .443 -> .442.
-  "Pts+Reb+Ast": { dist: "negbin", sdMult: 1.2, shrinkK: 5, useMinutes: false, temper: 0.8 },
-  "Pts+Reb": { dist: "negbin", sdMult: 1.2, shrinkK: 5, useMinutes: false, temper: 0.8 },
-  "Reb+Ast": { dist: "negbin", sdMult: 1.2, shrinkK: 5, useMinutes: false, temper: 0.88 },
+  "Pts+Reb+Ast": { dist: "negbin", sdMult: 1.2, shrinkK: 5, useMinutes: true, temper: 0.8, minShrinkK: MIN_K },
+  "Pts+Reb": { dist: "negbin", sdMult: 1.2, shrinkK: 5, useMinutes: true, temper: 0.8, minShrinkK: MIN_K },
+  "Reb+Ast": { dist: "negbin", sdMult: 1.2, shrinkK: 5, useMinutes: true, temper: 0.88, minShrinkK: MIN_K },
 };
 /** The model per sport and stat; anything not listed keeps the original bell-curve model. */
 export const PROP_MODEL: Record<SportKey, Record<string, PropModelConfig>> = {
   nba: BASKETBALL_PROP_MODEL,
   // WNBA points: a bell curve on per-minute scoring fit better (1.15.1: .4718 -> .4687).
-  wnba: { ...BASKETBALL_PROP_MODEL, Points: { dist: "normal", sdMult: 1.2, shrinkK: 40, useMinutes: true } },
+  wnba: { ...BASKETBALL_PROP_MODEL, Points: { dist: "normal", sdMult: 1.2, shrinkK: 40, useMinutes: true, minShrinkK: MIN_K } },
   ncaab: BASKETBALL_PROP_MODEL,
   // College football (live check, 2025-26 box scores): yardage and catches
   // prefer heavier shrinkage than the NFL. Rec Yds .612 -> .603, Rush
