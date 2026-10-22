@@ -15,6 +15,7 @@ import { calibrateStat } from "@/lib/prop-calibration";
 import { returnCal, type BoxRow } from "@/lib/return-calibration";
 import { signalCal, contextCal, type SignalRow } from "@/lib/signal-calibration";
 import { sgpCal } from "@/lib/sgp-calibration";
+import { gameMentalCal, propMentalCal, errorsOf, type MentalGame } from "@/lib/mental-calibration";
 import { STAT_EXTRACTORS } from "@/lib/sports/stat-extract";
 import { STDDEV_FLOOR_ABS, propModelFor, minutesOf } from "@/lib/sports/props-model";
 import { NFL_STDDEV_FLOOR_ABS, NFL_PROP_MODEL } from "@/lib/props-model";
@@ -138,6 +139,37 @@ export async function GET(req: NextRequest) {
         fams
       )
     );
+  }
+  // Mental toughness / human error check (lib/mental-calibration.ts): ?mentalcal=nba[&set=games][&stat=Points].
+  const mentalcal = req.nextUrl.searchParams.get("mentalcal");
+  if (mentalcal) {
+    const sport = mentalcal as SportKey;
+    const season = currentSeasonYear(sport);
+    const games: MentalGame[] = (
+      await db
+        .select()
+        .from(sportGames)
+        .where(and(eq(sportGames.sport, sport), inArray(sportGames.season, [season - 1, season])))
+    ).map((g) => ({ id: g.id, season: g.season, week: g.week, kickoffAt: g.kickoffAt, homeTeam: g.homeTeam, awayTeam: g.awayTeam, homeScore: g.homeScore, awayScore: g.awayScore, isFinal: g.isFinal, neutralSite: g.neutralSite }));
+    const raw = await db
+      .select({ gameId: sportPlayerGameStats.gameId, team: sportPlayerGameStats.team, player: sportPlayerGameStats.player, season: sportPlayerGameStats.season, stats: sportPlayerGameStats.stats, kickoffAt: sportGames.kickoffAt })
+      .from(sportPlayerGameStats)
+      .innerJoin(sportGames, eq(sportGames.id, sportPlayerGameStats.gameId))
+      .where(and(eq(sportPlayerGameStats.sport, sport), inArray(sportPlayerGameStats.season, [season - 1, season]), eq(sportGames.isFinal, true)));
+    const teamErr = new Map<string, [number, number]>();
+    for (const r of raw) {
+      const e = errorsOf(sport, r.stats as Record<string, unknown>);
+      const k = `${r.gameId}|${r.team}`;
+      const t = teamErr.get(k) ?? [0, 0];
+      teamErr.set(k, [t[0] + e[0], t[1] + e[1]]);
+    }
+    if (req.nextUrl.searchParams.get("set") === "games") return NextResponse.json({ season, games: games.length, results: gameMentalCal(sport, games, teamErr, season) });
+    const only = req.nextUrl.searchParams.get("stat");
+    const defs = STAT_EXTRACTORS[sport]
+      .filter((e) => !only || e.statType === only)
+      .map((e) => ({ statType: e.statType, extract: e.extract, cfg: propModelFor(sport, e.statType), floor: STDDEV_FLOOR_ABS[sport][e.statType] ?? 1 }));
+    const rows = raw.map((r) => ({ gameId: r.gameId, team: r.team, player: r.player, season: r.season, at: r.kickoffAt?.getTime() ?? 0, stats: r.stats as Record<string, string> }));
+    return NextResponse.json({ season, rows: rows.length, results: propMentalCal(sport, games, rows, teamErr, defs, season, minutesOf) });
   }
   // Game-day signal check (lib/signal-calibration.ts): ?signalcal=mlb[&stat=Hits].
   const signalcal = req.nextUrl.searchParams.get("signalcal");
