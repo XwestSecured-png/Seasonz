@@ -178,3 +178,28 @@ export function propChance(p: Projection, line: number, cfg: PropModelConfig, si
   const o = t === 1 ? raw : 1 / (1 + Math.exp(-t * Math.log(raw / (1 - raw))));
   return side === "Over" ? o : 1 - o;
 }
+
+/**
+ * Hot and cold streaks even out (1.18.0). The projection already leans on
+ * recent games; measured on every sport's box scores, it leans a little too
+ * far, so after 3 big games the next one comes in lower than projected, and
+ * after 3 quiet ones higher. Factor = (last-3 average vs the 20-game
+ * average, damped)^-a, with `a` fitted per sport and stat (see STREAK_POW in
+ * lib/props-model.ts and lib/sports/props-model.ts). `values` oldest first.
+ */
+export function streakFactor(values: number[], a: number | undefined): number {
+  if (!a || values.length < 8) return 1;
+  const w = values.slice(-20);
+  const m = w.reduce((s, v) => s + v, 0) / w.length;
+  if (!(m > 0)) return 1;
+  const l3 = values.slice(-3).reduce((s, v) => s + v, 0) / 3;
+  const x = Math.min(2, Math.max(0.5, (l3 + 0.25 * m) / (1.25 * m)));
+  return x ** -a;
+}
+
+/** Plain-English note for a streak correction. */
+export function streakReason(f: number): string {
+  return f < 1
+    ? `Hot streak (last 3 games well above his norm): projection trimmed ${Math.round((1 - f) * 100)}% since streaks tend to cool off`
+    : `Cold streak (last 3 games well below his norm): projection raised ${Math.round((f - 1) * 100)}% since slumps tend to end`;
+}

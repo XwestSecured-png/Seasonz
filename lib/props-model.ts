@@ -1,7 +1,7 @@
 import type { PlayerWeekStats, DefensivePlayerWeekStats, ScheduleGame, SnapRow } from "./nflverse";
 import type { PropOutcome } from "./odds";
 import { MIN_MODEL_WIN_PCT } from "./confidence";
-import { projectProp, propChance, type PropModelConfig, type Projection } from "./prop-dist";
+import { projectProp, propChance, type PropModelConfig, type Projection, streakFactor, streakReason } from "./prop-dist";
 import { propTrust, calibrateTrust, trustFeatures, type Trust } from "./prop-trust";
 
 // A one- or two-game season average is too small a sample to trust over a
@@ -106,6 +106,8 @@ export interface PlayerSeasonAverage {
   windFactor?: number;
   /** Efficiency regression (1.18.0): factor applied and the plain-English reason. */
   efficiency?: { factor: number; reason: string };
+  /** Streak correction applied (only when 3%+). */
+  streak?: number;
 }
 
 /**
@@ -144,6 +146,9 @@ export const NFL_LEVEL: Record<string, number> = { "Pass Yds": 0.98, "Rec Yds": 
  * the older seasons), and opponent missed tackles / yards-after-contact
  * allowed added nothing beyond the opponent adjustment, so they're not used.
  */
+/** Streak correction strength (lib/prop-dist.ts streakFactor), measured with the efficiency factors above: log loss -0.15 to -0.3% on top of them. Rush Yds showed none. */
+export const NFL_STREAK_POW: Record<string, number> = { "Pass Yds": 0.2, "Rec Yds": 0.2, Receptions: 0.2 };
+
 export const EFF_LEAGUE = { ypc: 4.3, ypt: 7.5, catchRate: 0.65, ypa: 6.8 };
 const effX = (r: number) => Math.min(1.6, Math.max(0.6, r));
 export function efficiencyFactor(
@@ -473,7 +478,8 @@ export function computeSeasonAverages(
     const wind = windFactor(statType, windByTeam.get(team));
     const yco = rushAfterContact.get(`${snapKey(player)}|${team}`);
     const eff = efficiencyFactor(statType, (seasonRows.get(player) ?? []).filter((r) => r.team === team), ypp.get(team), yco && yco.carries >= 25 && ycoLg > 0 ? yco.yco / yco.carries / ycoLg : undefined);
-    const projection = proj.mean * oppFactor * Math.pow(trend, SNAP_TREND_POWER) * (returnAdj?.factor ?? 1) * wind * (NFL_LEVEL[statType] ?? 1) * (eff?.factor ?? 1);
+    const streak = streakFactor([...sorted].reverse().map((g) => g.value), NFL_STREAK_POW[statType]);
+    const projection = proj.mean * oppFactor * Math.pow(trend, SNAP_TREND_POWER) * (returnAdj?.factor ?? 1) * wind * (NFL_LEVEL[statType] ?? 1) * (eff?.factor ?? 1) * streak;
 
     out.set(key, {
       player,
@@ -490,6 +496,7 @@ export function computeSeasonAverages(
       returnAdj,
       windFactor: wind < 1 ? wind : undefined,
       efficiency: eff,
+      streak: Math.abs(streak - 1) >= 0.03 ? streak : undefined,
     });
   }
   return out;
@@ -758,6 +765,7 @@ export function buildPropPicks(
       ? calibrateTrust(propTrust("nfl", modelOnly, trustFeatures(avg.values, g.line, side), marketSide ?? americanToImpliedProb(price)), trustShift)
       : undefined;
     if (trust && avg.efficiency) trust.reasons.push(avg.efficiency.reason);
+    if (trust && avg.streak) trust.reasons.push(streakReason(avg.streak));
     if (trust && avg.windFactor !== undefined) {
       trust.reasons.push(`Windy game forecast: projection trimmed ${Math.round((1 - avg.windFactor) * 100)}%`);
     }
