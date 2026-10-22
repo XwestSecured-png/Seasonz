@@ -19,6 +19,7 @@ export interface LoggablePick {
   priceAmerican: number;
   modelWinPct: number;
   modelOnly?: number;
+  modelBase?: number;
   market?: number | null;
   gameDate: string | null;
   trust?: { adj: number } | null;
@@ -46,6 +47,7 @@ export async function logPropPicks(sport: string, season: number, week: number, 
       market: p.market ?? null,
       final: p.modelWinPct,
       trustAdj: p.trust?.adj ?? null,
+      modelBase: p.modelBase ?? null,
       gameDate: p.gameDate,
       team: p.team,
       loggedAt: new Date(),
@@ -65,6 +67,7 @@ export async function logPropPicks(sport: string, season: number, week: number, 
           market: sql`excluded.market`,
           final: sql`excluded.final`,
           trustAdj: sql`excluded.trust_adj`,
+          modelBase: sql`excluded.model_base`,
           gameDate: sql`excluded.game_date`,
           team: sql`excluded.team`,
           loggedAt: sql`excluded.logged_at`,

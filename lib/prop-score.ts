@@ -1,6 +1,8 @@
 // Scores every posted prop line (not only the model's picks): the model's
 // chance for each side, blended with the market's no-vig chance the same way
 // the picks are (lib/props-model.ts), plus a trust score and a verdict.
+import { adjustMarketMap } from "./market-adjust";
+import { liveMarketLearn } from "./market-learn";
 import { db } from "@/db";
 import { propProjections } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -82,7 +84,7 @@ export async function scoreLines(
     else g.underPrice = l.priceAmerican;
     groups.set(k, g);
   }
-  const market = marketOverChances(groups.values());
+  const market = adjustMarketMap(marketOverChances(groups.values()), await liveMarketLearn(store as Record<string, { weight: number }>, sport, season, week).catch(() => undefined));
   // Fallback market per line: the best-known single price.
   const oneSided = new Map<string, number>();
   for (const g of groups.values()) {

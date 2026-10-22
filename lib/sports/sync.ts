@@ -7,6 +7,7 @@
 // own follow-up, not invented generically here. See db/schema.ts's
 // "Multi-sport tables" comment and lib/sports/espn.ts's caveat about this
 // being unverified against live ESPN data until the first real Vercel sync.
+import { liveMarketLearn } from "../market-learn";
 import { db } from "@/db";
 import { buildGameDayContext } from "./game-day";
 import { STAT_EXTRACTORS } from "./stat-extract";
@@ -31,7 +32,7 @@ import { replaySportElo, type SportEloGame } from "./sport-elo";
 import { makeTeamResolver } from "./team-match";
 import { gradePropLog, logPropPicks } from "../prop-log";
 import { saveProjections } from "../prop-score";
-import { getModelWeights, weightFor, propWeightFn, trustShiftFor } from "../model-weights";
+import { getModelWeights, weightFor, propWeightFn, trustShiftFor, adjStrengthFor } from "../model-weights";
 import { settlePendingBets } from "../bet-settle";
 import { SPORTS, PRESEASON, PRESEASON_SPORTS, type SportKey } from "./types";
 import {
@@ -997,7 +998,8 @@ export async function runSportSync(
 
         const propWeight = weightFor(await getModelWeights().catch(() => ({})), `prop:${sport}`);
         const weightStore = await getModelWeights().catch(() => ({}));
-        const picks = buildSportPropPicks(allProps, averages, schedule, week, unavailable, propWeightFn(weightStore, sport), trustShiftFor(weightStore, sport));
+        const marketLearn = await liveMarketLearn(weightStore, sport, year, week).catch(() => undefined);
+        const picks = buildSportPropPicks(allProps, averages, schedule, week, unavailable, propWeightFn(weightStore, sport), trustShiftFor(weightStore, sport), marketLearn, adjStrengthFor(weightStore, sport));
 
         await db
           .delete(sportOddsLines)

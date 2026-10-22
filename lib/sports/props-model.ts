@@ -6,6 +6,7 @@
 // bar. The two math primitives that don't depend on any sport-specific
 // field name (winProbability / americanToImpliedProb) are imported from
 // lib/props-model.ts rather than duplicated.
+import { adjustMarketMap, scaleAdjustments, type MarketLearn } from "../market-adjust";
 import { gameDayFactor, type GameDayContext } from "./game-day";
 import { propTrust, calibrateTrust, trustFeatures, type Trust } from "../prop-trust";
 import type { PropOutcome } from "../odds";
@@ -245,6 +246,8 @@ export interface SportPlayerSeasonAverage {
   stdDev: number;
   games: number;
   proj?: Projection;
+  /** Projected mean before the matchup/game-day/efficiency/streak multipliers. */
+  baseMean?: number;
   cfg?: PropModelConfig;
   sport?: SportKey;
   /** Every game's value and minutes, oldest first (for the trust score). */
@@ -452,6 +455,7 @@ export function computeSportSeasonAverages(
       stdDev,
       games: n,
       proj: { ...proj, mean: projection },
+      baseMean: proj.mean,
       cfg,
       sport,
       values: chrono.map((g) => g.value),
@@ -480,6 +484,8 @@ export interface SportPropPick {
   trust?: Trust;
   /** The model's own chance (before the market blend) and the market's no-vig chance for the side. */
   modelOnly?: number;
+  /** Model-only chance with no adjustments (side-oriented). */
+  modelBase?: number;
   market?: number | null;
 }
 
@@ -493,7 +499,11 @@ export function buildSportPropPicks(
   /** Model share of the model/market blend (lib/model-weights.ts, "prop:<sport>"), or one per stat. */
   modelWeight: number | ((statType: string) => number) = PROP_MODEL_WEIGHT_DEFAULT,
   /** Live trust correction (log-odds, lib/model-weights.ts "trust:<sport>"). */
-  trustShift = 0
+  trustShift = 0,
+  /** Learned market bias and line-move continuation (lib/market-learn.ts). */
+  marketLearn?: MarketLearn,
+  /** Learned strength of the projection adjustments (1 = as coded). */
+  adjStrength = 1
 ): SportPropPick[] {
   const weightOf = (stat: string) => (typeof modelWeight === "function" ? modelWeight(stat) : modelWeight);
   const opponentThisWeek = new Map<string, { opponent: string; gameDate: string | null }>();
@@ -517,7 +527,7 @@ export function buildSportPropPicks(
     grouped.set(key, g);
   }
 
-  const market = marketOverChances(grouped.values());
+  const market = adjustMarketMap(marketOverChances(grouped.values()), marketLearn);
   const picks: SportPropPick[] = [];
   for (const g of grouped.values()) {
     if (isPlaceholderLine(g.book, g.overPrice, g.underPrice)) continue;
@@ -529,8 +539,11 @@ export function buildSportPropPicks(
     const projection = avg.average;
     const edgePct = (projection - g.line) / g.line;
     // Count distributions are skewed, so take whichever side the model rates higher.
-    const pOverModel =
+    const pOverAdj =
       avg.proj && avg.cfg ? propChance(avg.proj, g.line, avg.cfg, "Over") : winProbability(avg.average, avg.stdDev, g.line, "Over");
+    const pOverBase = avg.proj && avg.cfg && avg.baseMean !== undefined ? propChance({ ...avg.proj, mean: avg.baseMean }, g.line, avg.cfg, "Over") : pOverAdj;
+    // How hard to lean on the adjustments: learned from graded picks (lib/model-weights.ts "adj:<sport>").
+    const pOverModel = scaleAdjustments(pOverBase, pOverAdj, adjStrength);
     // The final chance blends the model with the market's no-vig chance for
     // this line (see blendPropChance); no market, model alone.
     // No book posts both sides of this line (often an alt line): estimate
@@ -540,6 +553,7 @@ export function buildSportPropPicks(
     const side: "Over" | "Under" = pOver >= 0.5 ? "Over" : "Under";
     const modelWinPct = side === "Over" ? pOver : 1 - pOver;
     const modelOnly = side === "Over" ? pOverModel : 1 - pOverModel;
+    const modelBase = side === "Over" ? pOverBase : 1 - pOverBase;
     if (modelWinPct < MIN_MODEL_WIN_PCT) continue;
 
     const price = side === "Over" ? g.overPrice : g.underPrice;
@@ -581,6 +595,7 @@ export function buildSportPropPicks(
       edgePct,
       modelWinPct,
       modelOnly,
+      modelBase,
       market: marketSide,
       opponent: matchup?.opponent ?? null,
       gameDate: matchup?.gameDate ?? null,

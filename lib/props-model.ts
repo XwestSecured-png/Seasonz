@@ -1,4 +1,5 @@
 import type { PlayerWeekStats, DefensivePlayerWeekStats, ScheduleGame, SnapRow } from "./nflverse";
+import { adjustMarketMap, scaleAdjustments, type MarketLearn } from "./market-adjust";
 import type { PropOutcome } from "./odds";
 import { MIN_MODEL_WIN_PCT } from "./confidence";
 import { projectProp, propChance, type PropModelConfig, type Projection, streakFactor, streakReason } from "./prop-dist";
@@ -95,6 +96,8 @@ export interface PlayerSeasonAverage {
   games: number;
   /** Full projection (distribution shape) and the stat's model settings. */
   proj?: Projection;
+  /** Projected mean before the matchup/game-day/efficiency/streak multipliers. */
+  baseMean?: number;
   cfg?: PropModelConfig;
   /** Every game's value, oldest first (for the trust score). */
   values?: number[];
@@ -490,6 +493,7 @@ export function computeSeasonAverages(
       // This season's games (the 3-game minimum is on these).
       games: Math.min(currentGames.get(player) ?? 0, RECENT_GAMES_WINDOW),
       proj: { ...proj, mean: projection },
+      baseMean: proj.mean,
       cfg,
       values: [...sorted].reverse().map((g) => g.value),
       snapTrend: snapTrend.get(snapKey(player)),
@@ -695,6 +699,8 @@ export interface PropPick {
   trust?: Trust;
   /** The model's own chance (before the market blend) and the market's no-vig chance for the side. */
   modelOnly?: number;
+  /** Model-only chance with no adjustments (side-oriented). */
+  modelBase?: number;
   market?: number | null;
 }
 
@@ -715,7 +721,11 @@ export function buildPropPicks(
   /** Model share of the model/market blend (lib/model-weights.ts, "prop:nfl"), or one per stat. */
   modelWeight: number | ((statType: string) => number) = PROP_MODEL_WEIGHT_DEFAULT,
   /** Live trust correction (log-odds, lib/model-weights.ts "trust:nfl"). */
-  trustShift = 0
+  trustShift = 0,
+  /** Learned market bias and line-move continuation (lib/market-learn.ts). */
+  marketLearn?: MarketLearn,
+  /** Learned strength of the projection adjustments (1 = as coded). */
+  adjStrength = 1
 ): PropPick[] {
   const weightOf = (stat: string) => (typeof modelWeight === "function" ? modelWeight(stat) : modelWeight);
   const opponentThisWeek = new Map<string, { opponent: string; gameDate: string | null }>();
@@ -741,7 +751,7 @@ export function buildPropPicks(
     grouped.set(key, g);
   }
 
-  const market = marketOverChances(grouped.values());
+  const market = adjustMarketMap(marketOverChances(grouped.values()), marketLearn);
   const picks: PropPick[] = [];
   for (const g of grouped.values()) {
     if (isPlaceholderLine(g.book, g.overPrice, g.underPrice)) continue;
@@ -754,8 +764,11 @@ export function buildPropPicks(
     const edgePct = (projection - g.line) / g.line;
     // With a count distribution the likelier side isn't always the side the
     // average is on (skew), so take whichever side the model rates higher.
-    const pOverModel =
+    const pOverAdj =
       avg.proj && avg.cfg ? propChance(avg.proj, g.line, avg.cfg, "Over") : winProbability(avg.average, avg.stdDev, g.line, "Over");
+    const pOverBase = avg.proj && avg.cfg && avg.baseMean !== undefined ? propChance({ ...avg.proj, mean: avg.baseMean }, g.line, avg.cfg, "Over") : pOverAdj;
+    // How hard to lean on the adjustments: learned from graded picks (lib/model-weights.ts "adj:<sport>").
+    const pOverModel = scaleAdjustments(pOverBase, pOverAdj, adjStrength);
     // The final chance blends the model with the market's no-vig chance for
     // this line (see blendPropChance); no market, model alone.
     // No book posts both sides of this line (often an alt line): estimate
@@ -765,6 +778,7 @@ export function buildPropPicks(
     const side: "Over" | "Under" = pOver >= 0.5 ? "Over" : "Under";
     const modelWinPct = side === "Over" ? pOver : 1 - pOver;
     const modelOnly = side === "Over" ? pOverModel : 1 - pOverModel;
+    const modelBase = side === "Over" ? pOverBase : 1 - pOverBase;
     if (modelWinPct < MIN_MODEL_WIN_PCT) continue;
 
     const price = side === "Over" ? g.overPrice : g.underPrice;
@@ -806,6 +820,7 @@ export function buildPropPicks(
       edgePct,
       modelWinPct,
       modelOnly,
+      modelBase,
       market: marketSide,
       opponent: matchup?.opponent ?? null,
       gameDate: matchup?.gameDate ?? null,

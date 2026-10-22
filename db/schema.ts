@@ -1213,6 +1213,8 @@ export const propPickLog = pgTable(
     final: real("final").notNull(),
     /** Trust score's backtested hit chance at log time (for live trust calibration). */
     trustAdj: real("trust_adj"),
+    /** Model-only chance before game-day/efficiency/streak adjustments (for learning how hard to lean on them). */
+    modelBase: real("model_base"),
     gameDate: text("game_date"),
     result: text("result"), // "hit" | "miss" | "push" | "void"; null until graded
     actual: real("actual"),

@@ -18,7 +18,7 @@
 // MIN_N player-games.
 import { db } from "@/db";
 import { lineArchive } from "@/db/schema";
-import { and, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull } from "drizzle-orm";
 import { bookWeight, isPlaceholderLine, americanToImpliedProb } from "./props-model";
 
 export const MKT_MIN_N = 300;
@@ -99,7 +99,7 @@ export async function marketRows(sport: string): Promise<MarketRow[]> {
       result: lineArchive.result,
     })
     .from(lineArchive)
-    .where(and(eq(lineArchive.sport, sport), eq(lineArchive.market, "prop"), inArray(lineArchive.result, ["hit", "miss"]), isNotNull(lineArchive.closePrice)));
+    .where(and(eq(lineArchive.sport, sport), eq(lineArchive.market, "prop"), inArray(lineArchive.result, ["hit", "miss"]), isNotNull(lineArchive.closePrice), gt(lineArchive.closeAt, new Date(Date.now() - 75 * 86_400_000))));
   return consensusRows(rows);
 }
 
@@ -189,16 +189,13 @@ export async function openingMarket(sport: string, season: number, week: number)
   return new Map([...acc].map(([k, a]) => [k, a.s / a.w]));
 }
 
-export interface MarketLearn {
-  bias: number;
-  move: number;
-  open?: Map<string, number>;
-}
+export { adjustMarket, type MarketLearn } from "./market-adjust";
 
-/** The market's Over chance after the learned bias and line-move continuation. */
-export function adjustMarket(close: number, key: string, ml: MarketLearn | undefined): number {
-  if (!ml || (ml.bias === 0 && ml.move === 0)) return close;
-  const open = ml.open?.get(key);
-  const mv = open === undefined ? 0 : logit(close) - logit(open);
-  return clampP(sigmoid(logit(close) + ml.bias + ml.move * Math.max(-1, Math.min(1, mv))));
+/** Live market adjustments for a sport (stored "mkt:<sport>:bias" / ":move"), with this week's opening prices. */
+export async function liveMarketLearn(store: Record<string, { weight: number; applied?: boolean }>, sport: string, season: number, week: number): Promise<import("./market-adjust").MarketLearn | undefined> {
+  const bias = store[`mkt:${sport}:bias`]?.weight ?? 0;
+  const move = store[`mkt:${sport}:move`]?.weight ?? 0;
+  if (!bias && !move) return undefined;
+  const open = move ? await openingMarket(sport, season, week).catch(() => new Map<string, number>()) : undefined;
+  return { bias: Math.max(-0.3, Math.min(0.3, bias)), move: Math.max(-0.5, Math.min(1, move)), open };
 }

@@ -1,4 +1,5 @@
 import { MODEL_FAIR_BOOK, fairAmerican } from "./football-markets";
+import { liveMarketLearn } from "./market-learn";
 import { db } from "@/db";
 import {
   games,
@@ -70,7 +71,7 @@ import {
   computeDefensiveProjections,
 } from "./props-model";
 import { getTeamByFullName } from "./team-colors";
-import { getModelWeights, weightFor, propWeightFn, trustShiftFor } from "./model-weights";
+import { getModelWeights, weightFor, propWeightFn, trustShiftFor, adjStrengthFor } from "./model-weights";
 import { projectTouchdowns, impliedPoints } from "./td-model";
 import { buildScoringBoard, saveScoringBoard } from "./scoring-board";
 import { gradePropLog, logPropPicks } from "./prop-log";
@@ -1168,7 +1169,8 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         );
         const propWeight = weightFor(await getModelWeights().catch(() => ({})), "prop:nfl");
         const weightStore = await getModelWeights().catch(() => ({}));
-        const picks = buildPropPicks(allProps, averages, schedule, week, unavailable, propWeightFn(weightStore, "nfl"), trustShiftFor(weightStore, "nfl"));
+        const marketLearn = await liveMarketLearn(weightStore, "nfl", season, week).catch(() => undefined);
+        const picks = buildPropPicks(allProps, averages, schedule, week, unavailable, propWeightFn(weightStore, "nfl"), trustShiftFor(weightStore, "nfl"), marketLearn, adjStrengthFor(weightStore, "nfl"));
 
         // This week's book-line picks only: the model-only rows (anytime TD,
         // turnovers, defense) written by the modelProps stage stay. Deleting

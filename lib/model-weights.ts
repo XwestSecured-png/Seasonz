@@ -15,6 +15,7 @@ import { GAME_MODEL } from "./sports/game-model";
 import { currentSeasonYear } from "./sports/espn";
 import { NFL_MODEL_WEIGHT } from "./elo";
 import { propModelWeightDefault } from "./props-model";
+import { fitMarket, marketRows } from "./market-learn";
 
 const KEY = "modelWeights";
 export const MIN_N = 300;
@@ -135,6 +136,50 @@ async function fitTrustShift(sport: string): Promise<Omit<WeightFit, "at"> | nul
   const n = size.size;
   const weight = n >= TRUST_MIN_N ? +((best.c * n) / (n + TRUST_PRIOR_N)).toFixed(3) : 0;
   return { weight, base: 0, n, best: best.c, llCurrent: ll(0), llBest: best.v, applied: weight !== 0 };
+}
+
+const ADJ_MIN_N = 100;
+const ADJ_PRIOR_N = 300;
+/**
+ * How hard to lean on the projection adjustments (lib/market-adjust.ts
+ * scaleAdjustments): k on graded picks' unadjusted vs adjusted model-only
+ * chance, moved in from 1 by n/(n+300) once 100+ player-games are graded.
+ */
+async function fitAdjStrength(sport: string): Promise<Omit<WeightFit, "at"> | null> {
+  const rows = await db
+    .select({ base: propPickLog.modelBase, model: propPickLog.modelOnly, result: propPickLog.result, player: propPickLog.player, stat: propPickLog.statType, date: propPickLog.gameDate, week: propPickLog.week })
+    .from(propPickLog)
+    .where(and(eq(propPickLog.sport, sport), inArray(propPickLog.result, ["hit", "miss"])));
+  const usable = rows.filter((r) => r.base != null && Math.abs(r.base - r.model) > 1e-6);
+  if (usable.length === 0) return null;
+  const ck = (r: (typeof usable)[number]) => `${r.player}|${r.stat}|${r.date ?? r.week}`;
+  const size = new Map<string, number>();
+  for (const r of usable) size.set(ck(r), (size.get(ck(r)) ?? 0) + 1);
+  const ll = (k: number) => {
+    let s = 0;
+    let n = 0;
+    for (const r of usable) {
+      const w = 1 / size.get(ck(r))!;
+      const q = clampP(sigmoid(logit(r.base!) + k * (logit(r.model) - logit(r.base!))));
+      s -= w * (r.result === "hit" ? Math.log(q) : Math.log(1 - q));
+      n += w;
+    }
+    return s / n;
+  };
+  let best = { k: 1, v: ll(1) };
+  for (let k = 0; k <= 2.0001; k += 0.1) {
+    const v = ll(k);
+    if (v < best.v - 1e-12) best = { k: +k.toFixed(1), v };
+  }
+  const n = size.size;
+  const weight = n >= ADJ_MIN_N ? +(1 + ((best.k - 1) * n) / (n + ADJ_PRIOR_N)).toFixed(3) : 1;
+  return { weight, base: 1, n, best: best.k, llCurrent: ll(1), llBest: best.v, applied: weight !== 1 };
+}
+
+/** Learned adjustment strength for a sport; 1 until enough graded picks. */
+export function adjStrengthFor(store: WeightStore, sport: string): number {
+  const f = store[`adj:${sport}`];
+  return f && typeof f.weight === "number" && f.weight >= 0 && f.weight <= 2 ? f.weight : 1;
 }
 
 /** Live trust shift (log-odds) for a sport; 0 until enough graded picks. */
@@ -265,6 +310,29 @@ export async function refitModelWeights(): Promise<string> {
     if (fit) {
       next[`trust:${s}`] = { ...fit, at: new Date().toISOString() };
       if (fit.applied) msgs.push(`trust:${s} shift ${fit.weight.toFixed(2)} (n=${fit.n})`);
+    }
+  }
+
+  // Adjustment strength (lib/market-adjust.ts scaleAdjustments).
+  for (const s of ["nfl", ...OTHER]) {
+    const fit = await fitAdjStrength(s);
+    if (fit) {
+      next[`adj:${s}`] = { ...fit, at: new Date().toISOString() };
+      if (fit.applied) msgs.push(`adj:${s} strength ${fit.weight.toFixed(2)} (n=${fit.n})`);
+    }
+  }
+  // Market learning (lib/market-learn.ts): Over bias and line-move
+  // continuation per sport, from the graded line archive, shrunk in.
+  for (const s of ["nfl", ...OTHER]) {
+    try {
+      const fit = fitMarket(await marketRows(s));
+      const at = new Date().toISOString();
+      const common = { base: 0, n: fit.n, llCurrent: fit.llBase, llBest: fit.llFit, at };
+      next[`mkt:${s}:bias`] = { ...common, weight: fit.bias, best: fit.fitBias, applied: fit.bias !== 0 };
+      next[`mkt:${s}:move`] = { ...common, weight: fit.move, best: fit.fitMove, applied: fit.move !== 0 };
+      if (fit.bias || fit.move) msgs.push(`market:${s} over-bias ${fit.bias.toFixed(2)}, move ${fit.move.toFixed(2)} (n=${fit.n})`);
+    } catch {
+      // archive not reachable: keep going
     }
   }
 
