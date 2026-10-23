@@ -229,6 +229,8 @@ async function OtherSportPropsSection({ sport, userId }: { sport: SportKey; user
         eq(sportGames.sport, sport),
         eq(sportGames.season, season),
         eq(sportGames.isFinal, false),
+        // Server component, rendered per request: "now" is the request time.
+        // eslint-disable-next-line react-hooks/purity
         gt(sportGames.kickoffAt, new Date(Date.now() - 6 * 3600_000))
       )
     )

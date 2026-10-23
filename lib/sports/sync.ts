@@ -479,7 +479,11 @@ export async function runSportSync(
       // NHL and MLB also backfill last season (newest first, after this
       // season's games), so starting goalies/pitchers have a track record
       // from day one of a new season.
-      const statSeasons = sport === "nhl" || sport === "mlb" ? [year - 1, year] : [year];
+      // Every sport keeps last season's box scores: the props stage projects
+      // from this season plus last season (the 20-game window). College
+      // football and basketball used to fetch this season only, so college
+      // projections ran on a handful of games.
+      const statSeasons = [year - 1, year];
       const finalGames = await db
         .select({ id: sportGames.id, espnEventId: sportGames.espnEventId, week: sportGames.week, season: sportGames.season, extra: sportGames.extra })
         .from(sportGames)
@@ -510,7 +514,7 @@ export async function runSportSync(
       // Newest games first: props are projected from each player's most
       // recent games, so those matter most. Older games fill in over later runs.
       // Larger for NHL/MLB while last season's box scores backfill (starters need them).
-      const PER_RUN_CAP = sport === "nhl" || sport === "mlb" || sport === "ncaaf" ? 900 : 300;
+      const PER_RUN_CAP = sport === "nhl" || sport === "mlb" || sport === "ncaaf" || sport === "ncaab" ? 900 : 300;
       const kickoffById = new Map(
         (
           await db
@@ -599,7 +603,8 @@ export async function runSportSync(
       }
       }));
 
-      const remaining = finalGames.length - alreadyHave.size - toFetch.length;
+      // Games ESPN has no box score for (noBox) aren't waiting on anything.
+      const remaining = finalGames.filter((g) => !alreadyHave.has(g.id) && !noBox(g)).length - toFetch.length;
       return (
         `Box scores fetched for ${gamesWithStats}/${toFetch.length} game(s) (${playerRows} player row(s))` +
         (failures.length ? ` [${failures.length} failed, e.g. ${failures[0]}]` : "") +

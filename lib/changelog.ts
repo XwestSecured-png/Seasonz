@@ -33,6 +33,44 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.19.1",
+    date: "2026-10-23",
+    title: "Grading and college data fixes",
+    summary: "Fixes picks stuck as pending after postponed games, speeds up grading of the line archive, and fills in last season's college box scores.",
+    changes: [
+      {
+        kind: "fixed",
+        title: "Picks stuck on pending",
+        whatChanged:
+          "A pick on a game that was postponed, moved to a new game, or never got a box score stayed pending forever (21 MLB playoff picks from Oct 17-21 were stuck). Those are now voided 4 days after the game date. Makeup games and doubleheaders now grade against the game that was actually played.",
+        whatItMeans: "Results and hit rates no longer carry phantom pending picks.",
+        href: "/results",
+      },
+      {
+        kind: "fixed",
+        title: "Line archive grading",
+        whatChanged:
+          "The nightly grader picked 20,000 waiting lines in no particular order, so with 100,000+ waiting (mostly for games not played yet) it could keep missing lines that were ready. It now grades oldest first, takes twice as many per run, and voids lines whose game never finished.",
+        whatItMeans: "The data behind the sharp-book weights and the learned Over bias fills in faster.",
+      },
+      {
+        kind: "fixed",
+        title: "College box scores from last season",
+        whatChanged:
+          "College football and college basketball only ever saved this season's box scores, though the props model is built to use this season plus last season. College projections were running on 8 games at most. Last season's games now backfill (newest first, 900 a night).",
+        whatItMeans: "Steadier college football props within a few days, and college basketball props have a track record when its season starts.",
+        href: "/props?sport=ncaaf",
+      },
+      {
+        kind: "fixed",
+        title: "Smaller fixes",
+        whatChanged:
+          "The box-score stage reported 1,299 college games as 'queued' when they were games ESPN has no box score for. A menu could flash its old position when reopened. A backtest script printed an outdated referee cap.",
+        whatItMeans: "Cleaner sync reports and a steadier menu.",
+      },
+    ],
+  },
+  {
     version: "1.19.0",
     date: "2026-10-22",
     title: "Minutes first, sharper market, and a model that learns",

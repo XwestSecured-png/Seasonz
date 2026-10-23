@@ -4,7 +4,7 @@
 // against real lines and measure closing-line value later.
 import { db } from "@/db";
 import { games, lineArchive, sportGames, sportPlayerGameStats } from "@/db/schema";
-import { and, eq, gt, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, lte, sql } from "drizzle-orm";
 import { STAT_EXTRACTORS } from "./sports/stat-extract";
 import type { SportKey } from "./sports/types";
 import type { PlayerWeekStats } from "./nflverse";
@@ -159,7 +159,10 @@ export async function gradeLineArchive(sport: string, nflWeekStats?: PlayerWeekS
     .select()
     .from(lineArchive)
     .where(and(eq(lineArchive.sport, sport), isNull(lineArchive.result), lte(lineArchive.closeAt, new Date(Date.now() - 3 * 3600_000))))
-    .limit(20000);
+    // Oldest first: with 100k+ lines waiting (most for games not played
+    // yet), an unordered batch could keep missing the gradable ones.
+    .orderBy(asc(lineArchive.closeAt))
+    .limit(40000);
   if (pending.length === 0) return "No archived lines to grade.";
   const set = async (ids: number[], result: string, actual: number | null) => {
     for (let i = 0; i < ids.length; i += 500)
@@ -226,9 +229,24 @@ export async function gradeLineArchive(sport: string, nflWeekStats?: PlayerWeekS
       graded += ids.length;
       continue;
     }
-    if (!r.team) continue;
+    // A line whose game never went final (or never got a box score) 5+ days
+    // after it was last seen is voided rather than left waiting forever.
+    const stale = r.closeAt.getTime() < Date.now() - 5 * 86_400_000;
+    if (!r.team) {
+      if (stale) {
+        await set(ids, "void", null);
+        voided += ids.length;
+      }
+      continue;
+    }
     const g = nextGame(r.team, r.closeAt.getTime());
-    if (!g?.final) continue;
+    if (!g?.final) {
+      if (stale) {
+        await set(ids, "void", null);
+        voided += ids.length;
+      }
+      continue;
+    }
     let actual: number | null = null;
     let known = false;
     if (sport === "nfl") {
@@ -239,7 +257,13 @@ export async function gradeLineArchive(sport: string, nflWeekStats?: PlayerWeekS
       actual = row ? Number(row[field]) || 0 : null;
     } else {
       const ex = extractors.find((e) => e.statType === r.statType);
-      if (!ex || !hasBox.has(g.id)) continue;
+      if (!ex || !hasBox.has(g.id)) {
+        if (stale && g.at < Date.now() - 4 * 86_400_000) {
+          await set(ids, "void", null);
+          voided += ids.length;
+        }
+        continue;
+      }
       known = true;
       const st = boxBy.get(`${g.id}|${nameKey(r.player)}`);
       actual = st ? ex.extract(st) : null;

@@ -216,7 +216,7 @@ async function main() {
   const multipliers = [0, 0.5, 1, 1.5, 2];
   const sweepGroups: { name: string; get: (r: GamePrediction) => number }[] = [
     { name: "WEATHER (current cap 0.03)", get: (r) => r.factorAdj.WEATHER },
-    { name: "REFEREE (current cap 0.02)", get: (r) => r.factorAdj.REFEREE },
+    { name: "REFEREE (current cap 0.01)", get: (r) => r.factorAdj.REFEREE },
     {
       name: "TEAM FACTORS, combined (current cap 0.06)",
       get: (r) =>

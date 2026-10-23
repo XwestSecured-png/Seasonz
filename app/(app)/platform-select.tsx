@@ -24,10 +24,7 @@ import { LockIcon } from "./icons";
 function useFloatingMenu(open: boolean, anchorRef: RefObject<HTMLElement | null>, width: number) {
   const [style, setStyle] = useState<CSSProperties | null>(null);
   useLayoutEffect(() => {
-    if (!open) {
-      setStyle(null);
-      return;
-    }
+    if (!open) return;
     function place() {
       const el = anchorRef.current;
       if (!el) return;
@@ -58,7 +55,8 @@ function useFloatingMenu(open: boolean, anchorRef: RefObject<HTMLElement | null>
       window.removeEventListener("scroll", place, true);
     };
   }, [open, anchorRef, width]);
-  return style;
+  // A closed menu has no position (the last one is ignored until it reopens and is re-measured).
+  return open ? style : null;
 }
 
 /**

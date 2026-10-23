@@ -148,9 +148,21 @@ export async function gradePropLog(sport: string, nflWeekStats?: PlayerWeekStats
     : [];
   const boxBy = new Map(box.map((b) => [`${b.gameId}|${norm(b.player)}`, b.stats as Record<string, string>]));
   const hasBox = new Set(box.map((b) => b.gameId));
+  // A pick whose game never went final with a box score 4+ days after its
+  // date (postponed, moved to a new game id, or no box score from ESPN) is
+  // voided instead of waiting forever.
+  const staleBefore = new Date(Date.now() - 4 * 86_400_000).toISOString().slice(0, 10);
   for (const p of pending) {
-    const game = sg.find((x) => x.gameDate === p.gameDate && (x.homeTeam === p.team || x.awayTeam === p.team));
-    if (!game?.isFinal || !hasBox.has(game.id)) continue;
+    // Doubleheaders/makeup games: prefer the final game with a box score.
+    const sameDay = sg.filter((x) => x.gameDate === p.gameDate && (x.homeTeam === p.team || x.awayTeam === p.team));
+    const game = sameDay.find((x) => x.isFinal && hasBox.has(x.id)) ?? sameDay[0];
+    if (!game?.isFinal || !hasBox.has(game.id)) {
+      if (p.gameDate && p.gameDate < staleBefore) {
+        await set(p.id, "void", null);
+        voided++;
+      }
+      continue;
+    }
     const ex = extractors.find((e) => e.statType === p.statType);
     if (!ex) continue;
     const stats = boxBy.get(`${game.id}|${norm(p.player)}`);
