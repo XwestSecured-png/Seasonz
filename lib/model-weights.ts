@@ -17,7 +17,7 @@ import { NFL_MODEL_WEIGHT } from "./elo";
 import { propModelWeightDefault } from "./props-model";
 import { fitCurveShares, curveRows } from "./curve-calibration";
 import { curveK, CURVE_SHARE, CURVE_SHARE_DEFAULT } from "./market-curve";
-import { fitMarket, marketRows, fitStatBias, fitOneSided, oneSidedRows, fitArchiveWeights, fitClv, clvFactor } from "./market-learn";
+import { fitMarket, marketRows, fitStatBias, fitOneSided, oneSidedRows, fitArchiveWeights, fitClv, clvFactor, clvRows } from "./market-learn";
 import { ONE_SIDED_SHIFT } from "./market-adjust";
 
 const KEY = "modelWeights";
@@ -404,7 +404,7 @@ export async function refitModelWeights(): Promise<string> {
     try {
       const rows = await marketRows(s);
       rowsBySport.set(s, rows);
-      const c = fitClv(rows);
+      const c = fitClv(await clvRows(s));
       clvBySport.set(s, c);
       refXY += c.sxy;
       refXX += c.sxx;

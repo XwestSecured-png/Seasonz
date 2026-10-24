@@ -18,7 +18,7 @@
 // MIN_N player-games.
 import { db } from "@/db";
 import { lineArchive } from "@/db/schema";
-import { and, eq, gt, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, lt } from "drizzle-orm";
 import { bookWeight, isPlaceholderLine, americanToImpliedProb } from "./props-model";
 
 export const MKT_MIN_N = 300;
@@ -56,7 +56,8 @@ interface ArchRow {
 }
 
 /** Weighted no-vig Over chance per prop line, at open and at close. */
-export function consensusRows(rows: ArchRow[]): MarketRow[] {
+export function consensusRows(rows: ArchRow[], opts: { graded?: boolean } = {}): MarketRow[] {
+  const graded = opts.graded ?? true;
   const pairs = new Map<string, { o?: ArchRow; u?: ArchRow }>();
   for (const r of rows) {
     if (r.line == null || !r.player || !r.statType) continue;
@@ -68,7 +69,8 @@ export function consensusRows(rows: ArchRow[]): MarketRow[] {
   }
   const lines = new Map<string, { sc: number; so: number; w: number; y: 0 | 1; at: number; pk: string; model?: number }>();
   for (const { o, u } of pairs.values()) {
-    if (!o || !u || o.result == null || !["hit", "miss"].includes(o.result)) continue;
+    if (!o || !u) continue;
+    if (graded && (o.result == null || !["hit", "miss"].includes(o.result))) continue;
     if (o.closePrice == null || u.closePrice == null || o.openPrice == null || u.openPrice == null) continue;
     if (isPlaceholderLine(o.book, o.closePrice, u.closePrice)) continue;
     const co = americanToImpliedProb(o.closePrice);
@@ -78,7 +80,7 @@ export function consensusRows(rows: ArchRow[]): MarketRow[] {
     if (co + cu < 0.98 || co + cu > 1.3 || oo + ou < 0.98 || oo + ou > 1.3) continue;
     const w = bookWeight(o.book);
     const k = `${o.gameKey}|${o.player}|${o.statType}|${o.line}`;
-    const e = lines.get(k) ?? { sc: 0, so: 0, w: 0, y: o.result === "hit" ? 1 : 0, at: o.closeAt?.getTime() ?? 0, pk: `${o.gameKey}|${o.player}|${o.statType}` };
+    const e = lines.get(k) ?? { sc: 0, so: 0, w: 0, y: (o.result === "hit" ? 1 : 0) as 0 | 1, at: o.closeAt?.getTime() ?? 0, pk: `${o.gameKey}|${o.player}|${o.statType}` };
     e.sc += w * (co / (co + cu));
     e.so += w * (oo / (oo + ou));
     e.w += w;
@@ -388,4 +390,31 @@ export function clvFactor(stat: { beta: number; n: number } | undefined, sport: 
   const sb = (sport.n * sport.beta + CLV_SPORT_PRIOR_N * ref) / (sport.n + CLV_SPORT_PRIOR_N);
   const b = stat ? (stat.n * stat.beta + CLV_STAT_PRIOR_N * sb) / (stat.n + CLV_STAT_PRIOR_N) : sb;
   return +Math.max(0.25, Math.min(1.5, b / ref)).toFixed(3);
+}
+
+/**
+ * Lines for the closing-line fit: every prop line with a model chance that
+ * books stopped updating 3+ hours ago (the game started; close_at is the last
+ * time its price was seen), graded or not, since the close is known at
+ * kickoff, long before every result is graded.
+ */
+export async function clvRows(sport: string): Promise<MarketRow[]> {
+  const now = new Date();
+  const rows = await db
+    .select({
+      gameKey: lineArchive.gameKey,
+      player: lineArchive.player,
+      statType: lineArchive.statType,
+      line: lineArchive.line,
+      side: lineArchive.side,
+      book: lineArchive.book,
+      openPrice: lineArchive.openPrice,
+      closePrice: lineArchive.closePrice,
+      closeAt: lineArchive.closeAt,
+      result: lineArchive.result,
+      modelOver: lineArchive.modelOver,
+    })
+    .from(lineArchive)
+    .where(and(eq(lineArchive.sport, sport), eq(lineArchive.market, "prop"), isNotNull(lineArchive.modelOver), isNotNull(lineArchive.closePrice), lt(lineArchive.closeAt, new Date(now.getTime() - 3 * 3600_000)), gt(lineArchive.closeAt, new Date(now.getTime() - 75 * 86_400_000))));
+  return consensusRows(rows, { graded: false });
 }
