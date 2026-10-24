@@ -7,7 +7,19 @@ import { nyLocalToUtc } from "./time";
 const NFLVERSE_BASE =
   "https://github.com/nflverse/nflverse-data/releases/download";
 
+// One download per file per sync: several stages read the same nflverse
+// files (weekly stats, schedules, injuries), and each file is a few MB.
+const csvCache = new Map<string, { at: number; rows: Promise<Record<string, string>[]> }>();
+const CSV_TTL_MS = 10 * 60_000;
 async function fetchCsv(url: string): Promise<Record<string, string>[]> {
+  const hit = csvCache.get(url);
+  if (hit && Date.now() - hit.at < CSV_TTL_MS) return hit.rows;
+  const rows = fetchCsvUncached(url);
+  csvCache.set(url, { at: Date.now(), rows });
+  rows.catch(() => csvCache.delete(url));
+  return rows;
+}
+async function fetchCsvUncached(url: string): Promise<Record<string, string>[]> {
   const res = await fetch(url, {
     headers: { "User-Agent": "seasonz (personal use)" },
   });

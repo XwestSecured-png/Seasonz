@@ -274,13 +274,13 @@ export async function fetchFullSeasonSchedule(
   const byEventId = new Map<string, GenericGame>();
 
   // Regular season + postseason (+ preseason where enabled) for every team,
-  // a few requests at a time (gentle on ESPN, but fast enough for 130+
-  // college teams).
+  // 12 requests at a time (college has 360-760 teams; 4 at a time took
+  // 30s-2min a run).
   const types: (1 | 2 | 3)[] = opts.preseason ? [1, 2, 3] : [2, 3];
   const jobs = teams.flatMap((team) => types.map((st) => ({ team, st })));
   let next = 0;
   await Promise.all(
-    Array.from({ length: 4 }, async () => {
+    Array.from({ length: 12 }, async () => {
       while (next < jobs.length) {
         const { team, st } = jobs[next++];
         try {

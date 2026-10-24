@@ -12,6 +12,7 @@ import { db } from "@/db";
 import { buildGameDayContext } from "./game-day";
 import { STAT_EXTRACTORS } from "./stat-extract";
 import { archiveGameLines, archivePropLines, gradeLineArchive } from "../line-archive";
+import { inBatches } from "../bulk";
 import { detectSportReturns, recentReturns, type ReportRow } from "../injury-returns";
 import {
   sportTeams,
@@ -1090,26 +1091,13 @@ export async function runSportSync(
             priceAmerican: raw.priceAmerican,
           });
         }
-        for (let i = 0; i < rawRows.length; i += 500) {
-          await db
-            .insert(sportPropLinesRaw)
-            .values(rawRows.slice(i, i + 500))
-            .onConflictDoUpdate({
-              target: [
-                sportPropLinesRaw.sport,
-                sportPropLinesRaw.season,
-                sportPropLinesRaw.week,
-                sportPropLinesRaw.player,
-                sportPropLinesRaw.statType,
-                sportPropLinesRaw.line,
-                sportPropLinesRaw.side,
-                sportPropLinesRaw.book,
-              ],
-              set: { team: sql`excluded.team`, priceAmerican: sql`excluded.price_american`, fetchedAt: new Date() },
-            });
-        }
-        // Keep every line's opening and closing price (lib/line-archive.ts).
-        await archivePropLines(sport, year, week, rawRows).catch(() => 0);
+        // The week's rows were just deleted and rawRows is de-duplicated, so
+        // plain inserts, several batches at once, alongside the archive.
+        await Promise.all([
+          inBatches(rawRows, 2000, 4, (chunk) => db.insert(sportPropLinesRaw).values(chunk).onConflictDoNothing()),
+          // Keep every line's opening and closing price (lib/line-archive.ts).
+          archivePropLines(sport, year, week, rawRows).catch(() => 0),
+        ]);
 
         const loggedN = await logPropPicks(sport, year, week, picks).catch(() => 0);
         // Projections for every player with a posted line, so the Props page

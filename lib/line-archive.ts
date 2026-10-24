@@ -5,6 +5,7 @@
 import { db } from "@/db";
 import { games, lineArchive, sportGames, sportPlayerGameStats } from "@/db/schema";
 import { and, asc, eq, gt, inArray, isNull, lte, sql } from "drizzle-orm";
+import { inBatches } from "./bulk";
 import { STAT_EXTRACTORS } from "./sports/stat-extract";
 import type { SportKey } from "./sports/types";
 import type { PlayerWeekStats } from "./nflverse";
@@ -31,10 +32,10 @@ async function upsert(rows: Row[]): Promise<number> {
     return true;
   });
   const now = new Date();
-  for (let i = 0; i < uniq.length; i += 500) {
-    await db
+  await inBatches(uniq, 1500, 4, (chunk) =>
+    db
       .insert(lineArchive)
-      .values(uniq.slice(i, i + 500).map((r) => ({ ...r, openAt: now, closeAt: now })))
+      .values(chunk.map((r) => ({ ...r, openAt: now, closeAt: now })))
       .onConflictDoUpdate({
         target: [
           lineArchive.sport,
@@ -56,8 +57,8 @@ async function upsert(rows: Row[]): Promise<number> {
         },
         // Graded lines are history; never touch them again.
         setWhere: sql`${lineArchive.result} is null`,
-      });
-  }
+      })
+  );
   return uniq.length;
 }
 
@@ -164,10 +165,22 @@ export async function gradeLineArchive(sport: string, nflWeekStats?: PlayerWeekS
     .orderBy(asc(lineArchive.closeAt))
     .limit(40000);
   if (pending.length === 0) return "No archived lines to grade.";
+  // Results are collected and written in bulk at the end (one UPDATE per
+  // 1,000 lines; one per bet took up to 70s on a busy night).
+  const updates: { id: number; result: string; actual: number | null }[] = [];
   const set = async (ids: number[], result: string, actual: number | null) => {
-    for (let i = 0; i < ids.length; i += 500)
-      await db.update(lineArchive).set({ result, actual }).where(inArray(lineArchive.id, ids.slice(i, i + 500)));
+    for (const id of ids) updates.push({ id, result, actual });
   };
+  const flush = () =>
+    inBatches(updates, 1000, 3, (chunk) =>
+      db.execute(sql`
+        update ${lineArchive} as la set result = v.result, actual = v.actual
+        from (values ${sql.join(
+          chunk.map((u) => sql`(${u.id}::bigint, ${u.result}::text, ${u.actual}::real)`),
+          sql`, `
+        )}) as v(id, result, actual)
+        where la.id = v.id`)
+    );
   // Group identical bets across books so each is graded once.
   const groups = new Map<string, typeof pending>();
   for (const r of pending) {
@@ -277,5 +290,6 @@ export async function gradeLineArchive(sport: string, nflWeekStats?: PlayerWeekS
       graded += ids.length;
     }
   }
+  await flush();
   return `Line archive: graded ${graded}, voided ${voided}, ${pending.length - graded - voided} waiting.`;
 }

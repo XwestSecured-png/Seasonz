@@ -33,6 +33,21 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.21.2",
+    date: "2026-10-24",
+    title: "Faster sync",
+    summary: "The sync writes, grades and downloads in bulk and in parallel, so new lines and picks land sooner.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Sync speed",
+        whatChanged:
+          "Prop lines (up to 75,000 a run) are saved in batches of 2,000, four at a time, alongside the line archive, instead of 500 at a time one after another. Graded lines are written in one bulk update per 1,000 instead of one per bet. College schedules load 12 teams at a time instead of 4. NFL data files are downloaded once per sync instead of once per stage, and weather forecasts load in parallel.",
+        whatItMeans: "Fresh lines and picks show up faster after each sync.",
+      },
+    ],
+  },
+  {
     version: "1.21.1",
     date: "2026-10-24",
     title: "Missing college moneylines",

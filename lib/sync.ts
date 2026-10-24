@@ -31,6 +31,7 @@ import {
 import { settlePendingBets } from "./bet-settle";
 import { recordNflReturns } from "./injury-returns";
 import { archiveGameLines, archivePropLines, gradeLineArchive } from "./line-archive";
+import { inBatches } from "./bulk";
 import { replayNflElo, makeNflEpaLookup, nflEpaAdjPct, type EloGameResult } from "./elo";
 import { noVigHome, logit, sigmoid } from "./sports/game-model";
 import type { ScheduleGame } from "./nflverse";
@@ -231,6 +232,17 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
     await logStage("schedule", async () => {
       schedule = await fetchSchedule(season);
       let forecastCount = 0;
+      // Forecasts for every eligible game at once (they were fetched one
+      // game at a time inside the loop below).
+      const forecasts = new Map<string, Awaited<ReturnType<typeof fetchWeatherForecast>>>();
+      await Promise.all(
+        schedule
+          .filter((g) => g.tempF === null && g.windMph === null && !g.isFinal && g.kickoffAt && !(g.roof === "dome" || g.roof === "closed") && !STADIUM_COORDS[g.homeTeam]?.indoor && STADIUM_COORDS[g.homeTeam])
+          .map(async (g) => {
+            const c = STADIUM_COORDS[g.homeTeam]!;
+            forecasts.set(`${g.week}|${g.homeTeam}`, await fetchWeatherForecast(c.lat, c.lon, g.kickoffAt!).catch(() => null));
+          })
+      );
       for (const g of schedule) {
         // nflverse's tempF/windMph are the game's ACTUAL conditions, only
         // ever published once it's been played — so for an upcoming game
@@ -254,7 +266,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         ) {
           const coord = STADIUM_COORDS[g.homeTeam];
           if (coord) {
-            const forecast = await fetchWeatherForecast(coord.lat, coord.lon, g.kickoffAt);
+            const forecast = forecasts.has(`${g.week}|${g.homeTeam}`) ? forecasts.get(`${g.week}|${g.homeTeam}`) : await fetchWeatherForecast(coord.lat, coord.lon, g.kickoffAt);
             if (forecast) {
               tempF = forecast.tempF;
               windMph = forecast.windMph;
@@ -1243,25 +1255,13 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
             priceAmerican: raw.priceAmerican,
           });
         }
-        for (let i = 0; i < rawRows.length; i += 500) {
-          await db
-            .insert(propLinesRaw)
-            .values(rawRows.slice(i, i + 500))
-            .onConflictDoUpdate({
-              target: [
-                propLinesRaw.season,
-                propLinesRaw.week,
-                propLinesRaw.player,
-                propLinesRaw.statType,
-                propLinesRaw.line,
-                propLinesRaw.side,
-                propLinesRaw.book,
-              ],
-              set: { team: sql`excluded.team`, priceAmerican: sql`excluded.price_american`, fetchedAt: new Date() },
-            });
-        }
-        // Keep every line's opening and closing price (lib/line-archive.ts).
-        await archivePropLines("nfl", season, week, rawRows).catch(() => 0);
+        // The week's rows were just deleted and rawRows is de-duplicated, so
+        // plain inserts, several batches at once, alongside the archive.
+        await Promise.all([
+          inBatches(rawRows, 2000, 4, (chunk) => db.insert(propLinesRaw).values(chunk).onConflictDoNothing()),
+          // Keep every line's opening and closing price (lib/line-archive.ts).
+          archivePropLines("nfl", season, week, rawRows).catch(() => 0),
+        ]);
 
         const parlays = buildAutoParlays(picks, season, week);
         await db
