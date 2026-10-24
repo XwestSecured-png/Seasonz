@@ -29,6 +29,8 @@ export interface GameDayContext {
   backups?: Map<string, string>;
   /** Per team this week: playing at home, and on the second night of a back-to-back. */
   venue?: Map<string, { home: boolean; b2b: boolean }>;
+  /** Basketball: a top-2 scorer listed Out, per teammate ("team|player" -> who's out and how the teammate's numbers move). */
+  starOut?: Map<string, { star: string; role: "bench" | "starter"; samePos: boolean }>;
   /** Basketball: this week's opponent's recent turnover rate (z-score, last 10 games, scaled by sqrt(games)), keyed by the team facing them. */
   oppTurnovers?: Map<string, number>;
 }
@@ -73,7 +75,10 @@ export function buildGameDayContext(
   out: Set<string> = new Set()
 ): GameDayContext {
   const ctx: GameDayContext = {};
-  if (sport === "nba" || sport === "wnba" || sport === "ncaab") ctx.backups = basketballBackups(weekGames, rows, out);
+  if (sport === "nba" || sport === "wnba" || sport === "ncaab") {
+    ctx.backups = basketballBackups(weekGames, rows, out);
+    ctx.starOut = starsOut(weekGames, rows, out);
+  }
   // Home/away and back-to-backs (each team's next game this week).
   ctx.venue = new Map();
   const next = [...weekGames].filter((g) => g.kickoffAt && g.kickoffAt.getTime() > Date.now()).sort((a, b) => a.kickoffAt!.getTime() - b.kickoffAt!.getTime());
@@ -195,6 +200,71 @@ const bbGroup = (p: string | null | undefined) => {
   const x = (p ?? "").toUpperCase();
   return x.startsWith("C") ? "C" : x.startsWith("G") || x === "PG" || x === "SG" ? "G" : "F";
 };
+/**
+ * A star out (1.20.0): when one of a team's top-2 scorers over its last 10
+ * games (a regular: 4 of the last 5) is listed Out, his teammates pick up
+ * the shots and minutes. Measured on every NBA box score of last season and
+ * both WNBA seasons (/api/health/insights?mentalcal=<sport>&set=lineup):
+ * bench players at his position averaged ~20% above their projection,
+ * bench players elsewhere ~10-15%, starters ~5% on points and combos
+ * (log loss 3-8% better on those games). Hockey showed no such effect.
+ * Factors below are a little under the measured ones; the backup who steps
+ * into his starting spot (BACKUP_BOOST) gets whichever is larger, not both.
+ */
+const STAR_OUT: Record<string, { benchSame: number; benchOther: number; starter: number }> = {
+  Points: { benchSame: 1.18, benchOther: 1.08, starter: 1.05 },
+  "Pts+Reb+Ast": { benchSame: 1.18, benchOther: 1.12, starter: 1.05 },
+  "Pts+Reb": { benchSame: 1.18, benchOther: 1.12, starter: 1.05 },
+  "Reb+Ast": { benchSame: 1.18, benchOther: 1.12, starter: 1.03 },
+  Rebounds: { benchSame: 1.12, benchOther: 1.08, starter: 1 },
+  Assists: { benchSame: 1.18, benchOther: 1.08, starter: 1 },
+  "3-Pointers Made": { benchSame: 1.15, benchOther: 1, starter: 1 },
+  Turnovers: { benchSame: 1.18, benchOther: 1.12, starter: 1.05 },
+  Steals: { benchSame: 1.1, benchOther: 1, starter: 1 },
+};
+
+function starsOut(weekGames: WeekGame[], rows: GameDayRow[], out: Set<string>): Map<string, { star: string; role: "bench" | "starter"; samePos: boolean }> {
+  const res = new Map<string, { star: string; role: "bench" | "starter"; samePos: boolean }>();
+  if (out.size === 0) return res;
+  const playing = new Set(weekGames.flatMap((g) => [g.homeTeam, g.awayTeam]));
+  const byTeam = new Map<string, GameDayRow[]>();
+  for (const r of rows) if (playing.has(r.team)) (byTeam.get(r.team) ?? byTeam.set(r.team, []).get(r.team)!).push(r);
+  const mins = (r: GameDayRow) => {
+    const m = Number(r.stats.MIN);
+    return Number.isFinite(m) ? m : 0;
+  };
+  for (const [team, l] of byTeam) {
+    const gameT = new Map<number, number>();
+    for (const r of l) gameT.set(r.gameId, r.t);
+    const games = [...gameT].sort((a, b) => a[1] - b[1]).map(([id]) => id);
+    const last10 = new Set(games.slice(-10));
+    const last5 = new Set(games.slice(-5));
+    const tot = new Map<string, number>();
+    const played5 = new Map<string, number>();
+    const info = new Map<string, { pos: string; min: number[] }>();
+    for (const r of l) {
+      if (mins(r) <= 0) continue;
+      if (last10.has(r.gameId)) {
+        tot.set(r.player, (tot.get(r.player) ?? 0) + N(r.stats.PTS));
+        const e = info.get(r.player) ?? { pos: bbGroup(r.position), min: [] };
+        e.min.push(mins(r));
+        info.set(r.player, e);
+      }
+      if (last5.has(r.gameId)) played5.set(r.player, (played5.get(r.player) ?? 0) + 1);
+    }
+    const top = [...tot].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([p]) => p);
+    const stars = top.filter((p) => (played5.get(p) ?? 0) >= 4 && out.has(`${team}|${p}`));
+    if (!stars.length) continue;
+    for (const [player, e] of info) {
+      if (stars.includes(player) || out.has(`${team}|${player}`) || (played5.get(player) ?? 0) === 0) continue;
+      const avg = e.min.reduce((a, b) => a + b, 0) / e.min.length;
+      const samePos = stars.some((st) => info.get(st)?.pos === e.pos);
+      res.set(`${team}|${player}`, { star: stars[0], role: avg >= 26 ? "starter" : "bench", samePos });
+    }
+  }
+  return res;
+}
+
 function basketballBackups(weekGames: WeekGame[], rows: GameDayRow[], out: Set<string>): Map<string, string> {
   const res = new Map<string, string>();
   if (out.size === 0) return res;
@@ -331,9 +401,13 @@ export function gameDayFactor(ctx: GameDayContext | undefined, team: string, sta
     }
   }
   const replacing = player ? ctx.backups?.get(`${team}|${player}`) : undefined;
-  if (replacing && BACKUP_BOOST[statType]) {
-    f *= BACKUP_BOOST[statType];
-    why.push(`stepping in for ${replacing} (Out)`);
+  const so = player ? ctx.starOut?.get(`${team}|${player}`) : undefined;
+  const soF = so && STAR_OUT[statType] ? (so.role === "starter" ? STAR_OUT[statType].starter : so.samePos ? STAR_OUT[statType].benchSame : STAR_OUT[statType].benchOther) : 1;
+  const bF = replacing && BACKUP_BOOST[statType] ? BACKUP_BOOST[statType] : 1;
+  if (bF > 1 || soF > 1) {
+    f *= Math.max(bF, soF);
+    if (replacing) why.push(`stepping in for ${replacing} (Out)`);
+    else if (so) why.push(`more shots with ${so.star} out`);
   }
   const oz = ctx.oppTurnovers?.get(team);
   if (oz !== undefined && OPP_TO_C[statType]) {

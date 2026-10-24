@@ -33,6 +33,43 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.20.0",
+    date: "2026-10-23",
+    title: "Stars out, alt lines priced right, Over bias by stat",
+    summary: "Basketball teammates get a bump when a star is out, alternate-line prices are no longer taken at face value, and the Over bias is now learned stat by stat.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Basketball: when a star is out",
+        whatChanged:
+          "When one of a team's top-2 scorers is listed Out, his teammates' projections go up: bench players at his position about 18%, other bench players 8-12%, starters about 5% on points and combos. Measured on every NBA box score of last season and both WNBA seasons; those games' props got 3-8% more accurate.",
+        whatItMeans: "Earlier, better Overs on role players about to see more shots. The trust details say 'more shots with … out'.",
+        href: "/props?sport=nba",
+      },
+      {
+        kind: "fixed",
+        title: "Alternate lines (one-sided prices)",
+        whatChanged:
+          "When a book posts only one side of a line (alt ladders like '25+ points'), the app used that price minus 4.5% as the market's chance. Graded lines showed those prices are far richer than that: NBA Overs priced around 15% hit 9%, around 6% hit 1%. The market chance for those lines now takes the right-sized cut (fitted on two weeks of graded lines, checked on the half it wasn't fitted on: 4-6% more accurate in the NBA, NHL and college football) and keeps re-fitting it nightly.",
+        whatItMeans: "Far fewer long-shot alt-line Overs that look like value but aren't.",
+        href: "/props",
+      },
+      {
+        kind: "improved",
+        title: "Over bias learned per stat",
+        whatChanged:
+          "The market's Over bias isn't the same for every stat: NBA rebound and NHL shot Overs hit about as often as priced, while points, threes, assists and combos hit well below. Each stat now gets its own correction, pulled toward its sport's until it has enough graded lines.",
+        whatItMeans: "Rebound and shot Overs aren't trimmed for a bias they don't have.",
+      },
+      {
+        kind: "improved",
+        title: "Tested and not used",
+        whatChanged: "Opponent defense by position (what a team allows to guards vs centers) didn't beat the opponent adjustment the app already uses, and hockey showed no 'star out' effect on teammates.",
+        whatItMeans: "Nothing changes there.",
+      },
+    ],
+  },
+  {
     version: "1.19.1",
     date: "2026-10-23",
     title: "Grading and college data fixes",

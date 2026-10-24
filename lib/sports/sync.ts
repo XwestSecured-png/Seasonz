@@ -1125,6 +1125,7 @@ export async function runSportSync(
         ).catch(() => 0);
         const gdNote = [
           gameDay.backups?.size ? `${gameDay.backups.size} backup(s) stepping in` : "",
+          gameDay.starOut?.size ? `${gameDay.starOut.size} teammate(s) of a star who is out` : "",
           gameDay.oppPitcher?.size ? `${gameDay.oppPitcher.size} opposing-starter matchup(s)` : "",
           gameDay.park?.size ? `${gameDay.park.size} park factor(s)` : "",
           gameDay.oppEloZ?.size ? `${gameDay.oppEloZ.size} opponent-strength adjustment(s)` : "",
