@@ -49,6 +49,11 @@ export default async function ResultsPage() {
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-neutral-200">Prop picks, graded</h2>
+        <p className="text-xs text-neutral-400 max-w-2xl">
+          <strong>Beat the close</strong>: the price we listed against the same book&rsquo;s price on that line when the game started.
+          When the closing price is shorter than the one we took, the market moved our way, the best early sign of a real edge long
+          before the hit rate settles. Points are the change in the price&rsquo;s implied chance.
+        </p>
         {props.length === 0 ? (
           <p className="text-xs text-neutral-500">Prop picks are logged from now on; results show here once games are graded.</p>
         ) : (
@@ -61,6 +66,7 @@ export default async function ResultsPage() {
                   <th className="px-2.5 py-1.5 font-medium">Hit rate</th>
                   <th className="px-2.5 py-1.5 font-medium">We said</th>
                   <th className="px-2.5 py-1.5 font-medium">Model alone said</th>
+                  <th className="px-2.5 py-1.5 font-medium">Beat the close</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-800">
@@ -73,6 +79,21 @@ export default async function ResultsPage() {
                     <td className="px-2.5 py-1.5">{((r.hits / r.n) * 100).toFixed(1)}%</td>
                     <td className="px-2.5 py-1.5">{(r.predicted * 100).toFixed(1)}%</td>
                     <td className="px-2.5 py-1.5 text-neutral-400">{(r.modelOnly * 100).toFixed(1)}%</td>
+                    <td className="px-2.5 py-1.5">
+                      {r.clvN ? (
+                        <>
+                          <span className={r.clvPts !== null && r.clvPts > 0 ? "text-emerald-400" : r.clvPts !== null && r.clvPts < 0 ? "text-rose-400" : ""}>
+                            {r.clvPts !== null && r.clvPts >= 0 ? "+" : ""}
+                            {f1(r.clvPts)} pts
+                          </span>{" "}
+                          <span className="text-neutral-500">
+                            ({r.clvBeat} better, {r.clvWorse} worse of {r.clvN})
+                          </span>
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -85,8 +106,9 @@ export default async function ResultsPage() {
         <h2 className="text-sm font-semibold text-neutral-200">How much we trust the model vs the line</h2>
         <p className="text-xs text-neutral-400 max-w-2xl">
           Each sport&rsquo;s final number, for games and for props, blends the model with the betting market. The blend is re-tested
-          daily on live graded results; a new share is only used once there are 300+ graded games (or props) and the change clearly
-          helps. Props start at an even 50/50 split.
+          daily on live graded results; a new share is only used once there are 300+ graded games and the change clearly helps.
+          Props start at 15&ndash;30% model depending on the sport, and each stat&rsquo;s share is re-fit nightly on every graded line
+          the books posted, not just our picks.
         </p>
         <div className="overflow-x-auto rounded-md border border-neutral-800">
           <table className="w-full text-xs">

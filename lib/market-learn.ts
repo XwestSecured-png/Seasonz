@@ -206,6 +206,9 @@ export async function liveMarketLearn(store: Record<string, { weight: number; ap
   const bias = store[`mkt:${sport}:bias`]?.weight ?? 0;
   const move = store[`mkt:${sport}:move`]?.weight ?? 0;
   const os = store[`mkt:${sport}:oneSided`]?.weight;
+  const ce = store[`curve:${sport}:exact`]?.weight;
+  const co = store[`curve:${sport}:one`]?.weight;
+  const share = (w: number | undefined) => (typeof w === "number" && w >= 0 && w <= 1 ? w : undefined);
   const biasByStat: Record<string, number> = {};
   const pre = `mkt:${sport}:bias:`;
   for (const [k, v] of Object.entries(store)) if (k.startsWith(pre) && typeof v.weight === "number") biasByStat[k.slice(pre.length)] = Math.max(-0.4, Math.min(0.4, v.weight));
@@ -216,6 +219,8 @@ export async function liveMarketLearn(store: Record<string, { weight: number; ap
     open,
     biasByStat: Object.keys(biasByStat).length ? biasByStat : undefined,
     oneSided: typeof os === "number" && os >= -1.5 && os <= 0.3 ? os : undefined,
+    curveExact: share(ce),
+    curveOne: share(co),
   };
 }
 

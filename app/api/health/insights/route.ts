@@ -1,10 +1,10 @@
-import { curveCal } from "@/lib/curve-calibration";
+import { curveCal, curveRows } from "@/lib/curve-calibration";
 // Health check for the "Why" explanations: builds this week's insights for
 // a sport and reports counts (no user data). Cron-secret only.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { sportGames, sportPlayerGameStats, lineArchive } from "@/db/schema";
-import { and, eq, inArray, isNotNull } from "drizzle-orm";
+import { sportGames, sportPlayerGameStats } from "@/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
 import { getGameInsights } from "@/lib/sports/insights";
 import { getModelBuilds, type BuildSportFilter } from "@/lib/auto-builds";
 import { fetchUpcomingEventsForSport } from "@/lib/sports/odds";
@@ -148,10 +148,7 @@ export async function GET(req: NextRequest) {
   // Market curve check (lib/curve-calibration.ts): ?curvecal=nba.
   const curvecal = req.nextUrl.searchParams.get("curvecal");
   if (curvecal) {
-    const rows = await db
-      .select({ gameKey: lineArchive.gameKey, player: lineArchive.player, statType: lineArchive.statType, line: lineArchive.line, side: lineArchive.side, book: lineArchive.book, closePrice: lineArchive.closePrice, closeAt: lineArchive.closeAt, actual: lineArchive.actual })
-      .from(lineArchive)
-      .where(and(eq(lineArchive.sport, curvecal), eq(lineArchive.market, "prop"), inArray(lineArchive.result, ["hit", "miss"]), isNotNull(lineArchive.closePrice)));
+    const rows = await curveRows(curvecal);
     return NextResponse.json(curveCal(rows, ONE_SIDED_SHIFT));
   }
   // Market learning check (lib/market-learn.ts): ?marketcal=nba.

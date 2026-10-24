@@ -8,6 +8,9 @@ export interface MarketLearn {
   biasByStat?: Record<string, number>;
   /** Log-odds shift for a price posted on one side only (alt ladders), see ONE_SIDED_SHIFT. */
   oneSided?: number;
+  /** Learned share of the market price curve (lib/market-curve.ts) against a two-sided / one-sided price. */
+  curveExact?: number;
+  curveOne?: number;
   /** Opening weighted no-vig Over chance per "player|stat|line". */
   open?: Map<string, number>;
 }

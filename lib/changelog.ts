@@ -33,6 +33,44 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.25.0",
+    date: "2026-10-24",
+    title: "Beat the close, faster pages, cleaner Props",
+    summary: "Results now show whether our prop picks beat the closing price, pages load faster, the Props page leads with picks, and the market curve tunes itself nightly.",
+    changes: [
+      {
+        kind: "new",
+        title: "Did our picks beat the close?",
+        whatChanged:
+          "Results now compares every graded prop pick's price with the same book's price on that line when the game started: how many closed shorter (the market moved our way), how many longer, and the average move. So far picks have beaten the close in hockey (32 better, 4 worse) and baseball (15 better, 1 worse); in the NBA most prices didn't move.",
+        whatItMeans: "Beating the closing price is the best early sign of a real edge, long before win rates settle, and it's measured on every pick.",
+        href: "/results",
+      },
+      {
+        kind: "improved",
+        title: "Faster pages and syncs",
+        whatChanged:
+          "Finding this week's upcoming games read the whole games table each time (about 3 seconds, hundreds of times a day, for alerts, Best Bets, Props and Parlays). It now uses an index: 0.01 seconds. Box-score loads and other lookups got indexes too.",
+        whatItMeans: "Pages that list upcoming games open faster, and syncs spend less time waiting on the database.",
+      },
+      {
+        kind: "improved",
+        title: "Props page leads with the picks",
+        whatChanged:
+          "The NFL Props page showed a long intro and the full list of every line before the model's picks. The picks now come first, the intro is one line (details are under 'What am I looking at?'), and the Feedback button is a small icon on phones so it doesn't cover cards.",
+        whatItMeans: "On a phone the picks are on the first screen instead of several scrolls down.",
+        href: "/props",
+      },
+      {
+        kind: "improved",
+        title: "Market curve tunes itself",
+        whatChanged:
+          "How much each line's market chance leans on the player's whole price curve (added in 1.24.0) is now re-fitted every night per sport on every graded line, moved in gradually as data builds.",
+        whatItMeans: "The market half of each pick keeps getting sharper on its own as the season goes on.",
+      },
+    ],
+  },
+  {
     version: "1.24.1",
     date: "2026-10-24",
     title: "Sync fixes",

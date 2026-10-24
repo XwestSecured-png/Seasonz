@@ -100,14 +100,16 @@ async function NflProps() {
   return (
     <div className="space-y-6">
       <p className="text-sm text-neutral-400 max-w-2xl">
-        Player stats compared against this week&rsquo;s sportsbook lines, adjusted for recent
-        form and the upcoming opponent&rsquo;s real defense. Our chance blends the model with the
-        betting market&rsquo;s own chance for that line (books know injury and role news the stats
-        don&rsquo;t). Only picks at 70% or higher that also beat the book&rsquo;s price by 3+ points are
-        shown — a likely prop at a bad price still loses money over time.
-        {week !== null && <> Currently showing week {week}.</>}
+        Props at 70%+ that also beat the book&rsquo;s price by 3+ points.
+        {week !== null && <> Week {week}.</>}
       </p>
       <PageInfo>
+        <p>
+          Player stats compared against this week&rsquo;s sportsbook lines, adjusted for recent form and the upcoming opponent&rsquo;s
+          real defense. Our chance blends the model with the betting market&rsquo;s own chance for that line (books know injury and
+          role news the stats don&rsquo;t). Only picks at 70% or higher that also beat the book&rsquo;s price by 3+ points are shown: a
+          likely prop at a bad price still loses money over time.
+        </p>
         <p>
           Sorted by team, then by player, then by stat type, so it&rsquo;s easy to scan one team
           or player at a time. Use the filters above to narrow it down to one team or one stat.
@@ -155,18 +157,6 @@ async function NflProps() {
         </Link>
       </PageInfo>
 
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-neutral-200">Every prop this week</h2>
-        <p className="text-xs text-neutral-500 max-w-2xl">
-          Every line FanDuel, DraftKings, BetMGM and Caesars posted (best price first), including touchdowns, QB
-          stats, turnovers, sacks, tackles and kicking. Each line shows our chance it hits, spelled out (from
-          &ldquo;almost no chance&rdquo; to &ldquo;very, very likely&rdquo;), with a trust badge on the likely side.
-          Fumbles, QB sacked, INT thrown and 2+ TDs show the model&rsquo;s chance from each player&rsquo;s rate this
-          season, since books rarely post them.
-        </p>
-        <AllLinesBrowser lines={browseLines} scores={scores} />
-      </section>
-
       <h2 className="text-sm font-semibold text-neutral-200">Model picks (70%+)</h2>
       {week === null ? (
         <p className="text-sm text-neutral-500">
@@ -206,6 +196,18 @@ async function NflProps() {
             })}
         />
       )}
+
+      <section className="space-y-2 border-t border-neutral-800 pt-5">
+        <h2 className="text-sm font-semibold text-neutral-200">Every prop this week</h2>
+        <p className="text-xs text-neutral-500 max-w-2xl">
+          Every line FanDuel, DraftKings, BetMGM and Caesars posted (best price first), including touchdowns, QB
+          stats, turnovers, sacks, tackles and kicking. Each line shows our chance it hits, spelled out (from
+          &ldquo;almost no chance&rdquo; to &ldquo;very, very likely&rdquo;), with a trust badge on the likely side.
+          Fumbles, QB sacked, INT thrown and 2+ TDs show the model&rsquo;s chance from each player&rsquo;s rate this
+          season, since books rarely post them.
+        </p>
+        <AllLinesBrowser lines={browseLines} scores={scores} />
+      </section>
     </div>
   );
 }

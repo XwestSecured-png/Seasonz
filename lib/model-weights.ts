@@ -15,6 +15,8 @@ import { GAME_MODEL } from "./sports/game-model";
 import { currentSeasonYear } from "./sports/espn";
 import { NFL_MODEL_WEIGHT } from "./elo";
 import { propModelWeightDefault } from "./props-model";
+import { fitCurveShares, curveRows } from "./curve-calibration";
+import { curveK, CURVE_SHARE, CURVE_SHARE_DEFAULT } from "./market-curve";
 import { fitMarket, marketRows, fitStatBias, fitOneSided, oneSidedRows, fitArchiveWeights } from "./market-learn";
 import { ONE_SIDED_SHIFT } from "./market-adjust";
 
@@ -326,14 +328,14 @@ export async function refitModelWeights(): Promise<string> {
   // continuation per sport, from the graded line archive, shrunk in.
   for (const s of ["nfl", ...OTHER]) {
     try {
-      const fit = fitMarket(await marketRows(s));
+      const rows = await marketRows(s);
+      const fit = fitMarket(rows);
       const at = new Date().toISOString();
       const common = { base: 0, n: fit.n, llCurrent: fit.llBase, llBest: fit.llFit, at };
       next[`mkt:${s}:bias`] = { ...common, weight: fit.bias, best: fit.fitBias, applied: fit.bias !== 0 };
       next[`mkt:${s}:move`] = { ...common, weight: fit.move, best: fit.fitMove, applied: fit.move !== 0 };
       if (fit.bias || fit.move) msgs.push(`market:${s} over-bias ${fit.bias.toFixed(2)}, move ${fit.move.toFixed(2)} (n=${fit.n})`);
       // Per-stat Over bias, shrunk toward the sport's.
-      const rows = await marketRows(s);
       for (const [stat, f] of Object.entries(fitStatBias(rows, fit.bias, fit.move))) {
         next[`mkt:${s}:bias:${stat}`] = { ...common, n: f.n, weight: f.bias, best: f.fit, applied: f.bias !== fit.bias };
         msgs.push(`market:${s}:${stat} bias ${f.bias.toFixed(2)} (n=${f.n})`);
@@ -349,6 +351,14 @@ export async function refitModelWeights(): Promise<string> {
       const os = fitOneSided(await oneSidedRows(s), ONE_SIDED_SHIFT);
       next[`mkt:${s}:oneSided`] = { base: ONE_SIDED_SHIFT, n: os.n, llCurrent: os.llDefault, llBest: os.llFit, at, weight: os.used, best: os.fit, applied: os.used !== ONE_SIDED_SHIFT };
       if (os.n) msgs.push(`market:${s} one-sided ${os.used.toFixed(2)} (n=${os.n})`);
+      // Market price curve's share (lib/market-curve.ts).
+      const def = CURVE_SHARE[s] ?? CURVE_SHARE_DEFAULT;
+      const cs = fitCurveShares(await curveRows(s), os.used, (stat) => curveK(s, stat), def);
+      for (const k of ["exact", "one"] as const) {
+        const f = cs[k];
+        next[`curve:${s}:${k}`] = { base: def[k], n: f.n, llCurrent: f.llCurrent, llBest: f.llBest, at, weight: f.weight, best: f.best, applied: f.weight !== def[k] };
+        if (f.n) msgs.push(`curve:${s}:${k} ${f.weight.toFixed(2)} (n=${f.n}, best ${f.best})`);
+      }
     } catch {
       // archive not reachable: keep going
     }

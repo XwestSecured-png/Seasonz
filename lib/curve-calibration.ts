@@ -5,6 +5,9 @@
 // margin) or by the player's whole price curve (lib/market-curve.ts), or a
 // blend? One vote per player-game, alt lines split it; slope prior k fitted
 // per stat on the older half, scored on the newer half.
+import { db } from "@/db";
+import { lineArchive } from "@/db/schema";
+import { and, eq, gt, inArray, isNotNull } from "drizzle-orm";
 import { bookWeight, isPlaceholderLine, americanToImpliedProb } from "./props-model";
 import { buildCurve, curveChance, blendLogit, type CurvePoint } from "./market-curve";
 import { oneSidedChance } from "./market-adjust";
@@ -39,7 +42,7 @@ interface LineEval {
   line: number;
 }
 
-export function curveCal(rows: CurveRow[], oneSidedShift: number) {
+function evaluate(rows: CurveRow[], oneSidedShift: number) {
   // Per player-game: per line+book the two sides' prices.
   const games = new Map<string, Map<string, { line: number; book: string; o?: number; u?: number; at: number; actual: number | null }>>();
   for (const r of rows) {
@@ -108,6 +111,11 @@ export function curveCal(rows: CurveRow[], oneSidedShift: number) {
       evals.push({ stat, at, w: 1 / graded.length, y, cat, base, line, ptsAll: pts, ptsLoo: pts.filter((p) => p.line !== line) });
     }
   }
+  return { evals, slopes };
+}
+
+export function curveCal(rows: CurveRow[], oneSidedShift: number) {
+  const { evals, slopes } = evaluate(rows, oneSidedShift);
   // Time split.
   const sorted = [...evals].sort((a, b) => a.at - b.at);
   const cut = sorted[Math.floor(sorted.length / 2)]?.at ?? 0;
@@ -170,4 +178,53 @@ export function curveCal(rows: CurveRow[], oneSidedShift: number) {
     test: score(test, kTrain, 1, false),
     testLoo: score(test, kTrain, 1, true),
   };
+}
+
+export const CURVE_MIN_N = 200;
+export const CURVE_PRIOR_N = 600;
+const GRID = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1];
+
+/**
+ * Nightly fit of the curve's share per sport (lib/model-weights.ts,
+ * "curve:<sport>:exact" / ":one"): best log-odds share on every graded
+ * archived line, one vote per player-game, shrunk toward the coded share by
+ * n/(n+600) once there are 200+ player-games.
+ */
+export function fitCurveShares(rows: CurveRow[], oneSidedShift: number, kOf: (stat: string) => number, def: { exact: number; one: number }) {
+  const { evals } = evaluate(rows, oneSidedShift);
+  const out: Record<"exact" | "one", { weight: number; best: number; n: number; llCurrent: number; llBest: number }> = {} as never;
+  for (const [cat, key] of [["two", "exact"], ["one", "one"]] as const) {
+    const grid = GRID.map(() => 0);
+    let n = 0;
+    for (const e of evals) {
+      if (e.cat !== cat || e.base === undefined) continue;
+      const cv = buildCurve(e.ptsAll, kOf(e.stat));
+      if (!cv) continue;
+      const pc = curveChance(cv, e.line);
+      GRID.forEach((w, j) => (grid[j] += e.w * ll(e.y, blendLogit(e.base!, pc, w))));
+      n += e.w;
+    }
+    let bj = 0;
+    grid.forEach((v, j) => {
+      if (v < grid[bj]) bj = j;
+    });
+    const d = def[key];
+    const N = Math.round(n);
+    const weight = N >= CURVE_MIN_N ? +(d + ((GRID[bj] - d) * N) / (N + CURVE_PRIOR_N)).toFixed(3) : d;
+    const llAt = (w: number) => {
+      // grid value nearest w
+      const j = GRID.reduce((b, g, i) => (Math.abs(g - w) < Math.abs(GRID[b] - w) ? i : b), 0);
+      return n ? grid[j] / n : 0;
+    };
+    out[key] = { weight, best: GRID[bj], n: N, llCurrent: +llAt(d).toFixed(4), llBest: n ? +(grid[bj] / n).toFixed(4) : 0 };
+  }
+  return out;
+}
+
+/** Graded archived prop lines for a sport (last 75 days), for the curve checks and fit. */
+export async function curveRows(sport: string): Promise<CurveRow[]> {
+  return db
+    .select({ gameKey: lineArchive.gameKey, player: lineArchive.player, statType: lineArchive.statType, line: lineArchive.line, side: lineArchive.side, book: lineArchive.book, closePrice: lineArchive.closePrice, closeAt: lineArchive.closeAt, actual: lineArchive.actual })
+    .from(lineArchive)
+    .where(and(eq(lineArchive.sport, sport), eq(lineArchive.market, "prop"), inArray(lineArchive.result, ["hit", "miss"]), isNotNull(lineArchive.closePrice), gt(lineArchive.closeAt, new Date(Date.now() - 75 * 86_400_000))));
 }

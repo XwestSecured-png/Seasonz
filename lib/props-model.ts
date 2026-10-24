@@ -794,7 +794,9 @@ export function curveMarket(
     pts.push({ player: g.player, statType: g.statType, line: g.line, p: o / (o + u), w: bookWeight(g.book) });
   }
   const curves = curvesFrom(pts, (stat) => curveK(sport, stat));
-  const share = CURVE_SHARE[sport] ?? CURVE_SHARE_DEFAULT;
+  const coded = CURVE_SHARE[sport] ?? CURVE_SHARE_DEFAULT;
+  // Learned nightly from the graded archive when there's enough (lib/model-weights.ts "curve:<sport>").
+  const share = { exact: marketLearn?.curveExact ?? coded.exact, one: marketLearn?.curveOne ?? coded.one };
   return (g) => {
     const ex = exact.get(`${g.player}|${g.statType}|${g.line}`);
     const one = ex === undefined && !(g.overPrice !== undefined && g.underPrice !== undefined && Math.abs(g.overPrice) === 100 && Math.abs(g.underPrice) === 100) ? oneSidedChance(g.overPrice, g.underPrice, marketLearn?.oneSided) : undefined;

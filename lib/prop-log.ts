@@ -181,17 +181,55 @@ export async function gradePropLog(sport: string, nflWeekStats?: PlayerWeekStats
 }
 
 /** Hit rate of graded logged picks by sport (for the Results page). */
-export async function propLogSummary(): Promise<{ sport: string; n: number; hits: number; predicted: number; modelOnly: number }[]> {
-  const rows = await db
-    .select({
-      sport: propPickLog.sport,
-      n: sql<number>`count(*)::int`,
-      hits: sql<number>`count(*) filter (where ${propPickLog.result} = 'hit')::int`,
-      predicted: sql<number>`avg(${propPickLog.final})::float`,
-      modelOnly: sql<number>`avg(${propPickLog.modelOnly})::float`,
-    })
-    .from(propPickLog)
-    .where(inArray(propPickLog.result, ["hit", "miss"]))
-    .groupBy(propPickLog.sport);
-  return rows;
+export interface PropLogSummary {
+  sport: string;
+  n: number;
+  hits: number;
+  predicted: number;
+  modelOnly: number;
+  /** Graded picks whose line+book closing price is on file, and how many closed at a shorter price than we took. */
+  clvN: number;
+  clvBeat: number;
+  clvWorse: number;
+  /** Average closing implied chance minus the taken price's, in percentage points (positive = we beat the close). */
+  clvPts: number | null;
+}
+
+/**
+ * Graded prop picks per sport, with closing-line value (1.25.0): each pick's
+ * price against the same book's closing price on the same line and side
+ * (lib/line-archive.ts). Beating the close is the best early sign of a real
+ * edge, long before the hit rate settles.
+ */
+export async function propLogSummary(): Promise<PropLogSummary[]> {
+  const rows = await db.execute<{ sport: string; n: number; hits: number; predicted: number; model_only: number; clv_n: number; clv_beat: number; clv_worse: number; clv_pts: number | null }>(sql`
+    with p as (
+      select l.*, (select a.close_price from line_archive a
+                    where a.sport = l.sport and a.market = 'prop' and a.season = l.season and a.week = l.week
+                      and a.player = l.player and a.stat_type = l.stat_type and a.line = l.line and a.side = l.side and a.book = l.book
+                    limit 1) as close_price
+      from prop_pick_log l where l.result in ('hit', 'miss')
+    ), q as (
+      select *, case when price_american < 0 then -price_american / (-price_american + 100.0) else 100.0 / (price_american + 100) end as imp_taken,
+                case when close_price is null then null when close_price < 0 then -close_price / (-close_price + 100.0) else 100.0 / (close_price + 100) end as imp_close
+      from p
+    )
+    select sport, count(*)::int as n, count(*) filter (where result = 'hit')::int as hits,
+           avg(final)::float as predicted, avg(model_only)::float as model_only,
+           count(imp_close)::int as clv_n,
+           count(*) filter (where imp_close > imp_taken + 0.0001)::int as clv_beat,
+           count(*) filter (where imp_close < imp_taken - 0.0001)::int as clv_worse,
+           (avg(imp_close - imp_taken) * 100)::float as clv_pts
+    from q group by sport order by sport`);
+  return [...rows].map((r) => ({
+    sport: r.sport,
+    n: Number(r.n),
+    hits: Number(r.hits),
+    predicted: Number(r.predicted),
+    modelOnly: Number(r.model_only),
+    clvN: Number(r.clv_n),
+    clvBeat: Number(r.clv_beat),
+    clvWorse: Number(r.clv_worse),
+    clvPts: r.clv_pts === null ? null : Number(r.clv_pts),
+  }));
 }

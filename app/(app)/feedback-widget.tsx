@@ -104,9 +104,14 @@ export function FeedbackWidget({ username }: { username: string }) {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="rounded-full bg-blue-600 hover:bg-blue-500 transition-colors text-white text-sm font-medium px-4 py-2.5 shadow-lg"
+          aria-label="Send feedback"
+          // A small round icon on phones so it doesn't cover the cards it floats over; full label on larger screens.
+          className="flex items-center gap-1.5 rounded-full bg-blue-600/90 hover:bg-blue-500 transition-colors text-white text-sm font-medium h-10 w-10 justify-center sm:w-auto sm:h-auto sm:px-4 sm:py-2.5 shadow-lg"
         >
-          Feedback
+          <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 fill-current">
+            <path d="M3 4.5A2.5 2.5 0 0 1 5.5 2h9A2.5 2.5 0 0 1 17 4.5v7a2.5 2.5 0 0 1-2.5 2.5H9l-3.6 2.9A.9.9 0 0 1 4 16.2V14h0.5A2.5 2.5 0 0 1 3 11.5v-7Z" />
+          </svg>
+          <span className="hidden sm:inline">Feedback</span>
         </button>
       )}
     </div>

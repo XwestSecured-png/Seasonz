@@ -9,7 +9,9 @@ import {
   date,
   jsonb,
   uniqueIndex,
+  index,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 // ---------------------------------------------------------------------------
 // Teams — static reference data (32 NFL teams).
@@ -734,6 +736,8 @@ export const sportGames = pgTable(
   },
   (t) => ({
     sportEventIdx: uniqueIndex("sport_games_sport_event_idx").on(t.sport, t.espnEventId),
+    upcomingIdx: index("sport_games_upcoming_idx").on(t.kickoffAt).where(sql`is_final = false`),
+    sportSeasonIdx: index("sport_games_sport_season_idx").on(t.sport, t.season),
   })
 );
 
@@ -865,6 +869,8 @@ export const sportPlayerGameStats = pgTable(
       t.gameId,
       t.player
     ),
+    sportSeasonIdx: index("sport_player_game_stats_sport_season_idx").on(t.sport, t.season),
+    gameIdx: index("sport_player_game_stats_game_idx").on(t.gameId),
   })
 );
 
@@ -1298,5 +1304,6 @@ export const lineArchive = pgTable(
   },
   (t) => ({
     key: uniqueIndex("line_archive_key").on(t.sport, t.season, t.week, t.market, t.gameKey, t.player, t.statType, t.line, t.side, t.book),
+    playerIdx: index("line_archive_player_idx").on(t.sport, t.player, t.statType, t.line),
   })
 );
