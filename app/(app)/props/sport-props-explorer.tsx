@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { TrustBadge, type TrustView } from "../trust-badge";
 import { Verdict } from "../verdict";
+import { propStakeLabel } from "@/lib/stake-sizing";
 import { SortSelect } from "./sort-select";
 import { sortScore, type PropSort } from "@/lib/prop-sort";
 
@@ -40,26 +41,45 @@ function formatPrice(price: number | null): string {
 export function SportPropsExplorer({
   picks,
   favTeam,
+  bankrollUsd = null,
 }: {
   picks: SportPropRow[];
   favTeam: { code: string; primary: string } | null;
+  /** The signed-in user's bankroll, for the suggested stake's dollar amount. */
+  bankrollUsd?: number | null;
 }) {
-  const teams = useMemo(() => Array.from(new Set(picks.map((p) => p.team))).sort(), [picks]);
-  const statTypes = useMemo(() => Array.from(new Set(picks.map((p) => p.statType))).sort(), [picks]);
+  const teams = useMemo(
+    () => Array.from(new Set(picks.map((p) => p.team))).sort(),
+    [picks],
+  );
+  const statTypes = useMemo(
+    () => Array.from(new Set(picks.map((p) => p.statType))).sort(),
+    [picks],
+  );
 
   const [team, setTeam] = useState("All");
   const [statType, setStatType] = useState("All");
 
   const filtered = picks.filter(
-    (p) => (team === "All" || p.team === team) && (statType === "All" || p.statType === statType)
+    (p) =>
+      (team === "All" || p.team === team) &&
+      (statType === "All" || p.statType === statType),
   );
 
   const [sort, setSort] = useState<PropSort>("confidence");
-  const score = (r: SportPropRow) => sortScore(sort, { trust: r.trust, chance: r.modelWinPct, price: r.priceAmerican });
+  const score = (r: SportPropRow) =>
+    sortScore(sort, {
+      trust: r.trust,
+      chance: r.modelWinPct,
+      price: r.priceAmerican,
+    });
 
   // Player cards: one per team + player. "Team (A-Z)" keeps the team
   // sections; every other sort shows one ranked list, best card first.
-  const cards = new Map<string, { team: string; player: string; rows: SportPropRow[] }>();
+  const cards = new Map<
+    string,
+    { team: string; player: string; rows: SportPropRow[] }
+  >();
   for (const p of filtered) {
     const k = `${p.team}|${p.player}`;
     const c = cards.get(k) ?? { team: p.team, player: p.player, rows: [] };
@@ -67,19 +87,27 @@ export function SportPropsExplorer({
     cards.set(k, c);
   }
   const best = (c: { rows: SportPropRow[] }) => Math.max(...c.rows.map(score));
-  const sections: { team: string | null; cards: { team: string; player: string; rows: SportPropRow[] }[] }[] =
+  const sections: {
+    team: string | null;
+    cards: { team: string; player: string; rows: SportPropRow[] }[];
+  }[] =
     sort === "team"
       ? Array.from(new Set([...cards.values()].map((c) => c.team)))
           .sort()
           .map((t) => ({
             team: t,
-            cards: [...cards.values()].filter((c) => c.team === t).sort((a, b) => a.player.localeCompare(b.player)),
+            cards: [...cards.values()]
+              .filter((c) => c.team === t)
+              .sort((a, b) => a.player.localeCompare(b.player)),
           }))
       : [
           {
             team: null,
             cards: [...cards.values()]
-              .map((c) => ({ ...c, rows: [...c.rows].sort((a, b) => score(b) - score(a)) }))
+              .map((c) => ({
+                ...c,
+                rows: [...c.rows].sort((a, b) => score(b) - score(a)),
+              }))
               .sort((a, b) => best(b) - best(a)),
           },
         ];
@@ -135,7 +163,10 @@ export function SportPropsExplorer({
                   className="text-sm font-semibold border-b pb-1 flex items-center gap-2"
                   style={
                     isFavSection
-                      ? { color: favTeam!.primary, borderColor: favTeam!.primary }
+                      ? {
+                          color: favTeam!.primary,
+                          borderColor: favTeam!.primary,
+                        }
                       : { color: "#e5e5e5", borderColor: "#262626" }
                   }
                 >
@@ -143,7 +174,10 @@ export function SportPropsExplorer({
                   {isFavSection && (
                     <span
                       className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded"
-                      style={{ backgroundColor: `${favTeam!.primary}26`, color: favTeam!.primary }}
+                      style={{
+                        backgroundColor: `${favTeam!.primary}26`,
+                        color: favTeam!.primary,
+                      }}
                     >
                       Your team
                     </span>
@@ -159,23 +193,37 @@ export function SportPropsExplorer({
                       className="rounded-md border p-3 space-y-1.5"
                       style={
                         isFavTeam
-                          ? { borderColor: `${favTeam!.primary}55`, backgroundColor: `${favTeam!.primary}0d` }
+                          ? {
+                              borderColor: `${favTeam!.primary}55`,
+                              backgroundColor: `${favTeam!.primary}0d`,
+                            }
                           : { borderColor: "#262626" }
                       }
                     >
                       <div className="text-sm font-medium text-neutral-100">
                         {player}
-                        {sec.team === null && <span className="ml-1.5 text-xs font-normal text-neutral-500">{t}</span>}
+                        {sec.team === null && (
+                          <span className="ml-1.5 text-xs font-normal text-neutral-500">
+                            {t}
+                          </span>
+                        )}
                       </div>
                       <ul className="space-y-1">
                         {rows.map((r) => (
                           <li key={r.id} className="text-xs space-y-1">
                             <div className="text-neutral-400 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
                               <span>
-                                <span className={r.side === "Over" ? "text-emerald-400" : "text-rose-400"}>
+                                <span
+                                  className={
+                                    r.side === "Over"
+                                      ? "text-emerald-400"
+                                      : "text-rose-400"
+                                  }
+                                >
                                   {r.side}
                                 </span>{" "}
-                                {r.line} {r.statType} · {formatPrice(r.priceAmerican)} @ {r.book}
+                                {r.line} {r.statType} ·{" "}
+                                {formatPrice(r.priceAmerican)} @ {r.book}
                               </span>
                               <span className="text-neutral-500 min-w-0 flex flex-wrap items-center gap-x-1">
                                 proj {r.projection?.toFixed(1) ?? "—"}
@@ -185,6 +233,21 @@ export function SportPropsExplorer({
                                     <Verdict chance={r.modelWinPct} />
                                   </>
                                 )}
+                                {(() => {
+                                  const stake = propStakeLabel(
+                                    r.modelWinPct,
+                                    r.priceAmerican,
+                                    bankrollUsd,
+                                  );
+                                  return stake ? (
+                                    <span
+                                      className="text-emerald-400/90"
+                                      title="Suggested stake: an eighth of Kelly, capped at 2% of bankroll"
+                                    >
+                                      · stake {stake}
+                                    </span>
+                                  ) : null;
+                                })()}
                                 {r.trust && (
                                   <>
                                     {" "}
@@ -193,7 +256,10 @@ export function SportPropsExplorer({
                                 )}
                               </span>
                             </div>
-                            <CompareBooks books={r.otherBooks} currentBook={r.book} />
+                            <CompareBooks
+                              books={r.otherBooks}
+                              currentBook={r.book}
+                            />
                           </li>
                         ))}
                       </ul>

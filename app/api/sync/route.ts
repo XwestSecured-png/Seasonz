@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runFullSync } from "@/lib/sync";
-import { runSportSync, runAllSportsSync } from "@/lib/sports/sync";
+import { runSportSync, runAllSportsSync, sportsDueForPregame } from "@/lib/sports/sync";
 import type { SportKey } from "@/lib/sports/types";
 import { getCurrentUser } from "@/lib/current-user";
 
@@ -53,6 +53,15 @@ export async function GET(req: NextRequest) {
   // that's only meant to sync other sports. Omitting both params keeps the
   // original NFL-only behavior exactly as it was before this feature
   // existed.
+  // ?pregame=1: props pass for every sport with games starting in ~30-150
+  // minutes (lib/sports/sync.ts sportsDueForPregame); run every 30 minutes.
+  if (req.nextUrl.searchParams.get("pregame") === "1") {
+    const due = await sportsDueForPregame();
+    const out = await Promise.all(due.map((s) => runSportSync(s, undefined, { pregame: true })));
+    const flat = out.flat().filter((r) => r.status !== "skipped");
+    return NextResponse.json({ pregame: due, results: flat }, { status: flat.some((r) => r.status === "error") ? 207 : 200 });
+  }
+
   const sportsParam = req.nextUrl.searchParams.get("sports");
   // ?refresh=1: the light pre-game refresh (lines, injuries, starters, model).
   const refresh = req.nextUrl.searchParams.get("refresh") === "1";

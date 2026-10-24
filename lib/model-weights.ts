@@ -17,7 +17,7 @@ import { NFL_MODEL_WEIGHT } from "./elo";
 import { propModelWeightDefault } from "./props-model";
 import { fitCurveShares, curveRows } from "./curve-calibration";
 import { curveK, CURVE_SHARE, CURVE_SHARE_DEFAULT } from "./market-curve";
-import { fitMarket, marketRows, fitStatBias, fitOneSided, oneSidedRows, fitArchiveWeights } from "./market-learn";
+import { fitMarket, marketRows, fitStatBias, fitOneSided, oneSidedRows, fitArchiveWeights, fitClv, clvFactor } from "./market-learn";
 import { ONE_SIDED_SHIFT } from "./market-adjust";
 
 const KEY = "modelWeights";
@@ -101,9 +101,16 @@ export function fitPropWeight(rows: WeightRow[], base: number): Omit<WeightFit, 
 /** Per-stat props share: the stat's own fit when it has one against today's sport share, else the sport's. */
 export function propWeightFn(store: WeightStore, sport: string): (stat: string) => number {
   const sportW = weightFor(store, `prop:${sport}`);
+  // Closing-line multiplier (lib/market-learn.ts clvFactor) for stats without their own fit yet.
+  const factor = (key: string) => {
+    const w = store[key]?.weight;
+    return typeof w === "number" && w >= 0.25 && w <= 1.5 ? w : undefined;
+  };
   return (stat: string) => {
     const f = store[`prop:${sport}:${stat}`];
-    return f && f.applied && Math.abs(f.base - sportW) < 1e-9 && f.weight >= 0 && f.weight <= 1 ? f.weight : sportW;
+    if (f && f.applied && Math.abs(f.base - sportW) < 1e-9 && f.weight >= 0 && f.weight <= 1) return f.weight;
+    const m = factor(`clv:${sport}:${stat}`) ?? factor(`clv:${sport}`) ?? 1;
+    return Math.min(0.8, sportW * m);
   };
 }
 
@@ -139,6 +146,57 @@ async function fitTrustShift(sport: string): Promise<Omit<WeightFit, "at"> | nul
   const n = size.size;
   const weight = n >= TRUST_MIN_N ? +((best.c * n) / (n + TRUST_PRIOR_N)).toFixed(3) : 0;
   return { weight, base: 0, n, best: best.c, llCurrent: ll(0), llBest: best.v, applied: weight !== 0 };
+}
+
+export const SIDE_MIN_N = 50;
+const SIDE_PRIOR_N = 200;
+export const SIDE_MAX = 0.6;
+/**
+ * Over/Under calibration (1.26.0): a log-odds shift per sport and side on a
+ * pick's final chance. NBA Unders rated 79% hit 86% while Overs rated 77%
+ * hit 68% (first two weeks): one shift for both sides can't fix that. Fit on
+ * graded picks (one vote per player-game) as a correction on top of the
+ * shift already in use, moved in by n/(n+200) once a side has 50+.
+ */
+async function fitSideShift(sport: string, side: "Over" | "Under", current: number): Promise<Omit<WeightFit, "at"> | null> {
+  const rows = await db
+    .select({ final: propPickLog.final, result: propPickLog.result, player: propPickLog.player, stat: propPickLog.statType, date: propPickLog.gameDate, week: propPickLog.week })
+    .from(propPickLog)
+    .where(and(eq(propPickLog.sport, sport), eq(propPickLog.side, side), inArray(propPickLog.result, ["hit", "miss"])));
+  const usable = rows.filter((r) => r.final != null);
+  if (usable.length === 0) return null;
+  const ck = (r: (typeof usable)[number]) => `${r.player}|${r.stat}|${r.date ?? r.week}`;
+  const size = new Map<string, number>();
+  for (const r of usable) size.set(ck(r), (size.get(ck(r)) ?? 0) + 1);
+  const ll = (c: number) => {
+    let s = 0;
+    let n = 0;
+    for (const r of usable) {
+      const w = 1 / size.get(ck(r))!;
+      const q = clampP(sigmoid(logit(r.final!) + c));
+      s -= w * (r.result === "hit" ? Math.log(q) : Math.log(1 - q));
+      n += w;
+    }
+    return s / n;
+  };
+  let best = { c: 0, v: ll(0) };
+  for (let c = -1; c <= 1.0001; c += 0.02) {
+    const v = ll(c);
+    if (v < best.v - 1e-12) best = { c: +c.toFixed(2), v };
+  }
+  const n = size.size;
+  const step = n >= SIDE_MIN_N ? (best.c * n) / (n + SIDE_PRIOR_N) : 0;
+  const weight = +Math.max(-SIDE_MAX, Math.min(SIDE_MAX, current + step)).toFixed(3);
+  return { weight, base: 0, n, best: +(current + best.c).toFixed(2), llCurrent: ll(0), llBest: best.v, applied: weight !== 0 };
+}
+
+/** Learned Over/Under shift (log-odds) on a sport's pick chances. */
+export function sideShiftFor(store: WeightStore, sport: string): { Over: number; Under: number } {
+  const g = (side: string) => {
+    const w = store[`side:${sport}:${side}`]?.weight;
+    return typeof w === "number" && Math.abs(w) <= SIDE_MAX ? w : 0;
+  };
+  return { Over: g("Over"), Under: g("Under") };
 }
 
 const ADJ_MIN_N = 100;
@@ -316,6 +374,18 @@ export async function refitModelWeights(): Promise<string> {
     }
   }
 
+  // Over/Under calibration on the final chance.
+  for (const s of ["nfl", ...OTHER]) {
+    for (const side of ["Over", "Under"] as const) {
+      const cur = sideShiftFor(store, s)[side];
+      const fit = await fitSideShift(s, side, cur);
+      if (fit) {
+        next[`side:${s}:${side}`] = { ...fit, at: new Date().toISOString() };
+        if (fit.applied) msgs.push(`side:${s}:${side} ${fit.weight.toFixed(2)} (n=${fit.n})`);
+      }
+    }
+  }
+
   // Adjustment strength (lib/market-adjust.ts scaleAdjustments).
   for (const s of ["nfl", ...OTHER]) {
     const fit = await fitAdjStrength(s);
@@ -324,11 +394,31 @@ export async function refitModelWeights(): Promise<string> {
       if (fit.applied) msgs.push(`adj:${s} strength ${fit.weight.toFixed(2)} (n=${fit.n})`);
     }
   }
+  // Closing-line evidence per sport and stat (lib/market-learn.ts fitClv):
+  // read first so the all-sports reference is known.
+  const rowsBySport = new Map<string, Awaited<ReturnType<typeof marketRows>>>();
+  const clvBySport = new Map<string, ReturnType<typeof fitClv>>();
+  let refXY = 0;
+  let refXX = 0;
+  for (const s of ["nfl", ...OTHER]) {
+    try {
+      const rows = await marketRows(s);
+      rowsBySport.set(s, rows);
+      const c = fitClv(rows);
+      clvBySport.set(s, c);
+      refXY += c.sxy;
+      refXX += c.sxx;
+    } catch {
+      // archive not reachable
+    }
+  }
+  const clvRef = refXX > 0 ? refXY / refXX : 0;
+
   // Market learning (lib/market-learn.ts): Over bias and line-move
   // continuation per sport, from the graded line archive, shrunk in.
   for (const s of ["nfl", ...OTHER]) {
     try {
-      const rows = await marketRows(s);
+      const rows = rowsBySport.get(s) ?? (await marketRows(s));
       const fit = fitMarket(rows);
       const at = new Date().toISOString();
       const common = { base: 0, n: fit.n, llCurrent: fit.llBase, llBest: fit.llFit, at };
@@ -343,7 +433,17 @@ export async function refitModelWeights(): Promise<string> {
       // Per-stat model share from every graded archived line (replaces the
       // picks-only fit for a stat once it has enough player-games).
       const sportW = next[`prop:${s}`]?.weight ?? baseFor(`prop:${s}`);
-      for (const [stat, f] of Object.entries(fitArchiveWeights(rows, sportW))) {
+      // Closing-line multiplier per stat: where each stat's share starts.
+      const clv = clvBySport.get(s);
+      const factorOf = (stat: string) => (clv ? clvFactor(clv.stats[stat], clv, clvRef) : 1);
+      if (clv) {
+        next[`clv:${s}`] = { base: 1, n: clv.n, weight: factorOf("__sport__"), best: clv.beta, llCurrent: clvRef, llBest: clv.beta, applied: factorOf("__sport__") !== 1, at };
+        msgs.push(`clv:${s} beta ${clv.beta} vs all ${clvRef.toFixed(4)} (n=${clv.n})`);
+        for (const [stat, c] of Object.entries(clv.stats)) {
+          next[`clv:${s}:${stat}`] = { base: 1, n: c.n, weight: factorOf(stat), best: c.beta, llCurrent: clvRef, llBest: c.beta, applied: factorOf(stat) !== 1, at };
+        }
+      }
+      for (const [stat, f] of Object.entries(fitArchiveWeights(rows, sportW, (stat) => Math.min(0.8, sportW * factorOf(stat))))) {
         next[`prop:${s}:${stat}`] = { weight: f.weight, base: sportW, n: f.n, best: f.best, llCurrent: f.llCurrent, llBest: f.llBest, applied: f.weight !== sportW, at };
         msgs.push(`prop:${s}:${stat} ${Math.round(f.weight * 100)}% from archive (n=${f.n}, best ${Math.round(f.best * 100)}%)`);
       }

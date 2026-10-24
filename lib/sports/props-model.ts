@@ -7,7 +7,7 @@
 // field name (winProbability / americanToImpliedProb) are imported from
 // lib/props-model.ts rather than duplicated.
 import { DISPLAY_ONLY_STATS } from "../derived-props";
-import { scaleAdjustments, type MarketLearn } from "../market-adjust";
+import { scaleAdjustments, sideCalibrate, type MarketLearn } from "../market-adjust";
 import { gameDayFactor, type GameDayContext } from "./game-day";
 import { propTrust, calibrateTrust, trustFeatures, type Trust } from "../prop-trust";
 import type { PropOutcome } from "../odds";
@@ -573,7 +573,8 @@ export function buildSportPropPicks(
     const mk = marketFor(g);
     const pOver = mk === undefined ? pOverModel : blendPropChance(pOverModel, mk, weightOf(g.statType));
     const side: "Over" | "Under" = pOver >= 0.5 ? "Over" : "Under";
-    const modelWinPct = side === "Over" ? pOver : 1 - pOver;
+    // Learned Over/Under calibration (lib/model-weights.ts "side:<sport>").
+    const modelWinPct = sideCalibrate(side === "Over" ? pOver : 1 - pOver, side, marketLearn);
     const modelOnly = side === "Over" ? pOverModel : 1 - pOverModel;
     const modelBase = side === "Over" ? pOverBase : 1 - pOverBase;
     if (modelWinPct < MIN_MODEL_WIN_PCT) continue;

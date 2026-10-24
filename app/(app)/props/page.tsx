@@ -41,7 +41,7 @@ const TABS: { key: "nfl" | SportKey; label: string }[] = [
   ...(Object.values(SPORTS).map((s) => ({ key: s.key, label: s.label })) as { key: SportKey; label: string }[]),
 ];
 
-async function NflProps() {
+async function NflProps({ bankrollUsd }: { bankrollUsd: number | null }) {
   const season = currentNflSeason();
   const favTeam = await getFavoriteTeam();
 
@@ -170,6 +170,7 @@ async function NflProps() {
         </p>
       ) : (
         <PropsExplorer
+          bankrollUsd={bankrollUsd}
           favTeam={favTeam ? { code: favTeam.code, primary: favTeam.primary } : null}
           picks={picks
             .filter((p) => p.player && p.team && p.statType)
@@ -212,7 +213,7 @@ async function NflProps() {
   );
 }
 
-async function OtherSportPropsSection({ sport, userId }: { sport: SportKey; userId: number | null }) {
+async function OtherSportPropsSection({ sport, userId, bankrollUsd }: { sport: SportKey; userId: number | null; bankrollUsd: number | null }) {
   const def = SPORTS[sport];
   const season = currentSeasonYear(sport);
 
@@ -380,6 +381,7 @@ async function OtherSportPropsSection({ sport, userId }: { sport: SportKey; user
           </p>
         ) : (
           <SportPropsExplorer
+            bankrollUsd={bankrollUsd}
             favTeam={null}
             picks={modelPicks
               .filter((p) => p.team)
@@ -468,7 +470,7 @@ export default async function PropsPage({
         </div>
       </div>
 
-      {activeTab === "nfl" ? <NflProps /> : <OtherSportPropsSection sport={activeTab} userId={user?.id ?? null} />}
+      {activeTab === "nfl" ? <NflProps bankrollUsd={user?.bankrollUsd ?? null} /> : <OtherSportPropsSection sport={activeTab} userId={user?.id ?? null} bankrollUsd={user?.bankrollUsd ?? null} />}
 
       <NextStep
         href="/parlays"

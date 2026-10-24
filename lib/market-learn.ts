@@ -219,6 +219,10 @@ export async function liveMarketLearn(store: Record<string, { weight: number; ap
     open,
     biasByStat: Object.keys(biasByStat).length ? biasByStat : undefined,
     oneSided: typeof os === "number" && os >= -1.5 && os <= 0.3 ? os : undefined,
+    side: {
+      Over: Math.max(-0.6, Math.min(0.6, Number(store[`side:${sport}:Over`]?.weight ?? 0) || 0)),
+      Under: Math.max(-0.6, Math.min(0.6, Number(store[`side:${sport}:Under`]?.weight ?? 0) || 0)),
+    },
     curveExact: share(ce),
     curveOne: share(co),
   };
@@ -304,7 +308,12 @@ export const ARCHIVE_W_PRIOR_N = 400;
  * player-games. Picks alone gave 60-370 graded player-games per sport; the
  * archive gives thousands.
  */
-export function fitArchiveWeights(rows: MarketRow[], sportW: number): Record<string, { weight: number; best: number; n: number; llCurrent: number; llBest: number }> {
+export function fitArchiveWeights(
+  rows: MarketRow[],
+  sportW: number,
+  /** Where each stat's share starts before its own graded lines move it (closing-line evidence, fitClv). */
+  priorOf: (stat: string) => number = () => sportW
+): Record<string, { weight: number; best: number; n: number; llCurrent: number; llBest: number }> {
   const byStat = new Map<string, MarketRow[]>();
   for (const r of rows) {
     if (r.model === undefined) continue;
@@ -325,12 +334,58 @@ export function fitArchiveWeights(rows: MarketRow[], sportW: number): Record<str
   for (const [stat, l] of byStat) {
     const n = new Set(l.map((r) => r.key)).size;
     if (n < ARCHIVE_W_MIN_N) continue;
-    let best = { w: sportW, v: ll(l, sportW) };
+    const prior = priorOf(stat);
+    let best = { w: prior, v: ll(l, prior) };
     for (let w = 0; w <= 0.8001; w += 0.05) {
       const v = ll(l, w);
       if (v < best.v - 1e-12) best = { w: +w.toFixed(2), v };
     }
-    out[stat] = { weight: +(sportW + ((best.w - sportW) * n) / (n + ARCHIVE_W_PRIOR_N)).toFixed(3), best: best.w, n, llCurrent: ll(l, sportW), llBest: best.v };
+    out[stat] = { weight: +(prior + ((best.w - prior) * n) / (n + ARCHIVE_W_PRIOR_N)).toFixed(3), best: best.w, n, llCurrent: ll(l, prior), llBest: best.v };
   }
   return out;
+}
+
+/**
+ * Closing-line evidence (1.26.0): of the gap between the model's chance and
+ * a line's opening price, how much the market closes before game time
+ * (beta, in log-odds, through the origin). Positive = the market later moves
+ * toward the model, i.e. the model knows something; zero = it doesn't. Every
+ * archived line counts (no need to wait for many results), one vote per
+ * player-game. First check (Oct 2026): ~0.035 in the NFL, NBA, NHL and WNBA,
+ * 0.003 in college football (matching its near-zero best share on results),
+ * and ~0 on NFL Rush + Rec Yds, Rush Attempts and Longest Rush.
+ */
+export function fitClv(rows: MarketRow[]): { beta: number; n: number; sxy: number; sxx: number; stats: Record<string, { beta: number; n: number }> } {
+  const acc = new Map<string, { sxy: number; sxx: number; keys: Set<string> }>();
+  const all = { sxy: 0, sxx: 0, keys: new Set<string>() };
+  for (const r of rows) {
+    if (r.model === undefined) continue;
+    const x = logit(r.model) - logit(r.open);
+    if (Math.abs(x) >= 3) continue;
+    const y = logit(r.close) - logit(r.open);
+    const stat = r.key.split("|")[2];
+    const a = acc.get(stat) ?? acc.set(stat, { sxy: 0, sxx: 0, keys: new Set() }).get(stat)!;
+    for (const t of [a, all]) {
+      t.sxy += r.w * x * y;
+      t.sxx += r.w * x * x;
+      t.keys.add(r.key);
+    }
+  }
+  const stats: Record<string, { beta: number; n: number }> = {};
+  for (const [stat, a] of acc) if (a.sxx > 0) stats[stat] = { beta: +(a.sxy / a.sxx).toFixed(4), n: a.keys.size };
+  return { beta: all.sxx > 0 ? +(all.sxy / all.sxx).toFixed(4) : 0, n: all.keys.size, sxy: all.sxy, sxx: all.sxx, stats };
+}
+
+export const CLV_SPORT_PRIOR_N = 5000;
+export const CLV_STAT_PRIOR_N = 2000;
+/**
+ * Multiplier on a stat's model share from closing-line evidence: its beta
+ * (shrunk toward its sport's, which is shrunk toward the all-sports beta)
+ * over the all-sports beta, kept to 0.25-1.5.
+ */
+export function clvFactor(stat: { beta: number; n: number } | undefined, sport: { beta: number; n: number }, ref: number): number {
+  if (!(ref > 0)) return 1;
+  const sb = (sport.n * sport.beta + CLV_SPORT_PRIOR_N * ref) / (sport.n + CLV_SPORT_PRIOR_N);
+  const b = stat ? (stat.n * stat.beta + CLV_STAT_PRIOR_N * sb) / (stat.n + CLV_STAT_PRIOR_N) : sb;
+  return +Math.max(0.25, Math.min(1.5, b / ref)).toFixed(3);
 }

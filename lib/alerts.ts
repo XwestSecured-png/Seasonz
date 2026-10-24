@@ -6,7 +6,8 @@
 //     (toward or against your side), for games in the next two days.
 // Every alert is deduped through alert_log, so a rerun never repeats one.
 import { db } from "@/db";
-import { games, pushSubscriptions, sportGames, sportUserPicks, userBets, userPicks } from "@/db/schema";
+import { games, pushSubscriptions, sportGames, sportPropLinesRaw, sportUserPicks, userBets, userPicks, userPropPicks } from "@/db/schema";
+import { betterLine, statTypesForLabel } from "./better-line";
 import { and, eq, gt, gte, inArray, isNotNull, lt } from "drizzle-orm";
 import { SPORTS, type SportKey } from "./sports/types";
 import { getBestBetsFeed } from "./best-bets-feed";
@@ -47,7 +48,7 @@ export async function runAlerts(now = new Date()): Promise<string> {
     );
   }
   const userIds = [...prefsBy.keys()];
-  const sent = { locks: 0, edges: 0, moves: 0, returns: 0 };
+  const sent = { locks: 0, edges: 0, moves: 0, returns: 0, lines: 0 };
 
   // ---- Lock reminders -----------------------------------------------------
   // Games locking in this run's window: kickoff - lock minutes in [now, now+30m).
@@ -212,6 +213,52 @@ export async function runAlerts(now = new Date()): Promise<string> {
     }
   }
 
+  // ---- A better line for a saved prop pick (1.26.0) ----------------------
+  // Pending saved props whose game starts in the next 24 hours: when a book
+  // posts the same prop at an easier number (lower for an Over, higher for an
+  // Under) at -150 or better, tell the user once (lib/better-line.ts).
+  const lineUsers = userIds.filter((u) => prefsBy.get(u)!.moves);
+  if (lineUsers.length) {
+    const until = new Date(now.getTime() + 24 * HOUR);
+    const pend = await db
+      .select({
+        id: userPropPicks.id,
+        userId: userPropPicks.userId,
+        sport: userPropPicks.sport,
+        player: userPropPicks.player,
+        statLabel: userPropPicks.statLabel,
+        threshold: userPropPicks.threshold,
+        side: userPropPicks.side,
+      })
+      .from(userPropPicks)
+      .innerJoin(sportGames, eq(sportGames.id, userPropPicks.gameId))
+      .where(and(inArray(userPropPicks.userId, lineUsers), eq(userPropPicks.result, "pending"), gt(sportGames.kickoffAt, now), lt(sportGames.kickoffAt, until)));
+    const bySport = new Map<string, typeof pend>();
+    for (const p of pend) (bySport.get(p.sport) ?? bySport.set(p.sport, []).get(p.sport)!).push(p);
+    for (const [sport, picks] of bySport) {
+      const statTypes = new Set(picks.flatMap((p) => statTypesForLabel(sport as SportKey, p.statLabel)));
+      if (!statTypes.size) continue;
+      const lines = await db
+        .select({ player: sportPropLinesRaw.player, statType: sportPropLinesRaw.statType, line: sportPropLinesRaw.line, side: sportPropLinesRaw.side, book: sportPropLinesRaw.book, priceAmerican: sportPropLinesRaw.priceAmerican })
+        .from(sportPropLinesRaw)
+        .where(and(eq(sportPropLinesRaw.sport, sport), inArray(sportPropLinesRaw.statType, [...statTypes]), gte(sportPropLinesRaw.fetchedAt, new Date(now.getTime() - 36 * HOUR))));
+      for (const p of picks) {
+        const types = new Set(statTypesForLabel(sport as SportKey, p.statLabel));
+        const side = p.side === "under" ? "under" : "over";
+        const b = betterLine({ player: p.player, side, threshold: p.threshold }, lines.filter((l) => types.has(l.statType)));
+        if (!b) continue;
+        const word = side === "over" ? "Over" : "Under";
+        const ok = await sendAlert(p.userId, "moves", `betterline:${p.id}`, {
+          title: "A better line for your pick",
+          body: `${p.player} ${word} ${p.threshold} ${p.statLabel}: ${b.book} now has ${word} ${b.line} (${b.priceAmerican > 0 ? "+" : ""}${b.priceAmerican}).`,
+          url: `/props?sport=${sport}`,
+          tag: `betterline-${p.id}`,
+        });
+        if (ok) sent.lines++;
+      }
+    }
+  }
+
   // ---- Key players back from injury --------------------------------------
   // Detected in the last 12 hours, team plays in the next 2 days, for users
   // who've picked or bet that sport in the last 30 days (or everyone, for
@@ -283,5 +330,5 @@ export async function runAlerts(now = new Date()): Promise<string> {
     }
   }
 
-  return `Alerts sent: ${sent.locks} lock, ${sent.edges} edge, ${sent.moves} line-move, ${sent.returns} back-from-injury (${userIds.length} subscriber(s)).`;
+  return `Alerts sent: ${sent.locks} lock, ${sent.edges} edge, ${sent.moves} line-move, ${sent.lines} better-line, ${sent.returns} back-from-injury (${userIds.length} subscriber(s)).`;
 }

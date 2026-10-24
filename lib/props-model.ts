@@ -1,7 +1,7 @@
 import type { PlayerWeekStats, DefensivePlayerWeekStats, ScheduleGame, SnapRow } from "./nflverse";
 import { NFL_DISPLAY_ONLY_STATS } from "./derived-props";
 import { curvesFrom, curveChance, blendLogit, curveK, CURVE_SHARE, CURVE_SHARE_DEFAULT } from "./market-curve";
-import { adjustMarket, adjustMarketMap, scaleAdjustments, oneSidedChance, type MarketLearn } from "./market-adjust";
+import { adjustMarket, adjustMarketMap, scaleAdjustments, oneSidedChance, sideCalibrate, type MarketLearn } from "./market-adjust";
 import type { PropOutcome } from "./odds";
 import { MIN_MODEL_WIN_PCT } from "./confidence";
 import { projectProp, propChance, type PropModelConfig, type Projection, streakFactor, streakReason } from "./prop-dist";
@@ -949,7 +949,8 @@ export function buildPropPicks(
     const mk = marketFor(g);
     const pOver = mk === undefined ? pOverModel : blendPropChance(pOverModel, mk, weightOf(g.statType));
     const side: "Over" | "Under" = pOver >= 0.5 ? "Over" : "Under";
-    const modelWinPct = side === "Over" ? pOver : 1 - pOver;
+    // Learned Over/Under calibration (lib/model-weights.ts "side:<sport>").
+    const modelWinPct = sideCalibrate(side === "Over" ? pOver : 1 - pOver, side, marketLearn);
     const modelOnly = side === "Over" ? pOverModel : 1 - pOverModel;
     const modelBase = side === "Over" ? pOverBase : 1 - pOverBase;
     if (modelWinPct < MIN_MODEL_WIN_PCT) continue;

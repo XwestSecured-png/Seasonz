@@ -44,3 +44,25 @@ export function suggestedStakeUsd(
   if (bankrollUsd === null || bankrollUsd <= 0) return null;
   return Math.round(bankrollUsd * suggestedStakePct(modelProb, priceAmerican));
 }
+
+/**
+ * Prop stake (1.26.0): eighth-Kelly, capped at 2% of bankroll. Props are
+ * more correlated (several on one game) and their chances noisier than a
+ * game line's, and at half-Kelly nearly every 70%+ prop hit the 5% cap,
+ * which says nothing. Graded prop picks run about 5 points over the market
+ * on average; an eighth of Kelly on that is ~1-2%.
+ */
+const PROP_KELLY_FRACTION = 0.125;
+const PROP_MAX_STAKE_PCT = 0.02;
+export function propStakePct(modelProb: number, priceAmerican: number): number {
+  return Math.min(PROP_MAX_STAKE_PCT, kellyFraction(modelProb, priceAmerican) * PROP_KELLY_FRACTION);
+}
+
+/** "1.5% · $15" (dollars only when a bankroll is set); null when there's no edge at this price. */
+export function propStakeLabel(modelProb: number | null, priceAmerican: number | null, bankrollUsd: number | null): string | null {
+  if (modelProb === null || priceAmerican === null) return null;
+  const pct = propStakePct(modelProb, priceAmerican);
+  if (pct < 0.001) return null;
+  const usd = bankrollUsd && bankrollUsd > 0 ? Math.max(1, Math.round(bankrollUsd * pct)) : null;
+  return `${(pct * 100).toFixed(1)}%${usd !== null ? ` · $${usd}` : ""}`;
+}

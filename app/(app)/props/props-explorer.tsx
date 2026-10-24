@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { TrustBadge, type TrustView } from "../trust-badge";
 import { Verdict } from "../verdict";
+import { propStakeLabel } from "@/lib/stake-sizing";
 import { SortSelect } from "./sort-select";
 import { sortScore, type PropSort } from "@/lib/prop-sort";
 
@@ -81,40 +82,66 @@ function formatPrice(price: number | null): string {
 const CATEGORY_LEGEND: { category: string; blurb: string }[] = [
   { category: "Passing", blurb: "QB yardage line vs. season average" },
   { category: "Rushing", blurb: "Rush yards line vs. season average" },
-  { category: "Receiving", blurb: "Rec yards/receptions line vs. season average" },
-  { category: "Touchdowns", blurb: "model-only chance of scoring, no book line" },
-  { category: "Turnovers", blurb: "model-only chance of an INT thrown or fumble lost" },
-  { category: "Pass Protection", blurb: "model-only chance the QB gets sacked" },
-  { category: "Defense", blurb: "model-only chance a defender gets a sack or INT" },
+  {
+    category: "Receiving",
+    blurb: "Rec yards/receptions line vs. season average",
+  },
+  {
+    category: "Touchdowns",
+    blurb: "model-only chance of scoring, no book line",
+  },
+  {
+    category: "Turnovers",
+    blurb: "model-only chance of an INT thrown or fumble lost",
+  },
+  {
+    category: "Pass Protection",
+    blurb: "model-only chance the QB gets sacked",
+  },
+  {
+    category: "Defense",
+    blurb: "model-only chance a defender gets a sack or INT",
+  },
 ];
 
 export function PropsExplorer({
   picks,
   favTeam,
+  bankrollUsd = null,
 }: {
   picks: PropRow[];
   favTeam: { code: string; primary: string } | null;
+  /** The signed-in user's bankroll, for the suggested stake's dollar amount. */
+  bankrollUsd?: number | null;
 }) {
   const teams = useMemo(
     () => Array.from(new Set(picks.map((p) => p.team))).sort(),
-    [picks]
+    [picks],
   );
   const statTypes = useMemo(
     () => Array.from(new Set(picks.map((p) => p.statType))).sort(),
-    [picks]
+    [picks],
   );
 
   const [team, setTeam] = useState("All");
   const [statType, setStatType] = useState("All");
 
   const filtered = picks.filter(
-    (p) => (team === "All" || p.team === team) && (statType === "All" || p.statType === statType)
+    (p) =>
+      (team === "All" || p.team === team) &&
+      (statType === "All" || p.statType === statType),
   );
 
   const [sort, setSort] = useState<PropSort>("confidence");
   // Model-only props (Anytime TD...) keep their chance in edgePct.
-  const chanceOf = (r: PropRow) => r.modelWinPct ?? (MODEL_ONLY_STAT_TYPES.has(r.statType) ? r.edgePct : null);
-  const score = (r: PropRow) => sortScore(sort, { trust: r.trust, chance: chanceOf(r), price: r.priceAmerican });
+  const chanceOf = (r: PropRow) =>
+    r.modelWinPct ?? (MODEL_ONLY_STAT_TYPES.has(r.statType) ? r.edgePct : null);
+  const score = (r: PropRow) =>
+    sortScore(sort, {
+      trust: r.trust,
+      chance: chanceOf(r),
+      price: r.priceAmerican,
+    });
 
   // Player cards: one per team + player. "Team (A-Z)" keeps the team
   // sections; every other sort shows one ranked list, best card first.
@@ -133,16 +160,24 @@ export function PropsExplorer({
           .sort()
           .map((t) => ({
             team: t,
-            cards: [...cards.values()].filter((c) => c.team === t).sort((a, b) => a.player.localeCompare(b.player)),
+            cards: [...cards.values()]
+              .filter((c) => c.team === t)
+              .sort((a, b) => a.player.localeCompare(b.player)),
           }))
-      : [{ team: null, cards: [...cards.values()].sort((a, b) => best(b) - best(a)) }];
+      : [
+          {
+            team: null,
+            cards: [...cards.values()].sort((a, b) => best(b) - best(a)),
+          },
+        ];
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
         {CATEGORY_LEGEND.map((c) => (
           <span key={c.category}>
-            <span className="text-neutral-400 font-medium">{c.category}:</span> {c.blurb}
+            <span className="text-neutral-400 font-medium">{c.category}:</span>{" "}
+            {c.blurb}
           </span>
         ))}
       </div>
@@ -195,7 +230,10 @@ export function PropsExplorer({
                   className="text-sm font-semibold border-b pb-1 flex items-center gap-2"
                   style={
                     isFavSection
-                      ? { color: favTeam!.primary, borderColor: favTeam!.primary }
+                      ? {
+                          color: favTeam!.primary,
+                          borderColor: favTeam!.primary,
+                        }
                       : { color: "#e5e5e5", borderColor: "#262626" }
                   }
                 >
@@ -203,7 +241,10 @@ export function PropsExplorer({
                   {isFavSection && (
                     <span
                       className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded"
-                      style={{ backgroundColor: `${favTeam!.primary}26`, color: favTeam!.primary }}
+                      style={{
+                        backgroundColor: `${favTeam!.primary}26`,
+                        color: favTeam!.primary,
+                      }}
                     >
                       Your team
                     </span>
@@ -221,12 +262,16 @@ export function PropsExplorer({
                     list.push(r);
                     byStat.set(r.statType, list);
                   }
-                  const statBest = (st: string) => Math.max(...byStat.get(st)!.map(score));
-                  if (sort !== "team") for (const l of byStat.values()) l.sort((a, b) => score(b) - score(a));
+                  const statBest = (st: string) =>
+                    Math.max(...byStat.get(st)!.map(score));
+                  if (sort !== "team")
+                    for (const l of byStat.values())
+                      l.sort((a, b) => score(b) - score(a));
                   const statsSorted = Array.from(byStat.keys()).sort((a, b) =>
                     sort === "team"
-                      ? CATEGORY_ORDER.indexOf(STAT_CATEGORY[a] ?? "") - CATEGORY_ORDER.indexOf(STAT_CATEGORY[b] ?? "")
-                      : statBest(b) - statBest(a)
+                      ? CATEGORY_ORDER.indexOf(STAT_CATEGORY[a] ?? "") -
+                        CATEGORY_ORDER.indexOf(STAT_CATEGORY[b] ?? "")
+                      : statBest(b) - statBest(a),
                   );
                   return (
                     <div
@@ -234,13 +279,20 @@ export function PropsExplorer({
                       className="rounded-md border p-3 space-y-2"
                       style={
                         isFavTeam
-                          ? { borderColor: `${favTeam!.primary}55`, backgroundColor: `${favTeam!.primary}0d` }
+                          ? {
+                              borderColor: `${favTeam!.primary}55`,
+                              backgroundColor: `${favTeam!.primary}0d`,
+                            }
                           : { borderColor: "#262626" }
                       }
                     >
                       <div className="text-sm font-medium text-neutral-100">
                         {player}
-                        {sec.team === null && <span className="ml-1.5 text-xs font-normal text-neutral-500">{t}</span>}
+                        {sec.team === null && (
+                          <span className="ml-1.5 text-xs font-normal text-neutral-500">
+                            {t}
+                          </span>
+                        )}
                       </div>
                       {statsSorted.map((st) => (
                         <div key={st} className="space-y-1">
@@ -248,7 +300,9 @@ export function PropsExplorer({
                             <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-400">
                               {STAT_CATEGORY[st] ?? "Other"}
                             </span>
-                            <span className="text-xs font-medium text-neutral-300">{st}</span>
+                            <span className="text-xs font-medium text-neutral-300">
+                              {st}
+                            </span>
                           </div>
                           <ul className="space-y-1">
                             {byStat.get(st)!.map((r) =>
@@ -261,7 +315,9 @@ export function PropsExplorer({
                                     No book line — model projection only
                                   </span>
                                   <span className="text-neutral-200 font-medium shrink-0">
-                                    {r.edgePct !== null ? `${(r.edgePct * 100).toFixed(0)}%` : "—"}{" "}
+                                    {r.edgePct !== null
+                                      ? `${(r.edgePct * 100).toFixed(0)}%`
+                                      : "—"}{" "}
                                     chance
                                   </span>
                                 </li>
@@ -271,16 +327,21 @@ export function PropsExplorer({
                                     <span>
                                       <span
                                         className={
-                                          r.side === "Over" ? "text-emerald-400" : "text-rose-400"
+                                          r.side === "Over"
+                                            ? "text-emerald-400"
+                                            : "text-rose-400"
                                         }
                                       >
                                         {r.side}
                                       </span>{" "}
-                                      {r.line} · {formatPrice(r.priceAmerican)} @ {r.book}
+                                      {r.line} · {formatPrice(r.priceAmerican)}{" "}
+                                      @ {r.book}
                                     </span>
                                     <span className="text-neutral-500 min-w-0 flex flex-wrap items-center gap-x-1">
                                       proj {r.projection?.toFixed(1) ?? "—"} ·{" "}
-                                      {r.edgePct !== null ? `${(r.edgePct * 100).toFixed(1)}%` : "—"}{" "}
+                                      {r.edgePct !== null
+                                        ? `${(r.edgePct * 100).toFixed(1)}%`
+                                        : "—"}{" "}
                                       edge
                                       {r.modelWinPct !== null && (
                                         <>
@@ -288,6 +349,21 @@ export function PropsExplorer({
                                           <Verdict chance={r.modelWinPct} />
                                         </>
                                       )}
+                                      {(() => {
+                                        const stake = propStakeLabel(
+                                          r.modelWinPct,
+                                          r.priceAmerican,
+                                          bankrollUsd,
+                                        );
+                                        return stake ? (
+                                          <span
+                                            className="text-emerald-400/90"
+                                            title="Suggested stake: an eighth of Kelly, capped at 2% of bankroll"
+                                          >
+                                            · stake {stake}
+                                          </span>
+                                        ) : null;
+                                      })()}
                                       {r.trust && (
                                         <>
                                           {" "}
@@ -296,9 +372,12 @@ export function PropsExplorer({
                                       )}
                                     </span>
                                   </div>
-                                  <CompareBooks books={r.otherBooks} currentBook={r.book} />
+                                  <CompareBooks
+                                    books={r.otherBooks}
+                                    currentBook={r.book}
+                                  />
                                 </li>
-                              )
+                              ),
                             )}
                           </ul>
                         </div>

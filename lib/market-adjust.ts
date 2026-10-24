@@ -8,6 +8,8 @@ export interface MarketLearn {
   biasByStat?: Record<string, number>;
   /** Log-odds shift for a price posted on one side only (alt ladders), see ONE_SIDED_SHIFT. */
   oneSided?: number;
+  /** Learned Over/Under log-odds shift on a pick's final chance (lib/model-weights.ts "side:<sport>"). */
+  side?: { Over: number; Under: number };
   /** Learned share of the market price curve (lib/market-curve.ts) against a two-sided / one-sided price. */
   curveExact?: number;
   curveOne?: number;
@@ -62,4 +64,10 @@ export function adjustMarketMap(m: Map<string, number>, ml: MarketLearn | undefi
 export function scaleAdjustments(base: number, adjusted: number, k: number): number {
   if (k === 1 || base === adjusted) return adjusted;
   return clampP(sigmoid(logit(base) + k * (logit(adjusted) - logit(base))));
+}
+
+/** A pick's final chance for its side after the learned Over/Under calibration. */
+export function sideCalibrate(p: number, side: "Over" | "Under", ml: MarketLearn | undefined): number {
+  const c = ml?.side?.[side] ?? 0;
+  return c === 0 ? p : clampP(sigmoid(logit(p) + c));
 }

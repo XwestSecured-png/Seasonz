@@ -55,7 +55,7 @@ import { fetchUpcomingEventsForSport, fetchEventPlayerPropsForSport } from "./od
 import { computeSportSeasonAverages, buildSportPropPicks, type SportScheduleGame } from "./props-model";
 import { americanToImpliedProb } from "../props-model";
 import { hasOddsApiKey } from "../odds-provider";
-import { eq, ne, and, inArray, notInArray, sql } from "drizzle-orm";
+import { eq, ne, and, inArray, notInArray, sql, gte, lt, like } from "drizzle-orm";
 
 // SportEloGame plus the DB row id, so each Elo result maps straight back to
 // its row for the write-back.
@@ -153,16 +153,22 @@ async function logStageRaw(
 export async function runSportSync(
   sport: SportKey,
   season?: number,
-  opts: { refresh?: boolean } = {}
+  opts: { refresh?: boolean; pregame?: boolean } = {}
 ): Promise<SportSyncStageResult[]> {
+  // Pre-game props pass (1.26.0, ?pregame=1): ~90 minutes before a slate,
+  // just teams, schedule, injuries and props, so late injury and lineup news
+  // reaches the picks. Everything else waits for the next full sync.
+  const PREGAME_RUN = new Set(["teams", "schedule", "injuries", "props"]);
   // Pre-game refresh (11am / 5pm ET): only what moves close to game time —
   // scores, ratings, injuries, starters, lines, weather and the model.
   // Box scores, team stats and player props wait for the full sync.
   const REFRESH_SKIP = new Set(["teamMetrics", "playerStats", "teamGameStats", "props", "propGrading"]);
   const logStage = (stage: string, fn: () => Promise<string>): Promise<SportSyncStageResult> =>
-    opts.refresh && REFRESH_SKIP.has(stage.split(":")[1])
-      ? Promise.resolve({ stage, status: "skipped" as const, detail: "Skipped in pre-game refresh." })
-      : logStageRaw(stage, fn);
+    opts.pregame && !PREGAME_RUN.has(stage.split(":")[1])
+      ? Promise.resolve({ stage, status: "skipped" as const, detail: "Skipped in pre-game props pass." })
+      : opts.refresh && REFRESH_SKIP.has(stage.split(":")[1])
+        ? Promise.resolve({ stage, status: "skipped" as const, detail: "Skipped in pre-game refresh." })
+        : logStageRaw(stage, fn);
   const def = SPORTS[sport];
   const year = season ?? currentSeasonYear(sport);
   const results: SportSyncStageResult[] = [];
@@ -1223,4 +1229,24 @@ export async function runAllSportsSync(
     }
   }
   return all;
+}
+
+/**
+ * Sports with a game starting in the next 30-150 minutes whose props
+ * haven't been refreshed in the last 50 (1.26.0). Called every 30 minutes
+ * by the database scheduler (?pregame=1).
+ */
+export async function sportsDueForPregame(now = new Date()): Promise<SportKey[]> {
+  const from = new Date(now.getTime() + 30 * 60_000);
+  const to = new Date(now.getTime() + 150 * 60_000);
+  const soon = await db
+    .selectDistinct({ sport: sportGames.sport })
+    .from(sportGames)
+    .where(and(eq(sportGames.isFinal, false), gte(sportGames.kickoffAt, from), lt(sportGames.kickoffAt, to)));
+  const recent = await db
+    .selectDistinct({ stage: syncRuns.stage })
+    .from(syncRuns)
+    .where(and(eq(syncRuns.status, "ok"), gte(syncRuns.startedAt, new Date(now.getTime() - 50 * 60_000)), like(syncRuns.stage, "%:props")));
+  const fresh = new Set(recent.map((r) => r.stage.split(":")[0]));
+  return soon.map((r) => r.sport as SportKey).filter((s) => s in SPORTS && !fresh.has(s));
 }

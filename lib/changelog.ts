@@ -33,6 +33,58 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.26.0",
+    date: "2026-10-24",
+    title: "Fresher props, honest Overs and Unders, bet sizes",
+    summary: "Props refresh before every slate, Over and Under picks are calibrated separately, the model's trust per stat learns from closing lines, each pick suggests a stake, and you get told when a better line shows up.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Props refresh before games",
+        whatChanged:
+          "Basketball, hockey, baseball and college props were only rebuilt in the midnight sync (the 11am and 5pm refreshes skipped them), so injury and lineup news from the day never reached them. Now, every 30 minutes, any sport with games starting in the next 30-150 minutes gets its injuries and props rebuilt.",
+        whatItMeans: "Picks for tonight's games reflect today's news, not last night's.",
+        href: "/props",
+      },
+      {
+        kind: "improved",
+        title: "Over and Under calibrated separately",
+        whatChanged:
+          "In the NBA, Under picks rated 79% hit 86% while Over picks rated 77% hit 68%. Each sport's Over and Under chances now get their own correction, refitted nightly on graded picks and moved in gradually as results come in.",
+        whatItMeans: "The percentage on a pick means the same thing whichever side it's on.",
+      },
+      {
+        kind: "improved",
+        title: "Trust per stat learns from closing lines",
+        whatChanged:
+          "How far the line moves toward the model before the game is measured on every archived line, not just graded results. The market closes about 3.5% of the gap to the model in the NFL, NBA, NHL and WNBA, almost none in college football, and none on NFL rush attempts, rush + rec yards and longest rush. Each stat's model share now starts from that, then moves with graded results.",
+        whatItMeans: "Stats where the model knows something lean on it more, stats where it doesn't lean on the market, weeks sooner than results alone could show.",
+      },
+      {
+        kind: "new",
+        title: "Suggested stake on every prop pick",
+        whatChanged:
+          "Each prop pick shows a suggested stake: an eighth of Kelly, capped at 2% of your bankroll, with a dollar amount once your bankroll is set.",
+        whatItMeans: "Not just which side, but how much: bigger edges at better prices get more, and nothing ever risks more than 2%.",
+        href: "/props",
+      },
+      {
+        kind: "new",
+        title: "Better-line alerts",
+        whatChanged:
+          "When a book posts one of your saved prop picks at an easier number (a lower line for an Over, a higher one for an Under) at -150 or better, you get one notification, under line-move alerts.",
+        whatItMeans: "You can take the better number before the game.",
+      },
+      {
+        kind: "fixed",
+        title: "Sync runs in two waves",
+        whatChanged: "The full sync started all seven sports at the same second, which overloaded the database and timed some out. It now runs in two waves six minutes apart.",
+        whatItMeans: "Fewer failed or slow syncs.",
+        audience: "admin",
+      },
+    ],
+  },
+  {
     version: "1.25.1",
     date: "2026-10-24",
     title: "Health check: recovered stages",
