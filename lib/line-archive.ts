@@ -56,7 +56,11 @@ async function upsert(rows: Row[]): Promise<number> {
           moves: sql`${lineArchive.moves} + case when ${lineArchive.closePrice} <> excluded.close_price then 1 else 0 end`,
         },
         // Graded lines are history; never touch them again.
-        setWhere: sql`${lineArchive.result} is null`,
+        // Only when the price moved, or the "last seen" time is a day old:
+        // rewriting every line on every sync (75,000+ on an NFL Sunday) was
+        // the props stages' biggest cost. Grading places a line in the
+        // team's first game after it was last seen, so a day of slack is safe.
+        setWhere: sql`${lineArchive.result} is null and (${lineArchive.closePrice} is distinct from excluded.close_price or ${lineArchive.closeAt} < excluded.close_at - interval '20 hours' or (${lineArchive.team} is null and excluded.team is not null))`,
       })
   );
   return uniq.length;
