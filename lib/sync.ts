@@ -1154,7 +1154,8 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
           windByTeam.set(g.away, g.wind);
         }
         const rushAfterContact = await fetchRushAfterContact(season).catch(() => new Map<string, { carries: number; yco: number }>());
-        const averages = computeSeasonAverages(playerStats, schedule, week, priorStats, snapTrends(snaps), returners, windByTeam, rushAfterContact);
+        const outThisWeek = new Set(impactRows.filter((r) => r.status === "OUT").map((r) => `${r.team}|${r.player.toLowerCase().replace(/[^a-z]/g, "")}`));
+        const averages = computeSeasonAverages(playerStats, schedule, week, priorStats, snapTrends(snaps), returners, windByTeam, rushAfterContact, outThisWeek);
 
         // A player marked OUT or DOUBTFUL for this game shouldn't get a prop
         // pick at all — their season stats say nothing about a game they

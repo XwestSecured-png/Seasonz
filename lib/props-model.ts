@@ -111,6 +111,8 @@ export interface PlayerSeasonAverage {
   efficiency?: { factor: number; reason: string };
   /** Streak correction applied (only when 3%+). */
   streak?: number;
+  /** A teammate star is out this week (lead back / top target / QB). */
+  starOut?: { factor: number; reason: string };
 }
 
 /**
@@ -203,6 +205,92 @@ export function efficiencyFactor(
     factor: f,
     reason: `${f < 1 ? "Running hot" : "Running cold"} on efficiency (${why.join(", ")}): projection ${f < 1 ? "trimmed" : "raised"} ${Math.round(Math.abs(1 - f) * 100)}% since these rates tend to even out`,
   };
+}
+
+/**
+ * Stars out (1.21.0). When a team's lead back (40%+ of carries), top target
+ * (20%+ of targets) or starting QB (70%+ of attempts) over its last 4 games
+ * (playing 3+ of them) is listed Out, his teammates' roles change. Measured
+ * on nflverse weekly stats 2020-26 (train 2020-23, test 2024-26), lines
+ * around the projection:
+ *   lead back out:  other backs' rush yards x1.5 (log loss -6 to -13%),
+ *                   catches x1.3-1.5 (-10 to -14%), rec yards x1.3-1.4
+ *   top target out: depth receivers' catches x1.2-1.3 (-4 to -5%), rec
+ *                   yards x1.15-1.2; regular receivers' catches x1.05-1.15;
+ *                   the QB's pass yards x0.9 (-5% both splits)
+ *   QB out:         backs' receiving yards x0.85 (-3 to -5%)
+ * Values below are a little under the measured ones.
+ */
+export const NFL_STAR_OUT = {
+  RUSH: { RB: { "Rush Yds": 1.45, Receptions: 1.3, "Rec Yds": 1.25, "Rush + Rec Yds": 1.35 } },
+  TGT: {
+    depth: { Receptions: 1.18, "Rec Yds": 1.12, "Rush + Rec Yds": 1.1 },
+    main: { Receptions: 1.08, "Rec Yds": 1.0, "Rush + Rec Yds": 1.0 },
+    QB: { "Pass Yds": 0.92 },
+  },
+  QB: { RB: { "Rec Yds": 0.88, Receptions: 0.93 }, REC: { "Rec Yds": 0.95 } },
+} as const;
+
+/** Who's out this week among each team's lead back / top target / starting QB, and each teammate's role. */
+export function nflStarsOut(rows: PlayerWeekStats[], out: Set<string>): Map<string, { factorFor: (stat: string) => number; reason: string }> {
+  const key = (team: string, name: string) => `${team}|${name.toLowerCase().replace(/[^a-z]/g, "")}`;
+  const res = new Map<string, { factorFor: (stat: string) => number; reason: string }>();
+  if (out.size === 0) return res;
+  const byTeam = new Map<string, PlayerWeekStats[]>();
+  for (const r of rows) (byTeam.get(r.team) ?? byTeam.set(r.team, []).get(r.team)!).push(r);
+  for (const [team, l] of byTeam) {
+    const weeks = [...new Set(l.map((r) => r.week))].sort((a, b) => a - b).slice(-4);
+    if (weeks.length < 4) continue;
+    const recent = l.filter((r) => weeks.includes(r.week));
+    const tot = { tgt: 0, car: 0, att: 0 };
+    const pl = new Map<string, { tgt: number; car: number; att: number; n: number; pos: string }>();
+    for (const r of recent) {
+      const e = pl.get(r.player) ?? { tgt: 0, car: 0, att: 0, n: 0, pos: r.position };
+      e.tgt += r.targets ?? 0;
+      e.car += r.carries ?? 0;
+      e.att += r.attempts ?? 0;
+      e.n++;
+      pl.set(r.player, e);
+      tot.tgt += r.targets ?? 0;
+      tot.car += r.carries ?? 0;
+      tot.att += r.attempts ?? 0;
+    }
+    const top = (f: (e: { tgt: number; car: number; att: number }) => number) => [...pl].filter(([, e]) => e.n >= 3).sort((a, b) => f(b[1]) - f(a[1]))[0];
+    const isOut = (p: [string, unknown] | undefined) => !!p && out.has(key(team, p[0]));
+    const t = top((e) => e.tgt);
+    const c = top((e) => e.car);
+    const q = top((e) => e.att);
+    const tgtOut = t && tot.tgt > 0 && t[1].tgt / tot.tgt >= 0.2 && isOut(t) ? t[0] : null;
+    const rushOut = c && tot.car > 0 && c[1].car / tot.car >= 0.4 && isOut(c) ? c[0] : null;
+    const qbOut = q && tot.att > 0 && q[1].att / tot.att >= 0.7 && isOut(q) ? q[0] : null;
+    if (!tgtOut && !rushOut && !qbOut) continue;
+    for (const [player, e] of pl) {
+      if ([tgtOut, rushOut, qbOut].includes(player) || out.has(key(team, player))) continue;
+      const rec = e.pos === "WR" || e.pos === "TE";
+      const parts: Record<string, number>[] = [];
+      const why: string[] = [];
+      if (rushOut && e.pos === "RB") {
+        parts.push(NFL_STAR_OUT.RUSH.RB);
+        why.push(`${rushOut} (lead back) is out`);
+      }
+      if (tgtOut && rec) {
+        parts.push(tot.tgt > 0 && e.tgt / tot.tgt >= 0.12 ? NFL_STAR_OUT.TGT.main : NFL_STAR_OUT.TGT.depth);
+        why.push(`${tgtOut} (top target) is out`);
+      }
+      if (tgtOut && e.pos === "QB") {
+        parts.push(NFL_STAR_OUT.TGT.QB);
+        why.push(`his top target ${tgtOut} is out`);
+      }
+      if (qbOut && (e.pos === "RB" || rec)) {
+        parts.push(e.pos === "RB" ? NFL_STAR_OUT.QB.RB : NFL_STAR_OUT.QB.REC);
+        why.push(`starting QB ${qbOut} is out`);
+      }
+      if (!parts.length) continue;
+      const factorFor = (stat: string) => Math.min(1.6, Math.max(0.75, parts.reduce((a, m) => a * ((m as Record<string, number>)[stat] ?? 1), 1)));
+      res.set(player, { factorFor, reason: why.join("; ") });
+    }
+  }
+  return res;
 }
 
 /** Each team's yards per play this season vs the league (QB passing + all rushing over attempts, sacks and carries). */
@@ -405,8 +493,11 @@ export function computeSeasonAverages(
   /** Forecast wind (mph) at each team's game this week, outdoor stadiums only. */
   windByTeam: Map<string, number> = new Map(),
   /** Yards after contact this season (fetchRushAfterContact); empty = skip that part. */
-  rushAfterContact: Map<string, { carries: number; yco: number }> = new Map()
+  rushAfterContact: Map<string, { carries: number; yco: number }> = new Map(),
+  /** Players listed Out this week ("team|name", name as lowercase letters only). */
+  outThisWeek: Set<string> = new Set()
 ): Map<string, PlayerSeasonAverage> {
+  const starsOut = nflStarsOut(rows, outThisWeek);
   const ypp = teamYardsPerPlay(rows);
   let ycoC = 0;
   let ycoY = 0;
@@ -482,7 +573,9 @@ export function computeSeasonAverages(
     const yco = rushAfterContact.get(`${snapKey(player)}|${team}`);
     const eff = efficiencyFactor(statType, (seasonRows.get(player) ?? []).filter((r) => r.team === team), ypp.get(team), yco && yco.carries >= 25 && ycoLg > 0 ? yco.yco / yco.carries / ycoLg : undefined);
     const streak = streakFactor([...sorted].reverse().map((g) => g.value), NFL_STREAK_POW[statType]);
-    const projection = proj.mean * oppFactor * Math.pow(trend, SNAP_TREND_POWER) * (returnAdj?.factor ?? 1) * wind * (NFL_LEVEL[statType] ?? 1) * (eff?.factor ?? 1) * streak;
+    const so = starsOut.get(player);
+    const soF = so ? so.factorFor(statType) : 1;
+    const projection = proj.mean * oppFactor * Math.pow(trend, SNAP_TREND_POWER) * (returnAdj?.factor ?? 1) * wind * (NFL_LEVEL[statType] ?? 1) * (eff?.factor ?? 1) * streak * soF;
 
     out.set(key, {
       player,
@@ -501,6 +594,7 @@ export function computeSeasonAverages(
       windFactor: wind < 1 ? wind : undefined,
       efficiency: eff,
       streak: Math.abs(streak - 1) >= 0.03 ? streak : undefined,
+      starOut: so && Math.abs(soF - 1) >= 0.02 ? { factor: soF, reason: so.reason } : undefined,
     });
   }
   return out;
@@ -793,6 +887,7 @@ export function buildPropPicks(
       : undefined;
     if (trust && avg.efficiency) trust.reasons.push(avg.efficiency.reason);
     if (trust && avg.streak) trust.reasons.push(streakReason(avg.streak));
+    if (trust && avg.starOut) trust.reasons.push(`${avg.starOut.reason}: projection ${avg.starOut.factor > 1 ? "raised" : "trimmed"} ${Math.round(Math.abs(avg.starOut.factor - 1) * 100)}%`);
     if (trust && avg.windFactor !== undefined) {
       trust.reasons.push(`Windy game forecast: projection trimmed ${Math.round((1 - avg.windFactor) * 100)}%`);
     }
