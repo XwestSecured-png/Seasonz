@@ -14,6 +14,7 @@ import { STAT_EXTRACTORS } from "./stat-extract";
 import { archiveGameLines, archivePropLines, gradeLineArchive } from "../line-archive";
 import { inBatches } from "../bulk";
 import { propChance } from "../prop-dist";
+import { buildNameResolver } from "../player-names";
 import { loadBoxScores, clearBoxScores } from "./box-cache";
 import { detectSportReturns, recentReturns, type ReportRow } from "../injury-returns";
 import {
@@ -945,6 +946,21 @@ export async function runSportSync(
         // adjustments.
         const rawStatRows = await rawStatRowsP;
         mark("stats");
+        // Books' spellings -> box-score names (accents, team tags, Jr., legal
+        // first names...), so every player with a box score gets a projection.
+        {
+          const latest = new Map<string, { team: string; t: number }>();
+          for (const r of rawStatRows) {
+            const t = r.kickoffAt?.getTime() ?? 0;
+            const cur = latest.get(r.player);
+            if (!cur || t > cur.t) latest.set(r.player, { team: r.team, t });
+          }
+          const names = buildNameResolver([...latest].map(([player, v]) => ({ player, team: v.team })));
+          thisWeekEvents.forEach((e, i) => {
+            const teams = [nameToAbbr.get(e.home_team.trim().toLowerCase()), nameToAbbr.get(e.away_team.trim().toLowerCase())].filter((x): x is string => !!x);
+            for (const pr of propsByEvent[i]) pr.player = names.resolve(pr.player, teams);
+          });
+        }
         // Every player gets last season's games too (the projection's
         // 20-game long window; opening-week props still get a projection):
         // early-season projections from a handful of games ran

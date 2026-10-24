@@ -33,6 +33,22 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.22.1",
+    date: "2026-10-24",
+    title: "Stars missing from picks",
+    summary: "Fixes players whose names the sportsbooks spell differently from the box scores getting no projection (about 1 in 5 NBA lines, many of them stars).",
+    changes: [
+      {
+        kind: "fixed",
+        title: "Player names from the books",
+        whatChanged:
+          "A prop only got a projection when the book's player name matched the box score exactly. Books write accents ('Nikola Jokić'), team tags ('Donovan Mitchell (CLE)'), suffixes ('Michael Porter' vs 'Michael Porter Jr.'), punctuation ('Day Ron Sharpe'), stray capitals ('NIkola Jokic') and legal first names ('Edrice Adebayo' for Bam Adebayo, 'Nazreon Reid' for Naz Reid), so about 1 in 5 NBA lines (Jokić, Mitchell, Giannis, Harden, Mobley...) got no model at all, and a few percent in the NHL and NFL. Names are now matched ignoring accents, team tags, suffixes, punctuation and case, then by last name among the game's two teams when that's unique.",
+        whatItMeans: "Those players get projections, picks and trust scores again, and different books' lines for the same player now count together in the market's number.",
+        href: "/props?sport=nba",
+      },
+    ],
+  },
+  {
     version: "1.22.0",
     date: "2026-10-24",
     title: "Learning from every line, not just picks",

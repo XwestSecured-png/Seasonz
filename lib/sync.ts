@@ -33,6 +33,7 @@ import { recordNflReturns } from "./injury-returns";
 import { archiveGameLines, archivePropLines, gradeLineArchive } from "./line-archive";
 import { inBatches } from "./bulk";
 import { propChance } from "./prop-dist";
+import { buildNameResolver } from "./player-names";
 import { replayNflElo, makeNflEpaLookup, nflEpaAdjPct, type EloGameResult } from "./elo";
 import { noVigHome, logit, sigmoid } from "./sports/game-model";
 import type { ScheduleGame } from "./nflverse";
@@ -1150,6 +1151,17 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
 
         const playerStats = await fetchPlayerWeekStats(season);
         const priorStats = await fetchPlayerWeekStats(season - 1).catch(() => []);
+        // Books' spellings -> nflverse names (accents, team tags, Jr./III,
+        // nicknames), so every player with stats gets a projection.
+        {
+          const latest = new Map<string, string>();
+          for (const r of [...priorStats, ...playerStats]) latest.set(r.player, r.team);
+          const names = buildNameResolver([...latest].map(([player, team]) => ({ player, team })));
+          thisWeekEvents.forEach((e, i) => {
+            const teams = [getTeamByFullName(e.home_team)?.code, getTeamByFullName(e.away_team)?.code].filter((x): x is string => !!x);
+            for (const pr of propsByEvent[i]) pr.player = names.resolve(pr.player, teams);
+          });
+        }
         // Snap-share trend (role changes); the model runs without it if nflverse hasn't posted snaps.
         const snaps = await fetchSnapCounts(season).catch(() => []);
         // Key players back from injury this week (and their teammates' trimmed roles).
