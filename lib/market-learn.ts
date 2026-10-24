@@ -18,7 +18,7 @@
 // MIN_N player-games.
 import { db } from "@/db";
 import { lineArchive } from "@/db/schema";
-import { and, eq, gt, inArray, isNotNull } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull } from "drizzle-orm";
 import { bookWeight, isPlaceholderLine, americanToImpliedProb } from "./props-model";
 
 export const MKT_MIN_N = 300;
@@ -167,7 +167,9 @@ export async function openingMarket(sport: string, season: number, week: number)
   const rows = await db
     .select({ player: lineArchive.player, statType: lineArchive.statType, line: lineArchive.line, side: lineArchive.side, book: lineArchive.book, openPrice: lineArchive.openPrice, gameKey: lineArchive.gameKey })
     .from(lineArchive)
-    .where(and(eq(lineArchive.sport, sport), eq(lineArchive.season, season), eq(lineArchive.week, week), eq(lineArchive.market, "prop"), isNotNull(lineArchive.openPrice)));
+    // Only lines still open and seen in the last 36 hours (games not played
+    // yet): reading the whole week's archive took 25-40s on busy nights.
+    .where(and(eq(lineArchive.sport, sport), eq(lineArchive.season, season), eq(lineArchive.week, week), eq(lineArchive.market, "prop"), isNotNull(lineArchive.openPrice), isNull(lineArchive.result), gt(lineArchive.closeAt, new Date(Date.now() - 36 * 3600_000))));
   const pairs = new Map<string, { o?: number; u?: number; book: string; k: string }>();
   for (const r of rows) {
     if (r.line == null || !r.player || !r.statType || r.openPrice == null) continue;

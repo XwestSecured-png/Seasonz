@@ -43,7 +43,7 @@ export const RELEASES: Release[] = [
         title: "Box scores loaded once per sync",
         whatChanged:
           "Two seasons of box scores (up to 150,000 player-games) were read from the database three times in every sport's sync, for injury returns, the game model and props. They're now loaded once and shared, and reloaded only after new box scores come in.",
-        whatItMeans: "Less database load, so every sport's sync finishes sooner.",
+        whatItMeans: "Less database load, so every sport's sync finishes sooner. Also: the line-movement check now reads only lines for games not played yet (it was reading the whole week's archive, 25-40 seconds a sport), and the archive compares only lines seen in the last day.",
       },
       {
         kind: "improved",
