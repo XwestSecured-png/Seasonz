@@ -865,6 +865,13 @@ export async function runSportSync(
   } else {
     results.push(
       await logStage(`${sport}:props`, async () => {
+        // Where the stage's time goes, reported at the end of its message.
+        let tMark = Date.now();
+        const timing: string[] = [];
+        const mark = (what: string) => {
+          timing.push(`${what} ${((Date.now() - tMark) / 1000).toFixed(1)}s`);
+          tMark = Date.now();
+        };
         // Props are regular season / playoffs only: preseason minutes are
         // too unpredictable for player projections.
         const allGameRows = await db
@@ -905,6 +912,24 @@ export async function runSportSync(
         const playingThisWeek = new Set(thisWeekGames.flatMap((g) => [g.homeTeam, g.awayTeam]));
         const nameToAbbr = { get: (n: string) => resolve(n, playingThisWeek) };
 
+        // Box scores load while the odds feed is fetched (they don't depend on it).
+        const rawStatRowsP = Promise.resolve(db
+          .select({
+            player: sportPlayerGameStats.player,
+            team: sportPlayerGameStats.team,
+            week: sportPlayerGameStats.week,
+            season: sportPlayerGameStats.season,
+            stats: sportPlayerGameStats.stats,
+            position: sportPlayerGameStats.position,
+            kickoffAt: sportGames.kickoffAt,
+            gameId: sportPlayerGameStats.gameId,
+            home: sportGames.homeTeam,
+            id: sportPlayerGameStats.id,
+          })
+          .from(sportPlayerGameStats)
+          .innerJoin(sportGames, eq(sportGames.id, sportPlayerGameStats.gameId))
+          .where(and(eq(sportPlayerGameStats.sport, sport), inArray(sportPlayerGameStats.season, [year - 1, year]))));
+        rawStatRowsP.catch(() => {});
         const events = await fetchUpcomingEventsForSport(sport);
         const thisWeekEvents = events.filter((e) => {
           const home = nameToAbbr.get(e.home_team.trim().toLowerCase());
@@ -925,26 +950,13 @@ export async function runSportSync(
           thisWeekEvents.map((e) => fetchEventPlayerPropsForSport(sport, e.id))
         );
         const allProps = propsByEvent.flat();
+        mark("odds");
 
         // This season's games plus last season's. Last season's games sort before this
         // season's (negative week numbers) and never count toward opponent
         // adjustments.
-        const rawStatRows = await db
-          .select({
-            player: sportPlayerGameStats.player,
-            team: sportPlayerGameStats.team,
-            week: sportPlayerGameStats.week,
-            season: sportPlayerGameStats.season,
-            stats: sportPlayerGameStats.stats,
-            position: sportPlayerGameStats.position,
-            kickoffAt: sportGames.kickoffAt,
-            gameId: sportPlayerGameStats.gameId,
-            home: sportGames.homeTeam,
-            id: sportPlayerGameStats.id,
-          })
-          .from(sportPlayerGameStats)
-          .innerJoin(sportGames, eq(sportGames.id, sportPlayerGameStats.gameId))
-          .where(and(eq(sportPlayerGameStats.sport, sport), inArray(sportPlayerGameStats.season, [year - 1, year])));
+        const rawStatRows = await rawStatRowsP;
+        mark("stats");
         // Every player gets last season's games too (the projection's
         // 20-game long window; opening-week props still get a projection):
         // early-season projections from a handful of games ran
@@ -1014,6 +1026,7 @@ export async function runSportSync(
         const weightStore = await getModelWeights().catch(() => ({}));
         const marketLearn = await liveMarketLearn(weightStore, sport, year, week).catch(() => undefined);
         const picks = buildSportPropPicks(allProps, averages, schedule, week, unavailable, propWeightFn(weightStore, sport), trustShiftFor(weightStore, sport), marketLearn, adjStrengthFor(weightStore, sport));
+        mark("model");
 
         await db
           .delete(sportOddsLines)
@@ -1118,6 +1131,7 @@ export async function runSportSync(
         );
         // Keep every line's opening and closing price (lib/line-archive.ts).
         await archivePropLines(sport, year, week, rawRows).catch(() => 0);
+        mark("save+archive");
 
         const loggedN = await logPropPicks(sport, year, week, picks).catch(() => 0);
         // Projections for every player with a posted line, so the Props page
@@ -1131,6 +1145,7 @@ export async function runSportSync(
             .filter((a) => a.proj && a.cfg && a.values && withLines.has(`${a.player}|${a.statType}`))
             .map((a) => ({ player: a.player, team: a.team, statType: a.statType, data: { proj: a.proj!, cfg: a.cfg!, values: a.values!, minutes: a.minutes } }))
         ).catch(() => 0);
+        mark("log+projections");
         const gdNote = [
           gameDay.backups?.size ? `${gameDay.backups.size} backup(s) stepping in` : "",
           gameDay.starOut?.size ? `${gameDay.starOut.size} teammate(s) of a star who is out` : "",
@@ -1140,7 +1155,7 @@ export async function runSportSync(
         ]
           .filter(Boolean)
           .join(", ");
-        return `Props: ${thisWeekEvents.length} event(s), ${allProps.length} raw line(s), ${picks.length} pick(s) at 70%+ (model ${Math.round(propWeight * 100)}% / market blend; ${loggedN} logged), for week ${week}.${gdNote ? ` Game-day: ${gdNote}.` : ""}`;
+        return `Props: ${thisWeekEvents.length} event(s), ${allProps.length} raw line(s), ${picks.length} pick(s) at 70%+ (model ${Math.round(propWeight * 100)}% / market blend; ${loggedN} logged), for week ${week}.${gdNote ? ` Game-day: ${gdNote}.` : ""} [${timing.join(", ")}]`;
       })
     );
   }
