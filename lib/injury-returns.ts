@@ -10,6 +10,7 @@
 //
 // Rows feed the "Back from injury" push alert (lib/alerts.ts) and the
 // list on the Injury Impact page.
+import { loadBoxScores } from "./sports/box-cache";
 import { db } from "@/db";
 import { injuryReturns, sportGames, sportPlayerGameStats } from "@/db/schema";
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
@@ -126,21 +127,10 @@ export async function detectSportReturns(sport: string, season: number, prev: Re
   if (candidates.length === 0) return "";
 
   const teams = [...new Set(candidates.map((c) => c.team))];
-  const rows = await db
-    .select({
-      gameId: sportPlayerGameStats.gameId,
-      team: sportPlayerGameStats.team,
-      player: sportPlayerGameStats.player,
-      season: sportPlayerGameStats.season,
-      stats: sportPlayerGameStats.stats,
-      at: sportGames.kickoffAt,
-      final: sportGames.isFinal,
-    })
-    .from(sportPlayerGameStats)
-    .innerJoin(sportGames, eq(sportGames.id, sportPlayerGameStats.gameId))
-    .where(
-      and(eq(sportPlayerGameStats.sport, sport), inArray(sportPlayerGameStats.season, [season - 1, season]), inArray(sportPlayerGameStats.team, teams))
-    );
+  const teamSet = new Set(teams);
+  const rows = (await loadBoxScores(sport, [season - 1, season]))
+    .filter((r) => teamSet.has(r.team))
+    .map((r) => ({ gameId: r.gameId, team: r.team, player: r.player, season: r.season, stats: r.stats, at: r.kickoffAt, final: r.isFinal }));
 
   // One entry per player per game (college box scores list a player once per stat group).
   const byPlayer = new Map<string, Map<number, PlayerGame>>();

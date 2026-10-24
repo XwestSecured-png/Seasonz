@@ -13,6 +13,7 @@ import { buildGameDayContext } from "./game-day";
 import { STAT_EXTRACTORS } from "./stat-extract";
 import { archiveGameLines, archivePropLines, gradeLineArchive } from "../line-archive";
 import { inBatches } from "../bulk";
+import { loadBoxScores, clearBoxScores } from "./box-cache";
 import { detectSportReturns, recentReturns, type ReportRow } from "../injury-returns";
 import {
   sportTeams,
@@ -613,6 +614,7 @@ export async function runSportSync(
       }));
 
       // Games ESPN has no box score for (noBox) aren't waiting on anything.
+      if (playerRows > 0) clearBoxScores(sport);
       const remaining = finalGames.filter((g) => !alreadyHave.has(g.id) && !noBox(g)).length - toFetch.length;
       return (
         `Box scores fetched for ${gamesWithStats}/${toFetch.length} game(s) (${playerRows} player row(s))` +
@@ -913,22 +915,7 @@ export async function runSportSync(
         const nameToAbbr = { get: (n: string) => resolve(n, playingThisWeek) };
 
         // Box scores load while the odds feed is fetched (they don't depend on it).
-        const rawStatRowsP = Promise.resolve(db
-          .select({
-            player: sportPlayerGameStats.player,
-            team: sportPlayerGameStats.team,
-            week: sportPlayerGameStats.week,
-            season: sportPlayerGameStats.season,
-            stats: sportPlayerGameStats.stats,
-            position: sportPlayerGameStats.position,
-            kickoffAt: sportGames.kickoffAt,
-            gameId: sportPlayerGameStats.gameId,
-            home: sportGames.homeTeam,
-            id: sportPlayerGameStats.id,
-          })
-          .from(sportPlayerGameStats)
-          .innerJoin(sportGames, eq(sportGames.id, sportPlayerGameStats.gameId))
-          .where(and(eq(sportPlayerGameStats.sport, sport), inArray(sportPlayerGameStats.season, [year - 1, year]))));
+        const rawStatRowsP = loadBoxScores(sport, [year - 1, year]).then((rows) => rows.map((r) => ({ ...r, stats: r.stats as Record<string, string> })));
         rawStatRowsP.catch(() => {});
         const events = await fetchUpcomingEventsForSport(sport);
         const thisWeekEvents = events.filter((e) => {

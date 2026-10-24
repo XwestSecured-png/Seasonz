@@ -6,6 +6,7 @@
 //   gameOdds — FanDuel and BetMGM moneyline, spread and total.
 //   weather  — game-time forecast for outdoor MLB and college football.
 //   model    — the win chance for every game (lib/sports/game-model.ts).
+import { loadBoxScores } from "./box-cache";
 import { db } from "@/db";
 import { sportGames, sportInjuryReports, sportPlayerGameStats, sportTeamGameStats, sportTeams } from "@/db/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -438,18 +439,7 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
   }
 
   // Player box scores (this season and last) for starters and injuries.
-  const lines = await db
-    .select({
-      gameId: sportPlayerGameStats.gameId,
-      team: sportPlayerGameStats.team,
-      player: sportPlayerGameStats.player,
-      position: sportPlayerGameStats.position,
-      stats: sportPlayerGameStats.stats,
-      kickoffAt: sportGames.kickoffAt,
-    })
-    .from(sportPlayerGameStats)
-    .innerJoin(sportGames, eq(sportGames.id, sportPlayerGameStats.gameId))
-    .where(and(eq(sportPlayerGameStats.sport, sport), inArray(sportPlayerGameStats.season, [year - 1, year])));
+  const lines = await loadBoxScores(sport, [year - 1, year]);
   const S = (r: { stats: unknown }) => (r.stats ?? {}) as Record<string, string>;
   const N = (v: unknown) => {
     const n = Number(v);

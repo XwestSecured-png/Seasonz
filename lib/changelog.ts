@@ -33,6 +33,28 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.21.3",
+    date: "2026-10-24",
+    title: "Leaner sync",
+    summary: "Each sport's box scores are loaded once per sync instead of three times.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Box scores loaded once per sync",
+        whatChanged:
+          "Two seasons of box scores (up to 150,000 player-games) were read from the database three times in every sport's sync, for injury returns, the game model and props. They're now loaded once and shared, and reloaded only after new box scores come in.",
+        whatItMeans: "Less database load, so every sport's sync finishes sooner.",
+      },
+      {
+        kind: "improved",
+        title: "Checked: are picks overconfident?",
+        whatChanged:
+          "Graded picks were checked for overconfidence by sport. Counting each player-game once (alternate lines of the same prop win or lose together), stated chances matched results in the NFL, NBA, NHL and college football; only MLB ran slightly high on a small sample. The nightly re-fit of each sport's model/market share is moving the NFL toward more model weight and NBA/MLB toward less, as the results say.",
+        whatItMeans: "No blanket correction needed; the self-tuning is doing its job.",
+      },
+    ],
+  },
+  {
     version: "1.21.2",
     date: "2026-10-24",
     title: "Faster sync",
