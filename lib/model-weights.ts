@@ -15,7 +15,7 @@ import { GAME_MODEL } from "./sports/game-model";
 import { currentSeasonYear } from "./sports/espn";
 import { NFL_MODEL_WEIGHT } from "./elo";
 import { propModelWeightDefault } from "./props-model";
-import { fitMarket, marketRows, fitStatBias, fitOneSided, oneSidedRows } from "./market-learn";
+import { fitMarket, marketRows, fitStatBias, fitOneSided, oneSidedRows, fitArchiveWeights } from "./market-learn";
 import { ONE_SIDED_SHIFT } from "./market-adjust";
 
 const KEY = "modelWeights";
@@ -337,6 +337,13 @@ export async function refitModelWeights(): Promise<string> {
       for (const [stat, f] of Object.entries(fitStatBias(rows, fit.bias, fit.move))) {
         next[`mkt:${s}:bias:${stat}`] = { ...common, n: f.n, weight: f.bias, best: f.fit, applied: f.bias !== fit.bias };
         msgs.push(`market:${s}:${stat} bias ${f.bias.toFixed(2)} (n=${f.n})`);
+      }
+      // Per-stat model share from every graded archived line (replaces the
+      // picks-only fit for a stat once it has enough player-games).
+      const sportW = next[`prop:${s}`]?.weight ?? baseFor(`prop:${s}`);
+      for (const [stat, f] of Object.entries(fitArchiveWeights(rows, sportW))) {
+        next[`prop:${s}:${stat}`] = { weight: f.weight, base: sportW, n: f.n, best: f.best, llCurrent: f.llCurrent, llBest: f.llBest, applied: f.weight !== sportW, at };
+        msgs.push(`prop:${s}:${stat} ${Math.round(f.weight * 100)}% from archive (n=${f.n}, best ${Math.round(f.best * 100)}%)`);
       }
       // One-sided (alt-ladder) prices.
       const os = fitOneSided(await oneSidedRows(s), ONE_SIDED_SHIFT);

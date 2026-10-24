@@ -53,6 +53,7 @@ async function upsert(rows: Row[]): Promise<number> {
           closePrice: sql`excluded.close_price`,
           closeAt: sql`excluded.close_at`,
           team: sql`coalesce(excluded.team, ${lineArchive.team})`,
+          modelOver: sql`coalesce(excluded.model_over, ${lineArchive.modelOver})`,
           moves: sql`${lineArchive.moves} + case when ${lineArchive.closePrice} <> excluded.close_price then 1 else 0 end`,
         },
         // Graded lines are history; never touch them again.
@@ -60,18 +61,25 @@ async function upsert(rows: Row[]): Promise<number> {
         // rewriting every line on every sync (75,000+ on an NFL Sunday) was
         // the props stages' biggest cost. Grading places a line in the
         // team's first game after it was last seen, so a day of slack is safe.
-        setWhere: sql`${lineArchive.result} is null and (${lineArchive.closePrice} is distinct from excluded.close_price or ${lineArchive.closeAt} < excluded.close_at - interval '20 hours' or (${lineArchive.team} is null and excluded.team is not null))`,
+        setWhere: sql`${lineArchive.result} is null and (${lineArchive.closePrice} is distinct from excluded.close_price or ${lineArchive.closeAt} < excluded.close_at - interval '20 hours' or (${lineArchive.team} is null and excluded.team is not null) or (${lineArchive.modelOver} is null and excluded.model_over is not null))`,
       })
   );
   return uniq.length;
 }
 
 /** Archives this sync's prop lines (the model's own fair line is left out). */
-export async function archivePropLines(sport: string, season: number, week: number, props: ArchiveProp[]): Promise<number> {
+export async function archivePropLines(
+  sport: string,
+  season: number,
+  week: number,
+  props: ArchiveProp[],
+  /** The model's own Over chance for a player/stat/line (no market), when it projects one. */
+  modelOver?: (player: string, statType: string, line: number) => number | undefined
+): Promise<number> {
   // This week's lines already on file: unchanged ones seen in the last 20
   // hours are skipped before anything is sent to the database.
   const existing = await db
-    .select({ player: lineArchive.player, statType: lineArchive.statType, line: lineArchive.line, side: lineArchive.side, book: lineArchive.book, closePrice: lineArchive.closePrice, closeAt: lineArchive.closeAt, team: lineArchive.team, result: lineArchive.result })
+    .select({ player: lineArchive.player, statType: lineArchive.statType, line: lineArchive.line, side: lineArchive.side, book: lineArchive.book, closePrice: lineArchive.closePrice, closeAt: lineArchive.closeAt, team: lineArchive.team, result: lineArchive.result, modelOver: lineArchive.modelOver })
     .from(lineArchive)
     // Only open lines seen in the last 20 hours can be skipped, so only those
     // are read back (the whole week is 100,000+ lines on a busy NBA week).
@@ -79,7 +87,8 @@ export async function archivePropLines(sport: string, season: number, week: numb
   const fresh = Date.now() - 20 * 3600_000;
   const skip = new Set(
     existing
-      .filter((e) => e.result !== null || e.closeAt.getTime() > fresh)
+      // (lines still missing the model's chance are written once to fill it)
+      .filter((e) => e.result !== null || (e.closeAt.getTime() > fresh && (e.modelOver !== null || !modelOver)))
       .map((e) => `${e.player}|${e.statType}|${e.line}|${e.side}|${e.book}|${e.result !== null ? "*" : e.closePrice}|${e.result !== null ? "*" : (e.team ?? "")}`)
   );
   const isSkipped = (p: ArchiveProp) =>
@@ -102,6 +111,7 @@ export async function archivePropLines(sport: string, season: number, week: numb
         book: p.book,
         openPrice: p.priceAmerican,
         closePrice: p.priceAmerican,
+        modelOver: modelOver?.(p.player, p.statType, p.line) ?? null,
       }))
   );
 }

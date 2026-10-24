@@ -33,6 +33,27 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.22.0",
+    date: "2026-10-24",
+    title: "Learning from every line, not just picks",
+    summary: "The app now records its own chance on every prop line it archives and learns, stat by stat, how much to trust its model vs the market from all of them.",
+    changes: [
+      {
+        kind: "new",
+        title: "Model weights learned from every graded line",
+        whatChanged:
+          "How much each prop's final chance leans on the model vs the market was tuned on graded picks only: 60 to 370 player-games per sport. The line archive grades tens of thousands of lines a week, so the app now stores its own model chance on every archived line and, each night, fits the best model share for every stat from all of them (one vote per player-game, moved in gradually, starting once a stat has 200 graded player-games).",
+        whatItMeans: "Within a week or two, each stat (rebounds, shots, passing yards...) gets its own, much better-measured mix of model and market.",
+      },
+      {
+        kind: "improved",
+        title: "Faster model step",
+        whatChanged: "The line-movement check now reads only lines for games not played yet; a full sync of every sport went from 159 to 99 seconds.",
+        whatItMeans: "Fresh picks sooner after each sync.",
+      },
+    ],
+  },
+  {
     version: "1.21.3",
     date: "2026-10-24",
     title: "Leaner sync",

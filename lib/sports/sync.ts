@@ -13,6 +13,7 @@ import { buildGameDayContext } from "./game-day";
 import { STAT_EXTRACTORS } from "./stat-extract";
 import { archiveGameLines, archivePropLines, gradeLineArchive } from "../line-archive";
 import { inBatches } from "../bulk";
+import { propChance } from "../prop-dist";
 import { loadBoxScores, clearBoxScores } from "./box-cache";
 import { detectSportReturns, recentReturns, type ReportRow } from "../injury-returns";
 import {
@@ -1126,7 +1127,10 @@ export async function runSportSync(
         );
         mark("save");
         // Keep every line's opening and closing price (lib/line-archive.ts).
-        await archivePropLines(sport, year, week, rawRows).catch(() => 0);
+        await archivePropLines(sport, year, week, rawRows, (player, statType, line) => {
+          const a = averages.get(`${player}|${statType}`);
+          return a?.proj && a.cfg ? propChance(a.proj, line, a.cfg, "Over") : undefined;
+        }).catch(() => 0);
         mark("archive");
 
         const loggedN = await logPropPicks(sport, year, week, picks).catch(() => 0);

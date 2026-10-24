@@ -1293,6 +1293,8 @@ export const lineArchive = pgTable(
     moves: integer("moves").notNull().default(0),
     result: text("result"),
     actual: real("actual"),
+    /** The model's own (pre-market) chance of the Over when the line was archived; for learning per-stat model weights from every graded line. */
+    modelOver: real("model_over"),
   },
   (t) => ({
     key: uniqueIndex("line_archive_key").on(t.sport, t.season, t.week, t.market, t.gameKey, t.player, t.statType, t.line, t.side, t.book),

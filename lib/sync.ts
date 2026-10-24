@@ -32,6 +32,7 @@ import { settlePendingBets } from "./bet-settle";
 import { recordNflReturns } from "./injury-returns";
 import { archiveGameLines, archivePropLines, gradeLineArchive } from "./line-archive";
 import { inBatches } from "./bulk";
+import { propChance } from "./prop-dist";
 import { replayNflElo, makeNflEpaLookup, nflEpaAdjPct, type EloGameResult } from "./elo";
 import { noVigHome, logit, sigmoid } from "./sports/game-model";
 import type { ScheduleGame } from "./nflverse";
@@ -1279,7 +1280,10 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
             })
         );
         // Keep every line's opening and closing price (lib/line-archive.ts).
-        await archivePropLines("nfl", season, week, rawRows).catch(() => 0);
+        await archivePropLines("nfl", season, week, rawRows, (player, statType, line) => {
+          const a = averages.get(`${player}|${statType}`);
+          return a?.proj && a.cfg ? propChance(a.proj, line, a.cfg, "Over") : undefined;
+        }).catch(() => 0);
 
         const parlays = buildAutoParlays(picks, season, week);
         await db

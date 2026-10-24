@@ -31,6 +31,8 @@ const logit = (p: number) => Math.log(clampP(p) / (1 - clampP(p)));
 const sigmoid = (z: number) => 1 / (1 + Math.exp(-z));
 
 export interface MarketRow {
+  /** The model's own Over chance when the line was archived (1.22.0), if known. */
+  model?: number;
   key: string; // game|player|stat (one vote per player-game)
   close: number; // weighted no-vig Over chance at close
   open: number; // same at open
@@ -50,6 +52,7 @@ interface ArchRow {
   closePrice: number | null;
   closeAt: Date | null;
   result: string | null;
+  modelOver?: number | null;
 }
 
 /** Weighted no-vig Over chance per prop line, at open and at close. */
@@ -63,7 +66,7 @@ export function consensusRows(rows: ArchRow[]): MarketRow[] {
     else if (r.side === "Under") p.u = r;
     pairs.set(k, p);
   }
-  const lines = new Map<string, { sc: number; so: number; w: number; y: 0 | 1; at: number; pk: string }>();
+  const lines = new Map<string, { sc: number; so: number; w: number; y: 0 | 1; at: number; pk: string; model?: number }>();
   for (const { o, u } of pairs.values()) {
     if (!o || !u || o.result == null || !["hit", "miss"].includes(o.result)) continue;
     if (o.closePrice == null || u.closePrice == null || o.openPrice == null || u.openPrice == null) continue;
@@ -79,11 +82,12 @@ export function consensusRows(rows: ArchRow[]): MarketRow[] {
     e.sc += w * (co / (co + cu));
     e.so += w * (oo / (oo + ou));
     e.w += w;
+    if (o.modelOver != null && e.model === undefined) e.model = o.modelOver;
     lines.set(k, e);
   }
   const size = new Map<string, number>();
   for (const e of lines.values()) size.set(e.pk, (size.get(e.pk) ?? 0) + 1);
-  return [...lines.values()].map((e) => ({ key: e.pk, close: e.sc / e.w, open: e.so / e.w, y: e.y, w: 1 / size.get(e.pk)!, at: e.at }));
+  return [...lines.values()].map((e) => ({ key: e.pk, close: e.sc / e.w, open: e.so / e.w, y: e.y, w: 1 / size.get(e.pk)!, at: e.at, model: e.model }));
 }
 
 export async function marketRows(sport: string): Promise<MarketRow[]> {
@@ -99,6 +103,7 @@ export async function marketRows(sport: string): Promise<MarketRow[]> {
       closePrice: lineArchive.closePrice,
       closeAt: lineArchive.closeAt,
       result: lineArchive.result,
+      modelOver: lineArchive.modelOver,
     })
     .from(lineArchive)
     .where(and(eq(lineArchive.sport, sport), eq(lineArchive.market, "prop"), inArray(lineArchive.result, ["hit", "miss"]), isNotNull(lineArchive.closePrice), gt(lineArchive.closeAt, new Date(Date.now() - 75 * 86_400_000))));
@@ -282,4 +287,45 @@ export function fitOneSided(rows: { key: string; imp: number; y: 0 | 1; w: numbe
   }
   const used = n >= ONE_SIDED_MIN_N ? +(def + ((best.a - def) * n) / (n + ONE_SIDED_PRIOR_N)).toFixed(3) : def;
   return { n, used, fit: best.a, llDefault: ll(def), llOld: ll(Math.log(1 / 1.045)), llFit: best.v };
+}
+
+export const ARCHIVE_W_MIN_N = 200;
+export const ARCHIVE_W_PRIOR_N = 400;
+/**
+ * Model share per stat from every graded archived line (1.22.0): the
+ * model's own chance (stored when the line was archived) blended with the
+ * market's, grid-searched for the best log loss, one vote per player-game,
+ * moved from the sport's share by n/(n+400) once a stat has 200+ graded
+ * player-games. Picks alone gave 60-370 graded player-games per sport; the
+ * archive gives thousands.
+ */
+export function fitArchiveWeights(rows: MarketRow[], sportW: number): Record<string, { weight: number; best: number; n: number; llCurrent: number; llBest: number }> {
+  const byStat = new Map<string, MarketRow[]>();
+  for (const r of rows) {
+    if (r.model === undefined) continue;
+    const stat = r.key.split("|")[2];
+    (byStat.get(stat) ?? byStat.set(stat, []).get(stat)!).push(r);
+  }
+  const ll = (l: MarketRow[], w: number) => {
+    let s = 0;
+    let n = 0;
+    for (const r of l) {
+      const q = clampP(sigmoid(w * logit(r.model!) + (1 - w) * logit(r.close)));
+      s -= r.w * (r.y ? Math.log(q) : Math.log(1 - q));
+      n += r.w;
+    }
+    return s / Math.max(1e-9, n);
+  };
+  const out: Record<string, { weight: number; best: number; n: number; llCurrent: number; llBest: number }> = {};
+  for (const [stat, l] of byStat) {
+    const n = new Set(l.map((r) => r.key)).size;
+    if (n < ARCHIVE_W_MIN_N) continue;
+    let best = { w: sportW, v: ll(l, sportW) };
+    for (let w = 0; w <= 0.8001; w += 0.05) {
+      const v = ll(l, w);
+      if (v < best.v - 1e-12) best = { w: +w.toFixed(2), v };
+    }
+    out[stat] = { weight: +(sportW + ((best.w - sportW) * n) / (n + ARCHIVE_W_PRIOR_N)).toFixed(3), best: best.w, n, llCurrent: ll(l, sportW), llBest: best.v };
+  }
+  return out;
 }
