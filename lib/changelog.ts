@@ -33,6 +33,22 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.21.1",
+    date: "2026-10-24",
+    title: "Missing college moneylines",
+    summary: "Fixes college games (and any sport) losing their moneyline and spread when the odds feed spelled the home team differently.",
+    changes: [
+      {
+        kind: "fixed",
+        title: "Moneylines and spreads dropped for some games",
+        whatChanged:
+          "When the odds feed spelled a team one way for the game and another way for its prices ('Mississippi State' vs 'Mississippi St'), the home side was never matched, so the game showed no moneyline or spread even though every book had one. 20+ college games on a Saturday were affected (Oklahoma at Mississippi State, for one). Team names are now matched ignoring punctuation and St/State, and when a market lists exactly two teams the second is taken as the other side.",
+        whatItMeans: "Those games get their lines, model-vs-market edges and picks again.",
+        href: "/games?sport=ncaaf",
+      },
+    ],
+  },
+  {
     version: "1.21.0",
     date: "2026-10-23",
     title: "NFL: when a star is out",

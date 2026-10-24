@@ -57,7 +57,30 @@ const impl = (a: number) => (a < 0 ? -a / (-a + 100) : 100 / (a + 100));
  * at that number (lib/sports/game-sim.ts). Without a moneyline, the pair
  * priced closest to even.
  */
-export function spreadPairs(outs: Outcome[], home: string, away: string): SpreadPair[] {
+const normName = (n: string) => n.toLowerCase().replace(/\bst\b\.?/g, "state").replace(/[^a-z0-9]/g, "");
+/**
+ * The names a book uses for the home and away side. Feeds sometimes spell a
+ * team one way in the event ("Mississippi State Bulldogs") and another in
+ * the outcomes ("Mississippi St Bulldogs"); exact matching then dropped the
+ * home side, and with it the whole moneyline and spread (1.21.1: 20+
+ * college games a Saturday). Exact match first, then the same name once
+ * punctuation and "St"/"State" are ignored, then "the other one" when a
+ * market has exactly two teams and one side matched.
+ */
+export function sideNames(outs: Outcome[], home: string, away: string): { home: string; away: string } {
+  const names = [...new Set(outs.map((o) => o.name).filter((n) => n !== "Over" && n !== "Under" && n !== "Draw"))];
+  const find = (t: string) => names.find((n) => n === t) ?? names.find((n) => normName(n) === normName(t));
+  let h = find(home);
+  let a = find(away);
+  if (names.length === 2) {
+    if (h && !a) a = names.find((n) => n !== h);
+    if (a && !h) h = names.find((n) => n !== a);
+  }
+  return { home: h ?? home, away: a ?? away };
+}
+
+export function spreadPairs(outs: Outcome[], homeIn: string, awayIn: string): SpreadPair[] {
+  const { home, away } = sideNames(outs, homeIn, awayIn);
   const out: SpreadPair[] = [];
   for (const h of outs) {
     if (h.name !== home || h.point == null) continue;
@@ -165,11 +188,13 @@ export async function fetchGameOddsForSport(sport: SportKey): Promise<BoardGame[
       };
       // The moneyline first: it identifies the full-game spread below.
       for (const m of b.markets ?? [])
-        if (m.key === "h2h")
+        if (m.key === "h2h") {
+          const side = sideNames(m.outcomes ?? [], e.home_team, e.away_team);
           for (const o of m.outcomes ?? []) {
-            if (o.name === e.home_team) line.mlHome = o.price;
-            else if (o.name === e.away_team) line.mlAway = o.price;
+            if (o.name === side.home) line.mlHome = o.price;
+            else if (o.name === side.away) line.mlAway = o.price;
           }
+        }
       const mlPct =
         line.mlHome != null && line.mlAway != null ? impl(line.mlHome) / (impl(line.mlHome) + impl(line.mlAway)) : null;
       for (const m of b.markets ?? []) {
