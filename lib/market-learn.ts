@@ -198,7 +198,86 @@ export { adjustMarket, type MarketLearn } from "./market-adjust";
 export async function liveMarketLearn(store: Record<string, { weight: number; applied?: boolean }>, sport: string, season: number, week: number): Promise<import("./market-adjust").MarketLearn | undefined> {
   const bias = store[`mkt:${sport}:bias`]?.weight ?? 0;
   const move = store[`mkt:${sport}:move`]?.weight ?? 0;
-  if (!bias && !move) return undefined;
+  const os = store[`mkt:${sport}:oneSided`]?.weight;
+  const biasByStat: Record<string, number> = {};
+  const pre = `mkt:${sport}:bias:`;
+  for (const [k, v] of Object.entries(store)) if (k.startsWith(pre) && typeof v.weight === "number") biasByStat[k.slice(pre.length)] = Math.max(-0.4, Math.min(0.4, v.weight));
   const open = move ? await openingMarket(sport, season, week).catch(() => new Map<string, number>()) : undefined;
-  return { bias: Math.max(-0.3, Math.min(0.3, bias)), move: Math.max(-0.5, Math.min(1, move)), open };
+  return {
+    bias: Math.max(-0.3, Math.min(0.3, bias)),
+    move: Math.max(-0.5, Math.min(1, move)),
+    open,
+    biasByStat: Object.keys(biasByStat).length ? biasByStat : undefined,
+    oneSided: typeof os === "number" && os >= -1.5 && os <= 0.3 ? os : undefined,
+  };
+}
+
+export const STAT_BIAS_MIN_N = 100;
+export const STAT_BIAS_PRIOR_N = 800;
+/** Per-stat Over bias (move held at the sport's), shrunk toward the sport's bias. */
+export function fitStatBias(rows: MarketRow[], sportBias: number, move: number): Record<string, { bias: number; fit: number; n: number }> {
+  const byStat = new Map<string, MarketRow[]>();
+  for (const r of rows) {
+    const stat = r.key.split("|")[2];
+    (byStat.get(stat) ?? byStat.set(stat, []).get(stat)!).push(r);
+  }
+  const out: Record<string, { bias: number; fit: number; n: number }> = {};
+  for (const [stat, l] of byStat) {
+    const n = new Set(l.map((r) => r.key)).size;
+    if (n < STAT_BIAS_MIN_N) continue;
+    let best = { b: 0, v: marketLogLoss(l, 0, move) };
+    for (let b = -0.5; b <= 0.5001; b += 0.02) {
+      const v = marketLogLoss(l, b, move);
+      if (v < best.v - 1e-12) best = { b: +b.toFixed(2), v };
+    }
+    out[stat] = { bias: +(sportBias + ((best.b - sportBias) * n) / (n + STAT_BIAS_PRIOR_N)).toFixed(3), fit: best.b, n };
+  }
+  return out;
+}
+
+/** Graded lines a book posted on one side only: implied chance of that side and whether it hit. */
+export async function oneSidedRows(sport: string): Promise<{ key: string; imp: number; y: 0 | 1; w: number; at: number }[]> {
+  const rows = await db
+    .select({ gameKey: lineArchive.gameKey, player: lineArchive.player, statType: lineArchive.statType, line: lineArchive.line, side: lineArchive.side, book: lineArchive.book, closePrice: lineArchive.closePrice, closeAt: lineArchive.closeAt, result: lineArchive.result })
+    .from(lineArchive)
+    .where(and(eq(lineArchive.sport, sport), eq(lineArchive.market, "prop"), inArray(lineArchive.result, ["hit", "miss"]), isNotNull(lineArchive.closePrice), gt(lineArchive.closeAt, new Date(Date.now() - 75 * 86_400_000))));
+  const sides = new Map<string, typeof rows>();
+  for (const r of rows) {
+    const k = `${r.gameKey}|${r.player}|${r.statType}|${r.line}|${r.book}`;
+    (sides.get(k) ?? sides.set(k, []).get(k)!).push(r);
+  }
+  const out: { key: string; imp: number; y: 0 | 1; w: number; at: number; pk: string }[] = [];
+  for (const l of sides.values()) {
+    if (l.length !== 1) continue;
+    const r = l[0];
+    if (isPlaceholderLine(r.book, r.closePrice!, undefined) || (r.side !== "Over" && r.side !== "Under")) continue;
+    out.push({ key: r.side, imp: americanToImpliedProb(r.closePrice!), y: r.result === "hit" ? 1 : 0, w: 1, at: r.closeAt?.getTime() ?? 0, pk: `${r.gameKey}|${r.player}|${r.statType}` });
+  }
+  const size = new Map<string, number>();
+  for (const r of out) size.set(r.pk, (size.get(r.pk) ?? 0) + 1);
+  return out.map((r) => ({ key: r.pk, imp: r.imp, y: r.y, w: 1 / size.get(r.pk)!, at: r.at }));
+}
+
+export const ONE_SIDED_MIN_N = 100;
+export const ONE_SIDED_PRIOR_N = 500;
+/** Log-odds shift on one-sided prices, shrunk toward the coded default. */
+export function fitOneSided(rows: { key: string; imp: number; y: 0 | 1; w: number }[], def: number) {
+  const ll = (a: number) => {
+    let s = 0;
+    let n = 0;
+    for (const r of rows) {
+      const q = clampP(sigmoid(logit(r.imp) + a));
+      s -= r.w * (r.y ? Math.log(q) : Math.log(1 - q));
+      n += r.w;
+    }
+    return s / Math.max(1e-9, n);
+  };
+  const n = new Set(rows.map((r) => r.key)).size;
+  let best = { a: def, v: ll(def) };
+  for (let a = -1.5; a <= 0.3001; a += 0.05) {
+    const v = ll(a);
+    if (v < best.v - 1e-12) best = { a: +a.toFixed(2), v };
+  }
+  const used = n >= ONE_SIDED_MIN_N ? +(def + ((best.a - def) * n) / (n + ONE_SIDED_PRIOR_N)).toFixed(3) : def;
+  return { n, used, fit: best.a, llDefault: ll(def), llOld: ll(Math.log(1 / 1.045)), llFit: best.v };
 }

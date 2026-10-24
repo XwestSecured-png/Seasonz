@@ -1,5 +1,5 @@
 import type { PlayerWeekStats, DefensivePlayerWeekStats, ScheduleGame, SnapRow } from "./nflverse";
-import { adjustMarketMap, scaleAdjustments, type MarketLearn } from "./market-adjust";
+import { adjustMarketMap, scaleAdjustments, oneSidedChance, type MarketLearn } from "./market-adjust";
 import type { PropOutcome } from "./odds";
 import { MIN_MODEL_WIN_PCT } from "./confidence";
 import { projectProp, propChance, type PropModelConfig, type Projection, streakFactor, streakReason } from "./prop-dist";
@@ -773,7 +773,7 @@ export function buildPropPicks(
     // this line (see blendPropChance); no market, model alone.
     // No book posts both sides of this line (often an alt line): estimate
     // the market from this book's one price, less a typical 4.5% margin.
-    const mk = market.get(`${g.player}|${g.statType}|${g.line}`) ?? oneSidedMarket(g.overPrice, g.underPrice);
+    const mk = market.get(`${g.player}|${g.statType}|${g.line}`) ?? oneSidedChance(g.overPrice, g.underPrice, marketLearn?.oneSided);
     const pOver = mk === undefined ? pOverModel : blendPropChance(pOverModel, mk, weightOf(g.statType));
     const side: "Over" | "Under" = pOver >= 0.5 ? "Over" : "Under";
     const modelWinPct = side === "Over" ? pOver : 1 - pOver;

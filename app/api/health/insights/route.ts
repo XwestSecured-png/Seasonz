@@ -17,7 +17,9 @@ import { signalCal, contextCal, type SignalRow } from "@/lib/signal-calibration"
 import { sgpCal } from "@/lib/sgp-calibration";
 import { gameMentalCal, propMentalCal, errorsOf, type MentalGame } from "@/lib/mental-calibration";
 import { minutesCal } from "@/lib/minutes-calibration";
-import { marketRows, marketHoldout, fitMarket } from "@/lib/market-learn";
+import { lineupCal } from "@/lib/lineup-calibration";
+import { marketRows, marketHoldout, fitMarket, fitStatBias, fitOneSided, oneSidedRows } from "@/lib/market-learn";
+import { ONE_SIDED_SHIFT } from "@/lib/market-adjust";
 import { STAT_EXTRACTORS } from "@/lib/sports/stat-extract";
 import { STDDEV_FLOOR_ABS, propModelFor, minutesOf } from "@/lib/sports/props-model";
 import { NFL_STDDEV_FLOOR_ABS, NFL_PROP_MODEL } from "@/lib/props-model";
@@ -146,7 +148,18 @@ export async function GET(req: NextRequest) {
   const marketcal = req.nextUrl.searchParams.get("marketcal");
   if (marketcal) {
     const rows = await marketRows(marketcal);
-    return NextResponse.json({ holdout: marketHoldout(rows), all: fitMarket(rows) });
+    const all = fitMarket(rows);
+    const os = await oneSidedRows(marketcal);
+    const half = (l: typeof os) => {
+      const sorted = [...l].sort((a, b) => a.at - b.at);
+      const cut = sorted[Math.floor(sorted.length / 2)]?.at ?? 0;
+      const tr = sorted.filter((r) => r.at < cut);
+      const te = sorted.filter((r) => r.at >= cut);
+      const f = fitOneSided(tr, ONE_SIDED_SHIFT);
+      const g = fitOneSided(te, f.fit);
+      return { train: f, testWithTrainFit: { llOld: g.llOld, llTrainFit: g.llDefault, llDefault: fitOneSided(te, ONE_SIDED_SHIFT).llDefault } };
+    };
+    return NextResponse.json({ holdout: marketHoldout(rows), all, statBias: fitStatBias(rows, all.bias, all.move), oneSided: { all: fitOneSided(os, ONE_SIDED_SHIFT), holdout: half(os) } });
   }
   // Mental toughness / human error check (lib/mental-calibration.ts): ?mentalcal=nba[&set=games][&stat=Points].
   const mentalcal = req.nextUrl.searchParams.get("mentalcal");
@@ -160,7 +173,7 @@ export async function GET(req: NextRequest) {
         .where(and(eq(sportGames.sport, sport), inArray(sportGames.season, [season - 1, season])))
     ).map((g) => ({ id: g.id, season: g.season, week: g.week, kickoffAt: g.kickoffAt, homeTeam: g.homeTeam, awayTeam: g.awayTeam, homeScore: g.homeScore, awayScore: g.awayScore, isFinal: g.isFinal, neutralSite: g.neutralSite }));
     const raw = await db
-      .select({ gameId: sportPlayerGameStats.gameId, team: sportPlayerGameStats.team, player: sportPlayerGameStats.player, season: sportPlayerGameStats.season, stats: sportPlayerGameStats.stats, kickoffAt: sportGames.kickoffAt })
+      .select({ gameId: sportPlayerGameStats.gameId, team: sportPlayerGameStats.team, player: sportPlayerGameStats.player, season: sportPlayerGameStats.season, stats: sportPlayerGameStats.stats, kickoffAt: sportGames.kickoffAt, position: sportPlayerGameStats.position })
       .from(sportPlayerGameStats)
       .innerJoin(sportGames, eq(sportGames.id, sportPlayerGameStats.gameId))
       .where(and(eq(sportPlayerGameStats.sport, sport), inArray(sportPlayerGameStats.season, [season - 1, season]), eq(sportGames.isFinal, true)));
@@ -170,6 +183,15 @@ export async function GET(req: NextRequest) {
       const k = `${r.gameId}|${r.team}`;
       const t = teamErr.get(k) ?? [0, 0];
       teamErr.set(k, [t[0] + e[0], t[1] + e[1]]);
+    }
+    if (req.nextUrl.searchParams.get("set") === "lineup") {
+      const only1 = req.nextUrl.searchParams.get("stat");
+      const defs1 = STAT_EXTRACTORS[sport]
+        .filter((e) => !only1 || e.statType === only1)
+        .map((e) => ({ statType: e.statType, extract: e.extract, cfg: propModelFor(sport, e.statType), floor: STDDEV_FLOOR_ABS[sport][e.statType] ?? 1 }));
+      const scoreEx = STAT_EXTRACTORS[sport].find((e) => e.statType === "Points")?.extract ?? STAT_EXTRACTORS[sport][0].extract;
+      const rows1 = raw.map((r) => ({ gameId: r.gameId, team: r.team, player: r.player, season: r.season, at: r.kickoffAt?.getTime() ?? 0, stats: r.stats as Record<string, string>, position: r.position }));
+      return NextResponse.json({ season, results: lineupCal(sport, games, rows1, defs1, season, minutesOf, scoreEx) });
     }
     if (req.nextUrl.searchParams.get("set") === "minutes") {
       const only0 = req.nextUrl.searchParams.get("stat");

@@ -6,7 +6,7 @@
 // bar. The two math primitives that don't depend on any sport-specific
 // field name (winProbability / americanToImpliedProb) are imported from
 // lib/props-model.ts rather than duplicated.
-import { adjustMarketMap, scaleAdjustments, type MarketLearn } from "../market-adjust";
+import { adjustMarketMap, scaleAdjustments, oneSidedChance, type MarketLearn } from "../market-adjust";
 import { gameDayFactor, type GameDayContext } from "./game-day";
 import { propTrust, calibrateTrust, trustFeatures, type Trust } from "../prop-trust";
 import type { PropOutcome } from "../odds";
@@ -557,7 +557,7 @@ export function buildSportPropPicks(
     // this line (see blendPropChance); no market, model alone.
     // No book posts both sides of this line (often an alt line): estimate
     // the market from this book's one price, less a typical 4.5% margin.
-    const mk = market.get(`${g.player}|${g.statType}|${g.line}`) ?? oneSidedMarket(g.overPrice, g.underPrice);
+    const mk = market.get(`${g.player}|${g.statType}|${g.line}`) ?? oneSidedChance(g.overPrice, g.underPrice, marketLearn?.oneSided);
     const pOver = mk === undefined ? pOverModel : blendPropChance(pOverModel, mk, weightOf(g.statType));
     const side: "Over" | "Under" = pOver >= 0.5 ? "Over" : "Under";
     const modelWinPct = side === "Over" ? pOver : 1 - pOver;

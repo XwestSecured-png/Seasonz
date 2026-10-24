@@ -1,7 +1,7 @@
 // Scores every posted prop line (not only the model's picks): the model's
 // chance for each side, blended with the market's no-vig chance the same way
 // the picks are (lib/props-model.ts), plus a trust score and a verdict.
-import { adjustMarketMap } from "./market-adjust";
+import { adjustMarketMap, oneSidedChance } from "./market-adjust";
 import { liveMarketLearn } from "./market-learn";
 import { db } from "@/db";
 import { propProjections } from "@/db/schema";
@@ -84,14 +84,15 @@ export async function scoreLines(
     else g.underPrice = l.priceAmerican;
     groups.set(k, g);
   }
-  const market = adjustMarketMap(marketOverChances(groups.values()), await liveMarketLearn(store as Record<string, { weight: number }>, sport, season, week).catch(() => undefined));
+  const ml = await liveMarketLearn(store as Record<string, { weight: number }>, sport, season, week).catch(() => undefined);
+  const market = adjustMarketMap(marketOverChances(groups.values()), ml);
   // Fallback market per line: the best-known single price.
   const oneSided = new Map<string, number>();
   for (const g of groups.values()) {
     if (isPlaceholderLine(g.book, g.overPrice, g.underPrice)) continue;
     const k = `${g.player}|${g.statType}|${g.line}`;
     if (!market.has(k) && !oneSided.has(k)) {
-      const m = oneSidedMarket(g.overPrice, g.underPrice);
+      const m = oneSidedChance(g.overPrice, g.underPrice, ml?.oneSided);
       if (m !== undefined) oneSided.set(k, m);
     }
   }

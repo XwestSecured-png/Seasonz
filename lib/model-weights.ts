@@ -15,7 +15,8 @@ import { GAME_MODEL } from "./sports/game-model";
 import { currentSeasonYear } from "./sports/espn";
 import { NFL_MODEL_WEIGHT } from "./elo";
 import { propModelWeightDefault } from "./props-model";
-import { fitMarket, marketRows } from "./market-learn";
+import { fitMarket, marketRows, fitStatBias, fitOneSided, oneSidedRows } from "./market-learn";
+import { ONE_SIDED_SHIFT } from "./market-adjust";
 
 const KEY = "modelWeights";
 export const MIN_N = 300;
@@ -331,6 +332,16 @@ export async function refitModelWeights(): Promise<string> {
       next[`mkt:${s}:bias`] = { ...common, weight: fit.bias, best: fit.fitBias, applied: fit.bias !== 0 };
       next[`mkt:${s}:move`] = { ...common, weight: fit.move, best: fit.fitMove, applied: fit.move !== 0 };
       if (fit.bias || fit.move) msgs.push(`market:${s} over-bias ${fit.bias.toFixed(2)}, move ${fit.move.toFixed(2)} (n=${fit.n})`);
+      // Per-stat Over bias, shrunk toward the sport's.
+      const rows = await marketRows(s);
+      for (const [stat, f] of Object.entries(fitStatBias(rows, fit.bias, fit.move))) {
+        next[`mkt:${s}:bias:${stat}`] = { ...common, n: f.n, weight: f.bias, best: f.fit, applied: f.bias !== fit.bias };
+        msgs.push(`market:${s}:${stat} bias ${f.bias.toFixed(2)} (n=${f.n})`);
+      }
+      // One-sided (alt-ladder) prices.
+      const os = fitOneSided(await oneSidedRows(s), ONE_SIDED_SHIFT);
+      next[`mkt:${s}:oneSided`] = { base: ONE_SIDED_SHIFT, n: os.n, llCurrent: os.llDefault, llBest: os.llFit, at, weight: os.used, best: os.fit, applied: os.used !== ONE_SIDED_SHIFT };
+      if (os.n) msgs.push(`market:${s} one-sided ${os.used.toFixed(2)} (n=${os.n})`);
     } catch {
       // archive not reachable: keep going
     }
