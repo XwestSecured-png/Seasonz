@@ -33,6 +33,22 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.25.1",
+    date: "2026-10-24",
+    title: "Health check: recovered stages",
+    summary: "The health check stops flagging a sync stage that failed once and has since run fine.",
+    changes: [
+      {
+        kind: "fixed",
+        title: "Old failures no longer flagged",
+        whatChanged:
+          "Any sync stage that failed in the last 24 hours was flagged as broken, even after it was fixed and ran fine (NFL props and college basketball props stayed flagged all day after 1.24.1). Now a stage is flagged only if its latest run failed, or as a warning if it failed 3+ times in a day.",
+        whatItMeans: "Health alerts mean something is broken right now.",
+        audience: "admin",
+      },
+    ],
+  },
+  {
     version: "1.25.0",
     date: "2026-10-24",
     title: "Beat the close, faster pages, cleaner Props",

@@ -4,7 +4,7 @@
 // push to admins once a day per issue.
 import { db } from "@/db";
 import { appSettings, games, sportGames, syncRuns, users } from "@/db/schema";
-import { and, desc, eq, gt, gte, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, lt, sql } from "drizzle-orm";
 import { SPORTS, isCalledOff, type SportKey } from "./sports/types";
 import { sendAlert } from "./push";
 
@@ -41,8 +41,25 @@ export async function runHealthChecks(now = new Date()): Promise<HealthReport> {
     .from(syncRuns)
     .where(and(eq(syncRuns.status, "error"), gte(syncRuns.startedAt, since24)))
     .groupBy(syncRuns.stage);
+  // A stage whose latest run succeeded has recovered: only a one-off, so it
+  // isn't flagged (it kept showing for a day after the fix). Still failing,
+  // or failing 3+ times in 24h (flaky), is.
+  const latest = errs.length
+    ? await db
+        .selectDistinctOn([syncRuns.stage], { stage: syncRuns.stage, status: syncRuns.status })
+        .from(syncRuns)
+        .where(and(gte(syncRuns.startedAt, since24), inArray(syncRuns.stage, errs.map((e) => e.stage))))
+        .orderBy(syncRuns.stage, desc(syncRuns.startedAt))
+    : [];
+  const latestStatus = new Map(latest.map((r) => [r.stage, r.status]));
   for (const e of errs) {
-    issues.push({ id: `err:${e.stage}`, level: "error", message: `${e.stage} failed ${e.n}× in 24h: ${(e.detail ?? "").slice(0, 140)}` });
+    const recovered = latestStatus.get(e.stage) === "ok";
+    if (recovered && e.n < 3) continue;
+    issues.push({
+      id: `err:${e.stage}`,
+      level: recovered ? "warn" : "error",
+      message: `${e.stage} failed ${e.n}× in 24h${recovered ? " (latest run ok)" : ""}: ${(e.detail ?? "").slice(0, 140)}`,
+    });
   }
 
   // 2. Each sport's last successful schedule sync (syncs run 3–4× a day).
