@@ -32,7 +32,7 @@ async function upsert(rows: Row[]): Promise<number> {
     return true;
   });
   const now = new Date();
-  await inBatches(uniq, 1500, 4, (chunk) =>
+  await inBatches(uniq, 1500, 1, (chunk) =>
     db
       .insert(lineArchive)
       .values(chunk.map((r) => ({ ...r, openAt: now, closeAt: now })))
@@ -172,7 +172,7 @@ export async function gradeLineArchive(sport: string, nflWeekStats?: PlayerWeekS
     for (const id of ids) updates.push({ id, result, actual });
   };
   const flush = () =>
-    inBatches(updates, 1000, 3, (chunk) =>
+    inBatches(updates, 1000, 1, (chunk) =>
       db.execute(sql`
         update ${lineArchive} as la set result = v.result, actual = v.actual
         from (values ${sql.join(

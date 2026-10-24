@@ -78,7 +78,7 @@ import { buildScoringBoard, saveScoringBoard } from "./scoring-board";
 import { gradePropLog, logPropPicks } from "./prop-log";
 import { saveProjections } from "./prop-score";
 import { MIN_MODEL_WIN_PCT } from "./confidence";
-import { sql, eq, and, desc, gt, isNull } from "drizzle-orm";
+import { sql, eq, and, desc, gt, isNull, inArray } from "drizzle-orm";
 
 export interface SyncStageResult {
   stage: string;
@@ -1232,11 +1232,13 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         const teamOf = new Map<string, string>();
         for (const r of [...playerStats, ...defStats]) teamOf.set(r.player, r.team);
 
-        await db
-          .delete(propLinesRaw)
-          .where(
-            sql`${propLinesRaw.season} = ${season} AND ${propLinesRaw.week} = ${week} AND ${propLinesRaw.book} <> ${MODEL_FAIR_BOOK}`
-          );
+        // Existing book rows this week: lines no longer posted are deleted
+        // below; unchanged lines are left alone (they used to be deleted and
+        // re-inserted every run, 75,000 rows on an NFL Sunday).
+        const existingRaw = await db
+          .select({ id: propLinesRaw.id, player: propLinesRaw.player, statType: propLinesRaw.statType, line: propLinesRaw.line, side: propLinesRaw.side, book: propLinesRaw.book })
+          .from(propLinesRaw)
+          .where(sql`${propLinesRaw.season} = ${season} AND ${propLinesRaw.week} = ${week} AND ${propLinesRaw.book} <> ${MODEL_FAIR_BOOK}`);
         const seenRaw = new Set<string>();
         const rawRows = [];
         for (const raw of allProps) {
@@ -1257,11 +1259,21 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         }
         // The week's rows were just deleted and rawRows is de-duplicated, so
         // plain inserts, several batches at once, alongside the archive.
-        await Promise.all([
-          inBatches(rawRows, 2000, 4, (chunk) => db.insert(propLinesRaw).values(chunk).onConflictDoNothing()),
-          // Keep every line's opening and closing price (lib/line-archive.ts).
-          archivePropLines("nfl", season, week, rawRows).catch(() => 0),
-        ]);
+        const liveKeys = new Set(rawRows.map((r) => `${r.player}|${r.statType}|${r.line}|${r.side}|${r.book}`));
+        const goneIds = existingRaw.filter((r) => !liveKeys.has(`${r.player}|${r.statType}|${r.line}|${r.side}|${r.book}`)).map((r) => r.id);
+        await inBatches(goneIds, 5000, 1, (ids) => db.delete(propLinesRaw).where(inArray(propLinesRaw.id, ids)));
+        await inBatches(rawRows, 2000, 1, (chunk) =>
+          db
+            .insert(propLinesRaw)
+            .values(chunk)
+            .onConflictDoUpdate({
+              target: [propLinesRaw.season, propLinesRaw.week, propLinesRaw.player, propLinesRaw.statType, propLinesRaw.line, propLinesRaw.side, propLinesRaw.book],
+              set: { team: sql`excluded.team`, priceAmerican: sql`excluded.price_american`, fetchedAt: new Date() },
+              setWhere: sql`(${propLinesRaw.priceAmerican}, ${propLinesRaw.team}) is distinct from (excluded.price_american, excluded.team)`,
+            })
+        );
+        // Keep every line's opening and closing price (lib/line-archive.ts).
+        await archivePropLines("nfl", season, week, rawRows).catch(() => 0);
 
         const parlays = buildAutoParlays(picks, season, week);
         await db

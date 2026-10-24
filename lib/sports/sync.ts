@@ -105,6 +105,14 @@ async function upsertSportGames(games: Awaited<ReturnType<typeof fetchFullSeason
           homeTeam: sql`case when excluded.home_team ~* '^(TBD|TBA)$' then ${sportGames.homeTeam} else excluded.home_team end`,
           awayTeam: sql`case when excluded.away_team ~* '^(TBD|TBA)$' then ${sportGames.awayTeam} else excluded.away_team end`,
         },
+        // Only rewrite a game that actually changed (score, status, time, a
+        // TBD opponent filled in). Rewriting all 1,000-6,000 games every run
+        // was most of the schedule stage's time.
+        setWhere: sql`(${sportGames.week}, ${sportGames.gameDate}, ${sportGames.kickoffAt}, ${sportGames.homeScore}, ${sportGames.awayScore}, ${sportGames.isFinal}, ${sportGames.neutralSite}, ${sportGames.seasonType})
+            is distinct from (excluded.week, excluded.game_date, excluded.kickoff_at, excluded.home_score, excluded.away_score, excluded.is_final, excluded.neutral_site, excluded.season_type)
+          or (excluded.extra is not null and (${sportGames.extra} ->> 'espnStatus') is distinct from (excluded.extra ->> 'espnStatus'))
+          or (excluded.home_team !~* '^(TBD|TBA)$' and excluded.home_team <> ${sportGames.homeTeam})
+          or (excluded.away_team !~* '^(TBD|TBA)$' and excluded.away_team <> ${sportGames.awayTeam})`,
       });
   }
 }
@@ -1067,11 +1075,13 @@ export async function runSportSync(
           }
         }
 
-        await db
-          .delete(sportPropLinesRaw)
-          .where(
-            sql`${sportPropLinesRaw.sport} = ${sport} AND ${sportPropLinesRaw.season} = ${year} AND ${sportPropLinesRaw.week} = ${week}`
-          );
+        // Existing rows this week: lines no longer posted are deleted below;
+        // unchanged lines are left alone (they used to be deleted and
+        // re-inserted every run).
+        const existingRaw = await db
+          .select({ id: sportPropLinesRaw.id, player: sportPropLinesRaw.player, statType: sportPropLinesRaw.statType, line: sportPropLinesRaw.line, side: sportPropLinesRaw.side, book: sportPropLinesRaw.book })
+          .from(sportPropLinesRaw)
+          .where(sql`${sportPropLinesRaw.sport} = ${sport} AND ${sportPropLinesRaw.season} = ${year} AND ${sportPropLinesRaw.week} = ${week}`);
         const seenRaw = new Set<string>();
         const rawRows = [];
         for (const raw of allProps) {
@@ -1093,11 +1103,21 @@ export async function runSportSync(
         }
         // The week's rows were just deleted and rawRows is de-duplicated, so
         // plain inserts, several batches at once, alongside the archive.
-        await Promise.all([
-          inBatches(rawRows, 2000, 4, (chunk) => db.insert(sportPropLinesRaw).values(chunk).onConflictDoNothing()),
-          // Keep every line's opening and closing price (lib/line-archive.ts).
-          archivePropLines(sport, year, week, rawRows).catch(() => 0),
-        ]);
+        const liveKeys = new Set(rawRows.map((r) => `${r.player}|${r.statType}|${r.line}|${r.side}|${r.book}`));
+        const goneIds = existingRaw.filter((r) => !liveKeys.has(`${r.player}|${r.statType}|${r.line}|${r.side}|${r.book}`)).map((r) => r.id);
+        await inBatches(goneIds, 5000, 1, (ids) => db.delete(sportPropLinesRaw).where(inArray(sportPropLinesRaw.id, ids)));
+        await inBatches(rawRows, 2000, 1, (chunk) =>
+          db
+            .insert(sportPropLinesRaw)
+            .values(chunk)
+            .onConflictDoUpdate({
+              target: [sportPropLinesRaw.sport, sportPropLinesRaw.season, sportPropLinesRaw.week, sportPropLinesRaw.player, sportPropLinesRaw.statType, sportPropLinesRaw.line, sportPropLinesRaw.side, sportPropLinesRaw.book],
+              set: { team: sql`excluded.team`, priceAmerican: sql`excluded.price_american`, fetchedAt: new Date() },
+              setWhere: sql`(${sportPropLinesRaw.priceAmerican}, ${sportPropLinesRaw.team}) is distinct from (excluded.price_american, excluded.team)`,
+            })
+        );
+        // Keep every line's opening and closing price (lib/line-archive.ts).
+        await archivePropLines(sport, year, week, rawRows).catch(() => 0);
 
         const loggedN = await logPropPicks(sport, year, week, picks).catch(() => 0);
         // Projections for every player with a posted line, so the Props page

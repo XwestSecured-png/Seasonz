@@ -42,7 +42,7 @@ export const RELEASES: Release[] = [
         kind: "improved",
         title: "Sync speed",
         whatChanged:
-          "Prop lines (up to 75,000 a run) are saved in batches of 2,000, four at a time, alongside the line archive, instead of 500 at a time one after another. Graded lines are written in one bulk update per 1,000 instead of one per bet. College schedules load 12 teams at a time instead of 4. NFL data files are downloaded once per sync instead of once per stage, and weather forecasts load in parallel.",
+          "The sync now only writes what changed: a game's row is rewritten only when its score, time or status moved (all 35,000 used to be rewritten every run), and a prop line only when its price moved (up to 75,000 were deleted and re-inserted every run). Graded lines are written in one bulk update per 1,000 instead of one per bet. College schedules load 12 teams at a time instead of 4. NFL data files are downloaded once per sync instead of once per stage, and weather forecasts load in parallel.",
         whatItMeans: "Fresh lines and picks show up faster after each sync.",
       },
     ],
