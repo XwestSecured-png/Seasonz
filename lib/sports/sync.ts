@@ -991,7 +991,9 @@ export async function runSportSync(
           STAT_EXTRACTORS[sport],
           unavailable
         );
+        mark("game-day");
         const averages = computeSportSeasonAverages(sport, statRows, schedule, week, returners, gameDay);
+        mark("projections");
         // A player whose last team (from box scores) isn't in the game his
         // line was posted for has changed teams; drop him rather than show
         // him on the wrong team.
@@ -1122,9 +1124,10 @@ export async function runSportSync(
               setWhere: sql`(${sportPropLinesRaw.priceAmerican}, ${sportPropLinesRaw.team}) is distinct from (excluded.price_american, excluded.team)`,
             })
         );
+        mark("save");
         // Keep every line's opening and closing price (lib/line-archive.ts).
         await archivePropLines(sport, year, week, rawRows).catch(() => 0);
-        mark("save+archive");
+        mark("archive");
 
         const loggedN = await logPropPicks(sport, year, week, picks).catch(() => 0);
         // Projections for every player with a posted line, so the Props page

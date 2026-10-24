@@ -73,7 +73,9 @@ export async function archivePropLines(sport: string, season: number, week: numb
   const existing = await db
     .select({ player: lineArchive.player, statType: lineArchive.statType, line: lineArchive.line, side: lineArchive.side, book: lineArchive.book, closePrice: lineArchive.closePrice, closeAt: lineArchive.closeAt, team: lineArchive.team, result: lineArchive.result })
     .from(lineArchive)
-    .where(and(eq(lineArchive.sport, sport), eq(lineArchive.season, season), eq(lineArchive.week, week), eq(lineArchive.market, "prop")));
+    // Only open lines seen in the last 20 hours can be skipped, so only those
+    // are read back (the whole week is 100,000+ lines on a busy NBA week).
+    .where(and(eq(lineArchive.sport, sport), eq(lineArchive.season, season), eq(lineArchive.week, week), eq(lineArchive.market, "prop"), isNull(lineArchive.result), gt(lineArchive.closeAt, new Date(Date.now() - 20 * 3600_000))));
   const fresh = Date.now() - 20 * 3600_000;
   const skip = new Set(
     existing
