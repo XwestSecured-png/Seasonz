@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- ESPN's public JSON is untyped and changes shape; parsed defensively below. */
 // ESPN's analyst metrics — Football Power Index (FPI) and Total QBR.
 //
 // IMPORTANT CAVEAT: unlike nflverse (a published GitHub release) or The Odds

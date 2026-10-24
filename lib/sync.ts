@@ -1,3 +1,4 @@
+import { errorDetail } from "./sync-errors";
 import { MODEL_FAIR_BOOK, fairAmerican } from "./football-markets";
 import { liveMarketLearn } from "./market-learn";
 import { db } from "@/db";
@@ -136,7 +137,8 @@ async function logStage(
     });
     return { stage, status: "ok", detail };
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+    console.error(`[sync] ${stage} failed`, err);
+    const detail = errorDetail(err);
     await db.insert(syncRuns).values({
       startedAt,
       finishedAt: new Date(),

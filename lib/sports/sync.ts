@@ -1,3 +1,4 @@
+import { errorDetail } from "../sync-errors";
 // Generic sync pipeline for every non-NFL sport — the multi-sport
 // counterpart to lib/sync.ts's runFullSync. Deliberately smaller than the
 // NFL pipeline today: teams -> schedule -> Elo -> team metrics. NFL's extra
@@ -137,7 +138,8 @@ async function logStageRaw(
     await db.insert(syncRuns).values({ startedAt, finishedAt: new Date(), stage, status: "ok", detail });
     return { stage, status: "ok", detail };
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+    console.error(`[sync] ${stage} failed`, err);
+    const detail = errorDetail(err);
     await db.insert(syncRuns).values({ startedAt, finishedAt: new Date(), stage, status: "error", detail });
     return { stage, status: "error", detail };
   }
@@ -917,9 +919,6 @@ export async function runSportSync(
         const playingThisWeek = new Set(thisWeekGames.flatMap((g) => [g.homeTeam, g.awayTeam]));
         const nameToAbbr = { get: (n: string) => resolve(n, playingThisWeek) };
 
-        // Box scores load while the odds feed is fetched (they don't depend on it).
-        const rawStatRowsP = loadBoxScores(sport, [year - 1, year]).then((rows) => rows.map((r) => ({ ...r, stats: r.stats as Record<string, string> })));
-        rawStatRowsP.catch(() => {});
         const events = await fetchUpcomingEventsForSport(sport);
         const thisWeekEvents = events.filter((e) => {
           const home = nameToAbbr.get(e.home_team.trim().toLowerCase());
@@ -941,11 +940,16 @@ export async function runSportSync(
         );
         const allProps = propsByEvent.flat();
         mark("odds");
+        // Nothing posted yet (preseason, board not up): skip the box-score
+        // load (up to 150,000 rows), which only slows every other sport's sync.
+        if (allProps.length === 0) {
+          return `Props: ${thisWeekEvents.length} event(s), 0 raw line(s) posted yet for week ${week} — nothing to project.`;
+        }
 
         // This season's games plus last season's. Last season's games sort before this
         // season's (negative week numbers) and never count toward opponent
         // adjustments.
-        const rawStatRows = await rawStatRowsP;
+        const rawStatRows = (await loadBoxScores(sport, [year - 1, year])).map((r) => ({ ...r, stats: r.stats as Record<string, string> }));
         mark("stats");
         // Books' spellings -> box-score names (accents, team tags, Jr., legal
         // first names...), so every player with a box score gets a projection.

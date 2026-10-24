@@ -60,18 +60,26 @@ export function hasAnyOddsProvider(): boolean {
 
 /** Every NFL event the Odds API currently has on its board (includes games with no props posted yet). Falls back to SportsGameOdds if The Odds API isn't configured or fails. */
 export async function fetchUpcomingEvents(): Promise<OddsEvent[]> {
+  let primaryErr: unknown;
   if (hasOddsApiKey()) {
     try {
       return await oddsApiGet<OddsEvent[]>(`/sports/${SPORT}/events`, {});
     } catch (err) {
       if (!hasSportsGameOddsKey()) throw err;
+      primaryErr = err;
     }
   } else if (!hasSportsGameOddsKey()) {
     throw new Error("No odds provider is configured (ODDS_API_KEYS_FREE/PROPLINE_API_KEYS_FREE/PROPLINE_API_KEY or SPORTSGAMEODDS_API_KEY)");
   }
 
-  const events = await fetchSgoEvents();
-  return events.map(sgoEventToOddsEvent);
+  try {
+    const events = await fetchSgoEvents();
+    return events.map(sgoEventToOddsEvent);
+  } catch (err) {
+    // Say why the main feed failed too, not just the fallback.
+    if (primaryErr) throw new Error(`Odds feed failed (${primaryErr instanceof Error ? primaryErr.message : String(primaryErr)}); fallback failed (${err instanceof Error ? err.message : String(err)})`);
+    throw err;
+  }
 }
 
 export interface MoneylineOdds {

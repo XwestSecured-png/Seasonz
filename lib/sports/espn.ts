@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- ESPN's public JSON is untyped and changes shape; parsed defensively below. */
 // Generic data source for every non-NFL sport (NBA/NHL/MLB/NCAAF/NCAAB),
 // built against ESPN's public (undocumented) site API — the same family of
 // endpoints lib/espn.ts already uses for NFL's FPI/QBR factor. NFL itself

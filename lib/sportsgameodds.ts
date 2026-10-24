@@ -149,7 +149,13 @@ export async function fetchSgoEvents(): Promise<SgoEvent[]> {
   url.searchParams.set("oddsAvailable", "true");
   url.searchParams.set("limit", "100");
 
-  const res = await fetch(url.toString(), { headers: { "X-Api-Key": key } });
+  // Rate limited (several sports' syncs at once): wait and try twice more.
+  let res = await fetch(url.toString(), { headers: { "X-Api-Key": key } });
+  for (let attempt = 1; res.status === 429 && attempt <= 2; attempt++) {
+    const after = Number(res.headers.get("retry-after"));
+    await new Promise((r) => setTimeout(r, Math.min(15_000, Number.isFinite(after) && after > 0 ? after * 1000 : 3000 * attempt)));
+    res = await fetch(url.toString(), { headers: { "X-Api-Key": key } });
+  }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(

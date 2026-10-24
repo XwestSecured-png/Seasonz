@@ -33,6 +33,30 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.24.1",
+    date: "2026-10-24",
+    title: "Sync fixes",
+    summary: "Fixes a college basketball sync failure and timeout, and a props failure when the odds feeds were rate limited.",
+    changes: [
+      {
+        kind: "fixed",
+        title: "College basketball sync",
+        whatChanged:
+          "With no college basketball props posted yet, the sync still loaded two seasons of box scores (about 150,000 rows) every run. When every sport synced at once that took over 3 minutes, failed once, and ran the college basketball sync past its 5-minute limit. It now skips that load until lines are posted.",
+        whatItMeans: "The full sync finishes on time, and every other sport's sync runs faster while they share the database.",
+        audience: "admin",
+      },
+      {
+        kind: "fixed",
+        title: "Odds feed rate limits",
+        whatChanged:
+          "When the main odds feed failed and the backup feed answered 'too many requests', NFL props were skipped for that run. The backup now waits and retries twice, and a failure names both feeds' errors. Failed sync stages also record where in the code they failed.",
+        whatItMeans: "Fewer missed prop updates, and any failure that does happen can be traced and fixed quickly.",
+        audience: "admin",
+      },
+    ],
+  },
+  {
     version: "1.24.0",
     date: "2026-10-24",
     title: "Reading the whole ladder",
