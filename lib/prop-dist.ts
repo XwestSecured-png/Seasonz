@@ -20,7 +20,12 @@
 //
 // Client-safe: no server imports.
 
-export type DistKind = "normal" | "poisson" | "negbin";
+/**
+ * "longest" (1.23.0): a player's longest catch or run. With about `mean`
+ * attempts, each going exponentially far with average `sd` yards, the chance
+ * the longest beats L is 1 - exp(-mean * exp(-L / sd)).
+ */
+export type DistKind = "normal" | "poisson" | "negbin" | "longest";
 
 export interface PropModelConfig {
   dist: DistKind;
@@ -165,6 +170,10 @@ function countCdf(k: number, m: number, r: number | null): number {
 
 /** Chance the stat goes OVER the line (pushes on whole-number lines count as half). */
 export function overProbability(p: Projection, line: number, dist: DistKind): number {
+  if (dist === "longest") {
+    if (!(p.mean > 0) || !(p.sd > 0)) return 0;
+    return 1 - Math.exp(-p.mean * Math.exp(-Math.max(0, line) / p.sd));
+  }
   if (dist === "normal") {
     if (p.sd <= 0) return p.mean > line ? 1 : 0;
     return 1 - normalCdf((line - p.mean) / p.sd);

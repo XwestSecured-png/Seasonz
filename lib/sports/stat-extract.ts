@@ -131,6 +131,25 @@ export function statGroup(s: Record<string, unknown>, name: string): Record<stri
   if (groups && groups[name]) return groups[name];
   return s.group === name ? (s as Record<string, string>) : null;
 }
+/** Completions (i=0) or attempts (i=1) from passing "C/ATT" ("21/30"). */
+const cAtt = (s: Record<string, string>, i: 0 | 1) => {
+  const g = statGroup(s, "passing");
+  const parts = g?.["C/ATT"]?.split("/");
+  const v = parts && parts.length === 2 ? Number(parts[i]) : NaN;
+  return Number.isFinite(v) ? v : null;
+};
+/** Sum of several groups' values; null when the player has none of the groups. */
+const sumGroups = (s: Record<string, string>, keys: [string, string][]) => {
+  let any = false;
+  let t = 0;
+  for (const [g, k] of keys) {
+    const grp = statGroup(s, g);
+    if (!grp) continue;
+    any = true;
+    t += firstNumber(grp[k]) ?? 0;
+  }
+  return any ? t : null;
+};
 const fromGroup = (name: string, key: string) => (s: Record<string, string>) => {
   const g = statGroup(s, name);
   return g ? firstNumber(g[key]) : null;
@@ -142,6 +161,19 @@ const NCAAF_STATS: StatExtractor[] = [
   { statType: "Receptions", extract: fromGroup("receiving", "REC") },
   // Rushing + receiving yards; a player with neither line didn't record it.
   { statType: "Rush + Rec Yds", extract: (s) => rushRecYards(s) },
+  // 1.23.0: the rest of the books' college menu.
+  { statType: "Completions", extract: (s) => cAtt(s, 0) },
+  { statType: "Pass Attempts", extract: (s) => cAtt(s, 1) },
+  { statType: "Pass TDs", extract: fromGroup("passing", "TD") },
+  { statType: "INTs Thrown", extract: fromGroup("passing", "INT") },
+  { statType: "Rush Attempts", extract: fromGroup("rushing", "CAR") },
+  { statType: "Rush TDs", extract: fromGroup("rushing", "TD") },
+  { statType: "Rec TDs", extract: fromGroup("receiving", "TD") },
+  { statType: "Anytime TD", extract: (s) => sumGroups(s, [["rushing", "TD"], ["receiving", "TD"]]) },
+  { statType: "Pass + Rush Yds", extract: (s) => (statGroup(s, "passing") ? sumGroups(s, [["passing", "YDS"], ["rushing", "YDS"]]) : null) },
+  { statType: "Longest Reception", extract: fromGroup("receiving", "LONG") },
+  { statType: "Longest Rush", extract: fromGroup("rushing", "LONG") },
+  { statType: "Kicking Points", extract: fromGroup("kicking", "PTS") },
 ];
 
 export const STAT_EXTRACTORS: Record<SportKey, StatExtractor[]> = {

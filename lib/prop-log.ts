@@ -2,6 +2,7 @@
 // chance, the market's no-vig chance and the final blended chance, then
 // graded once the game is final. lib/model-weights.ts re-fits each sport's
 // model/market blend for props from these graded picks.
+import { NFL_EXTRA_FIELDS } from "./props-model";
 import { db } from "@/db";
 import { games, propPickLog, sportGames, sportPlayerGameStats } from "@/db/schema";
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
@@ -89,6 +90,7 @@ const NFL_FIELD: Record<string, keyof PlayerWeekStats> = {
   "Rec Yds": "recYds",
   "Rush + Rec Yds": "rushRecYds",
   Receptions: "receptions",
+  ...Object.fromEntries(NFL_EXTRA_FIELDS.map((f) => [f.statType, f.field])),
 };
 const norm = (s: string) => s.trim().toLowerCase();
 

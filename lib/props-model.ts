@@ -1,4 +1,5 @@
 import type { PlayerWeekStats, DefensivePlayerWeekStats, ScheduleGame, SnapRow } from "./nflverse";
+import { NFL_DISPLAY_ONLY_STATS } from "./derived-props";
 import { adjustMarketMap, scaleAdjustments, oneSidedChance, type MarketLearn } from "./market-adjust";
 import type { PropOutcome } from "./odds";
 import { MIN_MODEL_WIN_PCT } from "./confidence";
@@ -25,6 +26,23 @@ const NFL_SD_MULT: Record<string, number> = { "Pass Yds": 1.3, "Rush Yds": 1.3, 
 // games are pulled toward the 20-game average (Pass .612 -> .602, Rush
 // .613 -> .609, Rec .618 -> .610); receptions are a count, so Poisson
 // (.602 -> .582), with a small calibration pull toward 50%.
+/** The 1.23.0 prop types: stat -> PlayerWeekStats field (projection and grading). */
+export const NFL_EXTRA_FIELDS: { statType: string; field: keyof PlayerWeekStats }[] = [
+  { statType: "Completions", field: "completions" },
+  { statType: "Pass Attempts", field: "attempts" },
+  { statType: "Pass + Rush Yds", field: "passRushYds" },
+  { statType: "Rush Attempts", field: "carries" },
+  { statType: "Pass TDs", field: "passTds" },
+  { statType: "Rush TDs", field: "rushingTds" },
+  { statType: "Rec TDs", field: "receivingTds" },
+  { statType: "Anytime TD", field: "anytimeTd" },
+  { statType: "INTs Thrown", field: "interceptionsThrown" },
+  { statType: "Kicking Points", field: "kickPts" },
+  { statType: "Sacks", field: "defSacks" },
+  { statType: "Tackles + Assists", field: "tackles" },
+  { statType: "Solo Tackles", field: "soloTackles" },
+];
+
 export const NFL_PROP_MODEL: Record<string, PropModelConfig> = {
   // Spread now pulls in the 20-game spread (sdShrinkK 10, multiplier x0.9);
   // backtest on 2022-26 weekly stats with lines out to 2 sd: Pass .4920 ->
@@ -37,6 +55,27 @@ export const NFL_PROP_MODEL: Record<string, PropModelConfig> = {
   // histories, lines at the projection +/- 0.5 and 1 sd): bell curve, 20-game
   // pull 5, slight calibration pull.
   "Rush + Rec Yds": { dist: "normal", sdMult: 1.17, shrinkK: 5, useMinutes: false, temper: 0.94, sdShrinkK: 10 },
+  // 1.23.0: the rest of the books' menu. Each chosen on nflverse weekly
+  // stats (fitted 2022-24, checked 2025-26, lines around the projection or
+  // the books' usual 0.5/1.5/2.5); the winner held on both splits:
+  // Completions .6309/.6270, Pass Attempts .6416/.6383, Pass + Rush Yds
+  // .6881/.6890 (bell curve); Rush Attempts .6293/.6142; TD counts and
+  // interceptions (Rush TDs .3032/.3022, Rec TDs .2463/.2428, Anytime TD
+  // .4888/.4655, Pass TDs .5223/.5470, INTs .5818/.5467), sacks and tackles
+  // (negative binomial, the rare ones pulled toward 50% a little).
+  Completions: { dist: "normal", sdMult: 1.2, shrinkK: 5, useMinutes: false, sdShrinkK: 10 },
+  "Pass Attempts": { dist: "normal", sdMult: 1.2, shrinkK: 5, useMinutes: false, sdShrinkK: 10 },
+  "Pass + Rush Yds": { dist: "normal", sdMult: 1.2, shrinkK: 5, useMinutes: false, sdShrinkK: 10 },
+  "Rush Attempts": { dist: "negbin", sdMult: 1, shrinkK: 5, useMinutes: false },
+  "Pass TDs": { dist: "negbin", sdMult: 1, shrinkK: 20, useMinutes: false, temper: 0.9 },
+  "Rush TDs": { dist: "negbin", sdMult: 1, shrinkK: 20, useMinutes: false, temper: 0.8 },
+  "Rec TDs": { dist: "negbin", sdMult: 1, shrinkK: 20, useMinutes: false, temper: 0.85 },
+  "Anytime TD": { dist: "negbin", sdMult: 1, shrinkK: 20, useMinutes: false, temper: 0.8 },
+  "INTs Thrown": { dist: "negbin", sdMult: 1, shrinkK: 20, useMinutes: false, temper: 0.8 },
+  "Kicking Points": { dist: "negbin", sdMult: 1, shrinkK: 20, useMinutes: false, temper: 0.9 },
+  Sacks: { dist: "negbin", sdMult: 1, shrinkK: 20, useMinutes: false, temper: 0.9 },
+  "Tackles + Assists": { dist: "negbin", sdMult: 1, shrinkK: 20, useMinutes: false },
+  "Solo Tackles": { dist: "negbin", sdMult: 1, shrinkK: 20, useMinutes: false, temper: 0.9 },
 };
 
 /** A prop is only picked when the model's chance beats the price's implied chance by at least this much. */
@@ -76,6 +115,7 @@ const STAT_FIELDS: { statType: string; field: keyof PlayerWeekStats }[] = [
   { statType: "Rec Yds", field: "recYds" },
   { statType: "Receptions", field: "receptions" },
   { statType: "Rush + Rec Yds", field: "rushRecYds" },
+  ...NFL_EXTRA_FIELDS,
 ];
 
 export interface PlayerSeasonAverage {
@@ -849,6 +889,8 @@ export function buildPropPicks(
   const picks: PropPick[] = [];
   for (const g of grouped.values()) {
     if (isPlaceholderLine(g.book, g.overPrice, g.underPrice)) continue;
+    // Can't be graded from box scores (scoring order, NFL longest play): shown on Props, never picked.
+    if (NFL_DISPLAY_ONLY_STATS.has(g.statType)) continue;
     const avg = averages.get(`${g.player}|${g.statType}`);
     if (!avg || avg.games < MIN_GAMES_FOR_PROJECTION) continue;
     if (g.line <= 0) continue;

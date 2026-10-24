@@ -214,6 +214,18 @@ export interface PlayerWeekStats {
   attempts?: number;
   /** Receiving yards after the catch. */
   recYac?: number;
+  // 1.23.0: the rest of the books' NFL prop menu.
+  completions?: number;
+  /** Rushing + receiving TDs (the "Anytime TD" count). */
+  anytimeTd?: number;
+  /** QB passing + rushing yards. */
+  passRushYds?: number;
+  /** Kickers: 3 x field goals + extra points. */
+  kickPts?: number;
+  defSacks?: number;
+  /** Solo + assisted tackles. */
+  tackles?: number;
+  soloTackles?: number;
   passTds?: number;
   // Touchdowns scored BY this player (rushing + receiving only — not
   // passing, since "anytime TD scorer" props are about the player crossing
@@ -265,6 +277,9 @@ export async function fetchPlayerWeekStats(season: number): Promise<PlayerWeekSt
       carries: Number(r.carries || 0),
       targets: Number(r.targets || 0),
       attempts: Number(r.attempts || 0),
+      completions: Number(r.completions || 0),
+      anytimeTd: Number(r.rushing_tds || 0) + Number(r.receiving_tds || 0),
+      passRushYds: Number(r.passing_yards || 0) + Number(r.rushing_yards || 0),
       recYac: Number(r.receiving_yards_after_catch || 0),
       passTds: Number(r.passing_tds || 0),
       rushingTds: Number(r.rushing_tds || 0),
@@ -457,4 +472,47 @@ export async function fetchRushAfterContact(season: number): Promise<Map<string,
     out.set(k, t);
   }
   return out;
+}
+
+/**
+ * Every player-week a prop can be posted on (1.23.0): the offensive rows
+ * from fetchPlayerWeekStats plus kickers (kicking points) and defenders
+ * (sacks, tackles), shaped like PlayerWeekStats with the offensive numbers
+ * at zero. Used for prop projections and grading only.
+ */
+export async function fetchPropWeekStats(season: number): Promise<PlayerWeekStats[]> {
+  const offense = await fetchPlayerWeekStats(season);
+  const rows = await fetchCsv(`${NFLVERSE_BASE}/stats_player/stats_player_week_${season}.csv`);
+  const n = (v: string | undefined) => Number(v || 0) || 0;
+  const extra: PlayerWeekStats[] = [];
+  for (const r of rows) {
+    if (r.season_type !== "REG" && r.season_type !== undefined) continue;
+    const isK = r.position === "K";
+    if (!isK && !DEFENSIVE_POSITIONS.includes(r.position)) continue;
+    extra.push({
+      season,
+      week: n(r.week),
+      team: r.team || r.recent_team,
+      playerId: r.player_id || undefined,
+      opponent: r.opponent_team || undefined,
+      player: r.player_display_name || r.player_name,
+      position: r.position,
+      epa: 0,
+      passYds: 0,
+      rushYds: 0,
+      recYds: 0,
+      receptions: 0,
+      rushRecYds: 0,
+      rushingTds: 0,
+      receivingTds: 0,
+      sacksTaken: 0,
+      interceptionsThrown: 0,
+      fumblesLost: 0,
+      kickPts: isK ? 3 * n(r.fg_made) + n(r.pat_made) : undefined,
+      defSacks: isK ? undefined : n(r.def_sacks),
+      tackles: isK ? undefined : n(r.def_tackles_solo) + n(r.def_tackle_assists),
+      soloTackles: isK ? undefined : n(r.def_tackles_solo),
+    });
+  }
+  return [...offense, ...extra];
 }

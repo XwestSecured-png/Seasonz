@@ -2,6 +2,7 @@
 // opening price (first seen) and closing price (last seen; books pull lines
 // at kickoff, so the last price seen is the close). Lets us test the model
 // against real lines and measure closing-line value later.
+import { NFL_EXTRA_FIELDS } from "./props-model";
 import { db } from "@/db";
 import { games, lineArchive, sportGames, sportPlayerGameStats } from "@/db/schema";
 import { and, asc, eq, gt, inArray, isNull, lte, sql } from "drizzle-orm";
@@ -173,6 +174,7 @@ const NFL_FIELD: Record<string, keyof PlayerWeekStats> = {
   "Rec Yds": "recYds",
   "Rush + Rec Yds": "rushRecYds",
   Receptions: "receptions",
+  ...Object.fromEntries(NFL_EXTRA_FIELDS.map((f) => [f.statType, f.field])),
 };
 const nameKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 const over = (side: string) => /^(over|yes|home)$/i.test(side);

@@ -6,6 +6,7 @@
 // bar. The two math primitives that don't depend on any sport-specific
 // field name (winProbability / americanToImpliedProb) are imported from
 // lib/props-model.ts rather than duplicated.
+import { DISPLAY_ONLY_STATS } from "../derived-props";
 import { adjustMarketMap, scaleAdjustments, oneSidedChance, type MarketLearn } from "../market-adjust";
 import { gameDayFactor, type GameDayContext } from "./game-day";
 import { propTrust, calibrateTrust, trustFeatures, type Trust } from "../prop-trust";
@@ -149,6 +150,9 @@ export const PROP_MODEL: Record<SportKey, Record<string, PropModelConfig>> = {
     Receptions: { dist: "poisson", sdMult: 1.3, shrinkK: 40, useMinutes: false },
     // NFL's combo settings with college's heavier shrinkage (as for its parts).
     "Rush + Rec Yds": { dist: "normal", sdMult: 1.3, shrinkK: 40, useMinutes: false, temper: 0.94 },
+    // Longest catch / run straight from the player's own longest plays (college box scores list them).
+    "Longest Reception": { dist: "normal", sdMult: 1.2, shrinkK: 20, useMinutes: false, sdShrinkK: 10 },
+    "Longest Rush": { dist: "normal", sdMult: 1.2, shrinkK: 20, useMinutes: false, sdShrinkK: 10 },
   },
   // Hockey (live check on 2025-27 box scores, /api/health/insights?propcal=nhl):
   // Points .621 -> .590, Assists .640 -> .609, Shots .595 -> .563, Saves .594 -> .554.
@@ -234,6 +238,11 @@ export const STDDEV_FLOOR_ABS: Record<SportKey, Record<string, number>> = {
     "Rec Yds": 8,
     Receptions: 1,
     "Rush + Rec Yds": 10,
+    "Pass + Rush Yds": 15,
+    Completions: 2,
+    "Pass Attempts": 3,
+    "Longest Reception": 4,
+    "Longest Rush": 4,
   },
 };
 
@@ -540,6 +549,8 @@ export function buildSportPropPicks(
   const picks: SportPropPick[] = [];
   for (const g of grouped.values()) {
     if (isPlaceholderLine(g.book, g.overPrice, g.underPrice)) continue;
+    // Can't be graded from box scores (scoring order): shown on Props, never picked.
+    if (DISPLAY_ONLY_STATS.has(g.statType)) continue;
     const avg = averages.get(`${g.player}|${g.statType}`);
     if (!avg || avg.games < MIN_GAMES_FOR_PROJECTION) continue;
     if (g.line <= 0) continue;

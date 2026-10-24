@@ -15,6 +15,7 @@ import { archiveGameLines, archivePropLines, gradeLineArchive } from "../line-ar
 import { inBatches } from "../bulk";
 import { propChance } from "../prop-dist";
 import { buildNameResolver } from "../player-names";
+import { addDerivedProps } from "../derived-props";
 import { loadBoxScores, clearBoxScores } from "./box-cache";
 import { detectSportReturns, recentReturns, type ReportRow } from "../injury-returns";
 import {
@@ -1010,6 +1011,15 @@ export async function runSportSync(
         );
         mark("game-day");
         const averages = computeSportSeasonAverages(sport, statRows, schedule, week, returners, gameDay);
+        // First/last TD from the touchdown projections (Props page only).
+        if (sport === "ncaaf") {
+          const opp = new Map<string, string>();
+          for (const g of thisWeekGames) {
+            opp.set(g.homeTeam, g.awayTeam);
+            opp.set(g.awayTeam, g.homeTeam);
+          }
+          addDerivedProps(averages, opp, { longest: false });
+        }
         mark("projections");
         // A player whose last team (from box scores) isn't in the game his
         // line was posted for has changed teams; drop him rather than show

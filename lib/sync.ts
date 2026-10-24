@@ -27,6 +27,7 @@ import {
   fetchAllRegSeasonGames,
   fetchTeamWeekStats,
   fetchRushAfterContact,
+  fetchPropWeekStats,
 } from "./nflverse";
 import { settlePendingBets } from "./bet-settle";
 import { recordNflReturns } from "./injury-returns";
@@ -34,6 +35,7 @@ import { archiveGameLines, archivePropLines, gradeLineArchive } from "./line-arc
 import { inBatches } from "./bulk";
 import { propChance } from "./prop-dist";
 import { buildNameResolver } from "./player-names";
+import { addDerivedProps } from "./derived-props";
 import { replayNflElo, makeNflEpaLookup, nflEpaAdjPct, type EloGameResult } from "./elo";
 import { noVigHome, logit, sigmoid } from "./sports/game-model";
 import type { ScheduleGame } from "./nflverse";
@@ -355,7 +357,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
       const needArchive = (
         await db.select({ id: lineArchive.id }).from(lineArchive).where(and(eq(lineArchive.sport, "nfl"), isNull(lineArchive.result))).limit(1)
       ).length;
-      const nflWeekStats = needStats || needLog || needArchive ? await fetchPlayerWeekStats(season).catch(() => []) : undefined;
+      const nflWeekStats = needStats || needLog || needArchive ? await fetchPropWeekStats(season).catch(() => []) : undefined;
       const bets = await settlePendingBets({ sport: "nfl", nflWeekStats });
       // Logged model props (lib/prop-log.ts), for re-fitting the props blend.
       const logged = needLog ? await gradePropLog("nfl", nflWeekStats) : "";
@@ -1155,7 +1157,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         // nicknames), so every player with stats gets a projection.
         {
           const latest = new Map<string, string>();
-          for (const r of [...priorStats, ...playerStats]) latest.set(r.player, r.team);
+          for (const r of [...(await fetchPropWeekStats(season - 1).catch(() => priorStats)), ...(await fetchPropWeekStats(season).catch(() => playerStats))]) latest.set(r.player, r.team);
           const names = buildNameResolver([...latest].map(([player, team]) => ({ player, team })));
           thisWeekEvents.forEach((e, i) => {
             const teams = [getTeamByFullName(e.home_team)?.code, getTeamByFullName(e.away_team)?.code].filter((x): x is string => !!x);
@@ -1180,7 +1182,19 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         }
         const rushAfterContact = await fetchRushAfterContact(season).catch(() => new Map<string, { carries: number; yco: number }>());
         const outThisWeek = new Set(impactRows.filter((r) => r.status === "OUT").map((r) => `${r.team}|${r.player.toLowerCase().replace(/[^a-z]/g, "")}`));
-        const averages = computeSeasonAverages(playerStats, schedule, week, priorStats, snapTrends(snaps), returners, windByTeam, rushAfterContact, outThisWeek);
+        // Kickers and defenders too (kicking points, sacks, tackles).
+        const propStats = await fetchPropWeekStats(season).catch(() => playerStats);
+        const priorPropStats = await fetchPropWeekStats(season - 1).catch(() => priorStats);
+        const averages = computeSeasonAverages(propStats, schedule, week, priorPropStats, snapTrends(snaps), returners, windByTeam, rushAfterContact, outThisWeek);
+        // First/last TD and longest catch/run, built from the projections above (Props page only).
+        {
+          const opp = new Map<string, string>();
+          for (const g of schedule) if (g.week === week) {
+            opp.set(g.homeTeam, g.awayTeam);
+            opp.set(g.awayTeam, g.homeTeam);
+          }
+          addDerivedProps(averages, opp, { longest: true });
+        }
 
         // A player marked OUT or DOUBTFUL for this game shouldn't get a prop
         // pick at all — their season stats say nothing about a game they

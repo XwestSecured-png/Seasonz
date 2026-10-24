@@ -33,6 +33,30 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.23.0",
+    date: "2026-10-24",
+    title: "Every football prop",
+    summary: "The model now projects the football props it used to skip: touchdowns, attempts, completions, interceptions, kicking points, sacks and tackles, plus first/last TD and longest catch/run.",
+    changes: [
+      {
+        kind: "new",
+        title: "Touchdown, attempt and defense props",
+        whatChanged:
+          "NFL and college football props for Anytime TD, Pass/Rush/Rec TDs, INTs Thrown, Completions, Pass Attempts, Rush Attempts, Pass + Rush Yds and Kicking Points get projections, and NFL Sacks, Tackles + Assists and Solo Tackles too. Each was tuned and tested on past seasons before shipping.",
+        whatItMeans: "Thousands of lines a week that showed no model now get a fair price, picks and grading.",
+        href: "/props?sport=nfl",
+      },
+      {
+        kind: "new",
+        title: "First TD, Last TD and longest plays",
+        whatChanged:
+          "First and Last TD get a model price from each player's touchdown projection against both teams' totals; Longest Reception and Longest Rush (NFL) from catches/carries and yards per play. College longest plays are fully modeled and graded.",
+        whatItMeans: "You'll see a fair price on these lines. They're shown but not picked, because box scores don't record scoring order (or NFL longest plays), so they can't be graded yet.",
+        href: "/props?sport=nfl",
+      },
+    ],
+  },
+  {
     version: "1.22.1",
     date: "2026-10-24",
     title: "Stars missing from picks",
