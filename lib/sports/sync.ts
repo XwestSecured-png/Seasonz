@@ -1092,7 +1092,7 @@ export async function runSportSync(
         // unchanged lines are left alone (they used to be deleted and
         // re-inserted every run).
         const existingRaw = await db
-          .select({ id: sportPropLinesRaw.id, player: sportPropLinesRaw.player, statType: sportPropLinesRaw.statType, line: sportPropLinesRaw.line, side: sportPropLinesRaw.side, book: sportPropLinesRaw.book })
+          .select({ id: sportPropLinesRaw.id, player: sportPropLinesRaw.player, statType: sportPropLinesRaw.statType, line: sportPropLinesRaw.line, side: sportPropLinesRaw.side, book: sportPropLinesRaw.book, priceAmerican: sportPropLinesRaw.priceAmerican, team: sportPropLinesRaw.team })
           .from(sportPropLinesRaw)
           .where(sql`${sportPropLinesRaw.sport} = ${sport} AND ${sportPropLinesRaw.season} = ${year} AND ${sportPropLinesRaw.week} = ${week}`);
         const seenRaw = new Set<string>();
@@ -1119,7 +1119,13 @@ export async function runSportSync(
         const liveKeys = new Set(rawRows.map((r) => `${r.player}|${r.statType}|${r.line}|${r.side}|${r.book}`));
         const goneIds = existingRaw.filter((r) => !liveKeys.has(`${r.player}|${r.statType}|${r.line}|${r.side}|${r.book}`)).map((r) => r.id);
         await inBatches(goneIds, 5000, 1, (ids) => db.delete(sportPropLinesRaw).where(inArray(sportPropLinesRaw.id, ids)));
-        await inBatches(rawRows, 2000, 1, (chunk) =>
+        // Only new lines and lines whose price or team changed go to the database.
+        const had = new Map(existingRaw.map((r) => [`${r.player}|${r.statType}|${r.line}|${r.side}|${r.book}`, r]));
+        const changedRaw = rawRows.filter((r) => {
+          const e = had.get(`${r.player}|${r.statType}|${r.line}|${r.side}|${r.book}`);
+          return !e || e.priceAmerican !== r.priceAmerican || (e.team ?? null) !== (r.team ?? null);
+        });
+        await inBatches(changedRaw, 2000, 1, (chunk) =>
           db
             .insert(sportPropLinesRaw)
             .values(chunk)

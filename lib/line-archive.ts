@@ -68,8 +68,23 @@ async function upsert(rows: Row[]): Promise<number> {
 
 /** Archives this sync's prop lines (the model's own fair line is left out). */
 export async function archivePropLines(sport: string, season: number, week: number, props: ArchiveProp[]): Promise<number> {
+  // This week's lines already on file: unchanged ones seen in the last 20
+  // hours are skipped before anything is sent to the database.
+  const existing = await db
+    .select({ player: lineArchive.player, statType: lineArchive.statType, line: lineArchive.line, side: lineArchive.side, book: lineArchive.book, closePrice: lineArchive.closePrice, closeAt: lineArchive.closeAt, team: lineArchive.team, result: lineArchive.result })
+    .from(lineArchive)
+    .where(and(eq(lineArchive.sport, sport), eq(lineArchive.season, season), eq(lineArchive.week, week), eq(lineArchive.market, "prop")));
+  const fresh = Date.now() - 20 * 3600_000;
+  const skip = new Set(
+    existing
+      .filter((e) => e.result !== null || e.closeAt.getTime() > fresh)
+      .map((e) => `${e.player}|${e.statType}|${e.line}|${e.side}|${e.book}|${e.result !== null ? "*" : e.closePrice}|${e.result !== null ? "*" : (e.team ?? "")}`)
+  );
+  const isSkipped = (p: ArchiveProp) =>
+    skip.has(`${p.player}|${p.statType}|${p.line}|${p.side}|${p.book}|*|*`) || skip.has(`${p.player}|${p.statType}|${p.line}|${p.side}|${p.book}|${p.priceAmerican}|${p.team ?? ""}`);
   return upsert(
     props
+      .filter((p) => !isSkipped(p))
       .filter((p) => p.book !== MODEL_FAIR_BOOK && Number.isFinite(p.priceAmerican))
       .map((p) => ({
         sport,

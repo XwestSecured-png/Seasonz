@@ -1236,7 +1236,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         // below; unchanged lines are left alone (they used to be deleted and
         // re-inserted every run, 75,000 rows on an NFL Sunday).
         const existingRaw = await db
-          .select({ id: propLinesRaw.id, player: propLinesRaw.player, statType: propLinesRaw.statType, line: propLinesRaw.line, side: propLinesRaw.side, book: propLinesRaw.book })
+          .select({ id: propLinesRaw.id, player: propLinesRaw.player, statType: propLinesRaw.statType, line: propLinesRaw.line, side: propLinesRaw.side, book: propLinesRaw.book, priceAmerican: propLinesRaw.priceAmerican, team: propLinesRaw.team })
           .from(propLinesRaw)
           .where(sql`${propLinesRaw.season} = ${season} AND ${propLinesRaw.week} = ${week} AND ${propLinesRaw.book} <> ${MODEL_FAIR_BOOK}`);
         const seenRaw = new Set<string>();
@@ -1262,7 +1262,13 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         const liveKeys = new Set(rawRows.map((r) => `${r.player}|${r.statType}|${r.line}|${r.side}|${r.book}`));
         const goneIds = existingRaw.filter((r) => !liveKeys.has(`${r.player}|${r.statType}|${r.line}|${r.side}|${r.book}`)).map((r) => r.id);
         await inBatches(goneIds, 5000, 1, (ids) => db.delete(propLinesRaw).where(inArray(propLinesRaw.id, ids)));
-        await inBatches(rawRows, 2000, 1, (chunk) =>
+        // Only new lines and lines whose price or team changed go to the database.
+        const had = new Map(existingRaw.map((r) => [`${r.player}|${r.statType}|${r.line}|${r.side}|${r.book}`, r]));
+        const changedRaw = rawRows.filter((r) => {
+          const e = had.get(`${r.player}|${r.statType}|${r.line}|${r.side}|${r.book}`);
+          return !e || e.priceAmerican !== r.priceAmerican || (e.team ?? null) !== (r.team ?? null);
+        });
+        await inBatches(changedRaw, 2000, 1, (chunk) =>
           db
             .insert(propLinesRaw)
             .values(chunk)
