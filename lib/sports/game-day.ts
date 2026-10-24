@@ -337,6 +337,10 @@ const CONTEXT: Partial<Record<string, Record<string, { away?: number; home?: num
     Saves: { home: 0.97 },
   },
   wnba: { Points: { away: 0.95 }, Rebounds: { away: 0.97 } },
+  // College football (1.21.0, live check on 8,000+ player-games this season,
+  // last season's smaller sample agreeing): road rushing x0.93 vs home
+  // (log loss -1.6%), and catches were projected ~5-7% low home and away.
+  ncaaf: { "Rush Yds": { away: 0.93 }, Receptions: { home: 1.05, away: 1.05 } },
 };
 
 /**

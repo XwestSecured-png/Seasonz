@@ -33,6 +33,35 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.21.0",
+    date: "2026-10-23",
+    title: "NFL: when a star is out",
+    summary: "NFL teammates' projections now react when a lead back, top target or starting QB is out, and college football props account for road rushing.",
+    changes: [
+      {
+        kind: "improved",
+        title: "NFL: lead back, top target or QB out",
+        whatChanged:
+          "When a team's lead back (40%+ of carries), top target (20%+ of targets) or starting QB is listed Out, his teammates' projections change the same week: the other backs' rushing yards x1.45 and catches x1.3, depth receivers' catches x1.18, the QB's passing yards x0.92 without his top target, and backs' receiving yards x0.88 with a backup QB. Measured on every NFL game 2020-26 (fitted on 2020-23, checked on 2024-26): those props got 4-14% more accurate.",
+        whatItMeans: "The backup running back's Over shows up the week the starter is ruled out, not two weeks later. The trust details say who's out.",
+        href: "/props",
+      },
+      {
+        kind: "improved",
+        title: "College football: road rushing",
+        whatChanged: "Now that last season's college box scores are in, the home/road check ran for college: rushing on the road comes in about 7% lower, and catches were projected 5% low everywhere. Both are now built in.",
+        whatItMeans: "Fewer road rushing Overs in college.",
+        href: "/props?sport=ncaaf",
+      },
+      {
+        kind: "fixed",
+        title: "Test suite",
+        whatChanged: "An outdated check of the default model share was updated; every model check passes.",
+        whatItMeans: "Nothing visible.",
+      },
+    ],
+  },
+  {
     version: "1.20.0",
     date: "2026-10-23",
     title: "Stars out, alt lines priced right, Over bias by stat",
