@@ -7,11 +7,11 @@
 // field name (winProbability / americanToImpliedProb) are imported from
 // lib/props-model.ts rather than duplicated.
 import { DISPLAY_ONLY_STATS } from "../derived-props";
-import { adjustMarketMap, scaleAdjustments, oneSidedChance, type MarketLearn } from "../market-adjust";
+import { scaleAdjustments, type MarketLearn } from "../market-adjust";
 import { gameDayFactor, type GameDayContext } from "./game-day";
 import { propTrust, calibrateTrust, trustFeatures, type Trust } from "../prop-trust";
 import type { PropOutcome } from "../odds";
-import { winProbability, americanToImpliedProb, MIN_PROP_EDGE, NFL_PROP_MODEL, isPlaceholderLine, marketOverChances, blendPropChance, oneSidedMarket, PROP_MODEL_WEIGHT_DEFAULT } from "../props-model";
+import { winProbability, americanToImpliedProb, MIN_PROP_EDGE, NFL_PROP_MODEL, isPlaceholderLine, curveMarket, blendPropChance, PROP_MODEL_WEIGHT_DEFAULT } from "../props-model";
 import { projectProp, propChance, LEGACY_PROP_MODEL, streakFactor, streakReason, type PropModelConfig, type Projection } from "../prop-dist";
 import { MIN_MODEL_WIN_PCT } from "../confidence";
 import { STAT_EXTRACTORS } from "./stat-extract";
@@ -521,7 +521,9 @@ export function buildSportPropPicks(
   /** Learned market bias and line-move continuation (lib/market-learn.ts). */
   marketLearn?: MarketLearn,
   /** Learned strength of the projection adjustments (1 = as coded). */
-  adjStrength = 1
+  adjStrength = 1,
+  /** Sport key, for the market curve's per-sport shares. */
+  sport = ""
 ): SportPropPick[] {
   const weightOf = (stat: string) => (typeof modelWeight === "function" ? modelWeight(stat) : modelWeight);
   const opponentThisWeek = new Map<string, { opponent: string; gameDate: string | null }>();
@@ -545,7 +547,7 @@ export function buildSportPropPicks(
     grouped.set(key, g);
   }
 
-  const market = adjustMarketMap(marketOverChances(grouped.values()), marketLearn);
+  const marketFor = curveMarket(grouped.values(), sport, marketLearn);
   const picks: SportPropPick[] = [];
   for (const g of grouped.values()) {
     if (isPlaceholderLine(g.book, g.overPrice, g.underPrice)) continue;
@@ -568,7 +570,7 @@ export function buildSportPropPicks(
     // this line (see blendPropChance); no market, model alone.
     // No book posts both sides of this line (often an alt line): estimate
     // the market from this book's one price, less a typical 4.5% margin.
-    const mk = market.get(`${g.player}|${g.statType}|${g.line}`) ?? oneSidedChance(g.overPrice, g.underPrice, marketLearn?.oneSided);
+    const mk = marketFor(g);
     const pOver = mk === undefined ? pOverModel : blendPropChance(pOverModel, mk, weightOf(g.statType));
     const side: "Over" | "Under" = pOver >= 0.5 ? "Over" : "Under";
     const modelWinPct = side === "Over" ? pOver : 1 - pOver;

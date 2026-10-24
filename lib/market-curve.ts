@@ -65,20 +65,32 @@ export function blendLogit(p: number, q: number, w: number): number {
   return clampP(sigmoid((1 - w) * logit(p) + w * logit(q)));
 }
 
-export interface CurveLearn {
-  /** Slope prior per stat (k in b = -k/sqrt(line)). */
-  k: Record<string, number>;
-  /** Curve's share against the exact-line two-sided price. */
-  wExact: number;
-  /** Curve's share against a one-sided (alt ladder) price. */
-  wOne: number;
-}
+/**
+ * Slope prior per stat (k in b = -k/sqrt(line)): the median ladder slope on
+ * the line archive's two-sided lines (curvecal, Oct 2026), kept to 0.3-2.
+ */
+const CURVE_K: Record<string, Record<string, number>> = {
+  nba: { Points: 0.83, Rebounds: 1.21, Assists: 1.3, "3-Pointers Made": 1.35, Blocks: 1.35, Steals: 1.41, "Pts+Reb": 0.5, "Reb+Ast": 0.55, "Pts+Reb+Ast": 0.5 },
+  nhl: { Goals: 1.63, Points: 1.48, Assists: 1.52, "Shots on Goal": 1.28 },
+  ncaaf: { Receptions: 1.12 },
+};
+export const curveK = (sport: string, stat: string) => Math.min(2, Math.max(0.3, CURVE_K[sport]?.[stat] ?? CURVE_K.nba[stat] ?? 1));
 
 /**
- * Starting values, from the line archive's first graded week (curvecal).
- * See the 1.24.0 notes in lib/changelog.ts.
+ * The curve's share (log-odds) against the line's own price. Graded lines,
+ * older half fitted / newer half scored: against a two-sided price the
+ * blend was best at 0.5-1 in every sport (0.15-0.65% better log loss);
+ * against a one-sided alt price NHL 0.6-0.7 (8.6-10% better), NBA 0.2,
+ * college football 0.3. Set at the cautious end.
  */
-export const CURVE_DEFAULT: CurveLearn = { k: {}, wExact: 0, wOne: 0 };
+export const CURVE_SHARE: Record<string, { exact: number; one: number }> = {
+  nhl: { exact: 0.5, one: 0.6 },
+  nba: { exact: 0.5, one: 0.2 },
+  wnba: { exact: 0.5, one: 0.2 },
+  ncaab: { exact: 0.5, one: 0.2 },
+  mlb: { exact: 0.3, one: 0.2 },
+};
+export const CURVE_SHARE_DEFAULT = { exact: 0.5, one: 0.3 };
 
 /** Curves per "player|stat" from two-sided books (pairs already reduced to no-vig chances). */
 export function curvesFrom(

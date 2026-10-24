@@ -33,6 +33,22 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.24.0",
+    date: "2026-10-24",
+    title: "Reading the whole ladder",
+    summary: "The market's number for a prop now comes from every line the books post for that player, not just the one line being priced.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Market price curve",
+        whatChanged:
+          "A player's prop is posted at many lines: the main line at a dozen books, alternate lines at a few, often with one side only and a heavy margin. Each line used to be priced on its own. Now every two-sided line for the player is pooled into one price curve, and each line's market chance blends its own price with the curve. On this week's graded lines it was more accurate in every sport, most on hockey alt lines (about 9% better), and slightly on main lines (0.2-0.7%).",
+        whatItMeans: "Alt-line picks stop leaning on one book's juiced price, and every pick's market half is steadier, since the market carries most of each pick's weight.",
+        href: "/props",
+      },
+    ],
+  },
+  {
     version: "1.23.0",
     date: "2026-10-24",
     title: "Every football prop",

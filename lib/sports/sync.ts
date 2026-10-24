@@ -1041,7 +1041,7 @@ export async function runSportSync(
         const propWeight = weightFor(await getModelWeights().catch(() => ({})), `prop:${sport}`);
         const weightStore = await getModelWeights().catch(() => ({}));
         const marketLearn = await liveMarketLearn(weightStore, sport, year, week).catch(() => undefined);
-        const picks = buildSportPropPicks(allProps, averages, schedule, week, unavailable, propWeightFn(weightStore, sport), trustShiftFor(weightStore, sport), marketLearn, adjStrengthFor(weightStore, sport));
+        const picks = buildSportPropPicks(allProps, averages, schedule, week, unavailable, propWeightFn(weightStore, sport), trustShiftFor(weightStore, sport), marketLearn, adjStrengthFor(weightStore, sport), sport);
         mark("model");
 
         await db

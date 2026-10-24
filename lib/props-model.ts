@@ -1,6 +1,7 @@
 import type { PlayerWeekStats, DefensivePlayerWeekStats, ScheduleGame, SnapRow } from "./nflverse";
 import { NFL_DISPLAY_ONLY_STATS } from "./derived-props";
-import { adjustMarketMap, scaleAdjustments, oneSidedChance, type MarketLearn } from "./market-adjust";
+import { curvesFrom, curveChance, blendLogit, curveK, CURVE_SHARE, CURVE_SHARE_DEFAULT } from "./market-curve";
+import { adjustMarket, adjustMarketMap, scaleAdjustments, oneSidedChance, type MarketLearn } from "./market-adjust";
 import type { PropOutcome } from "./odds";
 import { MIN_MODEL_WIN_PCT } from "./confidence";
 import { projectProp, propChance, type PropModelConfig, type Projection, streakFactor, streakReason } from "./prop-dist";
@@ -772,6 +773,40 @@ export function marketOverChances(
 }
 
 /**
+ * Market chance for any line of a prop (1.24.0): the books' no-vig chance at
+ * exactly that line blended with the player's whole price curve (every
+ * two-sided line, lib/market-curve.ts); a one-sided alt price blended with
+ * the curve too. Shares from the line archive's graded lines (curvecal).
+ */
+export function curveMarket(
+  groups: Iterable<{ player: string; statType: string; book: string; line: number; overPrice?: number; underPrice?: number }>,
+  sport: string,
+  marketLearn?: MarketLearn
+): (g: { player: string; statType: string; line: number; overPrice?: number; underPrice?: number }) => number | undefined {
+  const list = [...groups];
+  const exact = adjustMarketMap(marketOverChances(list), marketLearn);
+  const pts: { player: string; statType: string; line: number; p: number; w: number }[] = [];
+  for (const g of list) {
+    if (g.overPrice === undefined || g.underPrice === undefined || isPlaceholderLine(g.book, g.overPrice, g.underPrice)) continue;
+    const o = americanToImpliedProb(g.overPrice);
+    const u = americanToImpliedProb(g.underPrice);
+    if (o + u < 0.98 || o + u > 1.3) continue;
+    pts.push({ player: g.player, statType: g.statType, line: g.line, p: o / (o + u), w: bookWeight(g.book) });
+  }
+  const curves = curvesFrom(pts, (stat) => curveK(sport, stat));
+  const share = CURVE_SHARE[sport] ?? CURVE_SHARE_DEFAULT;
+  return (g) => {
+    const ex = exact.get(`${g.player}|${g.statType}|${g.line}`);
+    const one = ex === undefined && !(g.overPrice !== undefined && g.underPrice !== undefined && Math.abs(g.overPrice) === 100 && Math.abs(g.underPrice) === 100) ? oneSidedChance(g.overPrice, g.underPrice, marketLearn?.oneSided) : undefined;
+    const cv = curves.get(`${g.player}|${g.statType}`);
+    const pc = cv ? adjustMarket(curveChance(cv, g.line), `${g.player}|${g.statType}|curve`, marketLearn) : undefined;
+    if (ex !== undefined) return pc === undefined ? ex : blendLogit(ex, pc, share.exact);
+    if (one !== undefined) return pc === undefined ? one : blendLogit(one, pc, share.one);
+    return pc; // pick'em-only line: the curve alone
+  };
+}
+
+/**
  * Starting model share for props: the model and the market count equally
  * (in log-odds). After the early-season fix, NFL 70%+ picks still sat ~23
  * points above the market's no-vig chance on average, and gaps that size
@@ -885,7 +920,7 @@ export function buildPropPicks(
     grouped.set(key, g);
   }
 
-  const market = adjustMarketMap(marketOverChances(grouped.values()), marketLearn);
+  const marketFor = curveMarket(grouped.values(), "nfl", marketLearn);
   const picks: PropPick[] = [];
   for (const g of grouped.values()) {
     if (isPlaceholderLine(g.book, g.overPrice, g.underPrice)) continue;
@@ -909,7 +944,7 @@ export function buildPropPicks(
     // this line (see blendPropChance); no market, model alone.
     // No book posts both sides of this line (often an alt line): estimate
     // the market from this book's one price, less a typical 4.5% margin.
-    const mk = market.get(`${g.player}|${g.statType}|${g.line}`) ?? oneSidedChance(g.overPrice, g.underPrice, marketLearn?.oneSided);
+    const mk = marketFor(g);
     const pOver = mk === undefined ? pOverModel : blendPropChance(pOverModel, mk, weightOf(g.statType));
     const side: "Over" | "Under" = pOver >= 0.5 ? "Over" : "Under";
     const modelWinPct = side === "Over" ? pOver : 1 - pOver;
