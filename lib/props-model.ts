@@ -1,7 +1,7 @@
 import type { PlayerWeekStats, DefensivePlayerWeekStats, ScheduleGame, SnapRow } from "./nflverse";
 import { NFL_DISPLAY_ONLY_STATS } from "./derived-props";
 import { curvesFrom, curveChance, blendLogit, curveK, CURVE_SHARE, CURVE_SHARE_DEFAULT } from "./market-curve";
-import { adjustMarket, adjustMarketMap, scaleAdjustments, oneSidedChance, sideCalibrate, type MarketLearn } from "./market-adjust";
+import { adjustMarket, adjustMarketMap, scaleAdjustments, oneSidedChance, sideCalibrate, calibrateModel, type MarketLearn } from "./market-adjust";
 import type { PropOutcome } from "./odds";
 import { MIN_MODEL_WIN_PCT } from "./confidence";
 import { projectProp, propChance, type PropModelConfig, type Projection, streakFactor, streakReason } from "./prop-dist";
@@ -951,7 +951,8 @@ export function buildPropPicks(
       avg.proj && avg.cfg ? propChance(avg.proj, g.line, avg.cfg, "Over") : winProbability(avg.average, avg.stdDev, g.line, "Over");
     const pOverBase = avg.proj && avg.cfg && avg.baseMean !== undefined ? propChance({ ...avg.proj, mean: avg.baseMean }, g.line, avg.cfg, "Over") : pOverAdj;
     // How hard to lean on the adjustments: learned from graded picks (lib/model-weights.ts "adj:<sport>").
-    const pOverModel = scaleAdjustments(pOverBase, pOverAdj, adjStrength);
+    // Learned model calibration (lib/market-learn.ts fitModelCal) before the market blend.
+    const pOverModel = calibrateModel(scaleAdjustments(pOverBase, pOverAdj, adjStrength), marketLearn);
     // The final chance blends the model with the market's no-vig chance for
     // this line (see blendPropChance); no market, model alone.
     // No book posts both sides of this line (often an alt line): estimate

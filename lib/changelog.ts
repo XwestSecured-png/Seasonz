@@ -33,6 +33,21 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.28.0",
+    date: "2026-10-24",
+    title: "The model checks its own percentages",
+    summary: "The model's own chance on every prop is now re-calibrated nightly against how archived lines actually landed, before it's blended with the market.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Model calibration",
+        whatChanged:
+          "Every prop line the books post is archived with the model's own chance and later graded. Each night, per sport, the model's chances are re-scaled so they match how often lines actually hit (if it's overconfident, its chances are pulled toward 50%; if it leans Over too often, they're shifted down), then blended with the market. It switches on per sport once there are 300+ graded player-props, moving in gradually; college football is first: Overs the model rated 25-55% hit about 8 points less often.",
+        whatItMeans: "The model's half of every pick is as honest as the market's, and the share each gets is fitted on the corrected numbers.",
+      },
+    ],
+  },
+  {
     version: "1.27.0",
     date: "2026-10-24",
     title: "The sharpest books count most",

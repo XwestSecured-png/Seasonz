@@ -18,7 +18,7 @@ import { propModelWeightDefault, codedBookWeight } from "./props-model";
 import { fitCurveShares, curveRows } from "./curve-calibration";
 import { fitBookWeights, bookRows } from "./book-weights";
 import { curveK, CURVE_SHARE, CURVE_SHARE_DEFAULT } from "./market-curve";
-import { fitMarket, marketRows, fitStatBias, fitOneSided, oneSidedRows, fitArchiveWeights, fitClv, clvFactor, clvRows } from "./market-learn";
+import { fitMarket, marketRows, fitStatBias, fitOneSided, oneSidedRows, fitArchiveWeights, fitClv, clvFactor, clvRows, fitModelCal } from "./market-learn";
 import { ONE_SIDED_SHIFT } from "./market-adjust";
 
 const KEY = "modelWeights";
@@ -449,6 +449,11 @@ export async function refitModelWeights(): Promise<string> {
       // Per-stat model share from every graded archived line (replaces the
       // picks-only fit for a stat once it has enough player-games).
       const sportW = next[`prop:${s}`]?.weight ?? baseFor(`prop:${s}`);
+      // Model calibration (applied before the blend, so the shares below are fitted on it).
+      const mc = fitModelCal(rows);
+      next[`modelcal:${s}:t`] = { base: 1, n: mc.n, weight: mc.t, best: mc.fitT, llCurrent: mc.llRaw, llBest: mc.llFit, applied: mc.t !== 1, at };
+      next[`modelcal:${s}:b`] = { base: 0, n: mc.n, weight: mc.b, best: mc.fitB, llCurrent: mc.llRaw, llBest: mc.llFit, applied: mc.b !== 0, at };
+      if (mc.n) msgs.push(`modelcal:${s} t ${mc.t} b ${mc.b} (n=${mc.n}, fit ${mc.fitT}/${mc.fitB}, ll ${mc.llRaw}->${mc.llFit})`);
       // Closing-line multiplier per stat: where each stat's share starts.
       const clv = clvBySport.get(s);
       const factorOf = (stat: string) => (clv ? clvFactor(clv.stats[stat], clv, clvRef) : 1);
@@ -459,7 +464,7 @@ export async function refitModelWeights(): Promise<string> {
           next[`clv:${s}:${stat}`] = { base: 1, n: c.n, weight: factorOf(stat), best: c.beta, llCurrent: clvRef, llBest: c.beta, applied: factorOf(stat) !== 1, at };
         }
       }
-      for (const [stat, f] of Object.entries(fitArchiveWeights(rows, sportW, (stat) => Math.min(0.8, sportW * factorOf(stat))))) {
+      for (const [stat, f] of Object.entries(fitArchiveWeights(rows, sportW, (stat) => Math.min(0.8, sportW * factorOf(stat)), { t: mc.t, b: mc.b }))) {
         next[`prop:${s}:${stat}`] = { weight: f.weight, base: sportW, n: f.n, best: f.best, llCurrent: f.llCurrent, llBest: f.llBest, applied: f.weight !== sportW, at };
         msgs.push(`prop:${s}:${stat} ${Math.round(f.weight * 100)}% from archive (n=${f.n}, best ${Math.round(f.best * 100)}%)`);
       }

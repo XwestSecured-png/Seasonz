@@ -225,6 +225,11 @@ export async function liveMarketLearn(store: Record<string, { weight: number; ap
     open,
     biasByStat: Object.keys(biasByStat).length ? biasByStat : undefined,
     oneSided: typeof os === "number" && os >= -1.5 && os <= 0.3 ? os : undefined,
+    modelCal: (() => {
+      const t = store[`modelcal:${sport}:t`]?.weight;
+      const b = store[`modelcal:${sport}:b`]?.weight;
+      return typeof t === "number" && typeof b === "number" && t >= 0.4 && t <= 1.3 && Math.abs(b) <= 0.5 ? { t, b } : undefined;
+    })(),
     side: {
       Over: Math.max(-0.6, Math.min(0.6, Number(store[`side:${sport}:Over`]?.weight ?? 0) || 0)),
       Under: Math.max(-0.6, Math.min(0.6, Number(store[`side:${sport}:Under`]?.weight ?? 0) || 0)),
@@ -318,7 +323,9 @@ export function fitArchiveWeights(
   rows: MarketRow[],
   sportW: number,
   /** Where each stat's share starts before its own graded lines move it (closing-line evidence, fitClv). */
-  priorOf: (stat: string) => number = () => sportW
+  priorOf: (stat: string) => number = () => sportW,
+  /** The model calibration in use (fitModelCal), applied before blending. */
+  cal: { t: number; b: number } = { t: 1, b: 0 }
 ): Record<string, { weight: number; best: number; n: number; llCurrent: number; llBest: number }> {
   const byStat = new Map<string, MarketRow[]>();
   for (const r of rows) {
@@ -330,7 +337,7 @@ export function fitArchiveWeights(
     let s = 0;
     let n = 0;
     for (const r of l) {
-      const q = clampP(sigmoid(w * logit(r.model!) + (1 - w) * logit(r.close)));
+      const q = clampP(sigmoid(w * (cal.t * logit(r.model!) + cal.b) + (1 - w) * logit(r.close)));
       s -= r.w * (r.y ? Math.log(q) : Math.log(1 - q));
       n += r.w;
     }
@@ -421,4 +428,39 @@ export async function clvRows(sport: string): Promise<MarketRow[]> {
     .from(lineArchive)
     .where(and(eq(lineArchive.sport, sport), eq(lineArchive.market, "prop"), isNotNull(lineArchive.modelOver), isNotNull(lineArchive.closePrice), lt(lineArchive.closeAt, new Date(now.getTime() - 3 * 3600_000)), gt(lineArchive.closeAt, new Date(now.getTime() - 75 * 86_400_000))));
   return consensusRows(rows, { graded: false });
+}
+
+export const MODELCAL_MIN_N = 300;
+export const MODELCAL_PRIOR_N = 1000;
+/**
+ * Model calibration (1.28.0): the model's own Over chance re-scaled in
+ * log-odds, sigmoid(t * logit(p) + b), before it's blended with the market.
+ * t < 1 = the model is overconfident, b < 0 = it leans Over too often. Fit on
+ * every graded archived line with a stored model chance (one vote per
+ * player-game) and moved in from (1, 0) by n/(n+1000) once a sport has 300+.
+ * First look (college football): Overs the model rated 25-55% hit ~8 points
+ * less often.
+ */
+export function fitModelCal(rows: MarketRow[]): { t: number; b: number; fitT: number; fitB: number; n: number; llRaw: number; llFit: number } {
+  const use = rows.filter((r) => r.model !== undefined);
+  const n = new Set(use.map((r) => r.key)).size;
+  const ll = (t: number, b: number) => {
+    let s = 0;
+    let w = 0;
+    for (const r of use) {
+      const q = clampP(sigmoid(t * logit(r.model!) + b));
+      s -= r.w * (r.y ? Math.log(q) : Math.log(1 - q));
+      w += r.w;
+    }
+    return w ? s / w : 0;
+  };
+  let best = { t: 1, b: 0, v: ll(1, 0) };
+  const llRaw = best.v;
+  for (let t = 0.4; t <= 1.3001; t += 0.05)
+    for (let b = -0.5; b <= 0.5001; b += 0.05) {
+      const v = ll(t, b);
+      if (v < best.v - 1e-12) best = { t: +t.toFixed(2), b: +b.toFixed(2), v };
+    }
+  const k = n >= MODELCAL_MIN_N ? n / (n + MODELCAL_PRIOR_N) : 0;
+  return { t: +(1 + (best.t - 1) * k).toFixed(3), b: +(best.b * k).toFixed(3), fitT: best.t, fitB: best.b, n, llRaw: +llRaw.toFixed(4), llFit: +best.v.toFixed(4) };
 }

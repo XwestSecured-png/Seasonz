@@ -7,7 +7,7 @@
 // field name (winProbability / americanToImpliedProb) are imported from
 // lib/props-model.ts rather than duplicated.
 import { DISPLAY_ONLY_STATS } from "../derived-props";
-import { scaleAdjustments, sideCalibrate, type MarketLearn } from "../market-adjust";
+import { scaleAdjustments, sideCalibrate, calibrateModel, type MarketLearn } from "../market-adjust";
 import { gameDayFactor, type GameDayContext } from "./game-day";
 import { propTrust, calibrateTrust, trustFeatures, type Trust } from "../prop-trust";
 import type { PropOutcome } from "../odds";
@@ -565,7 +565,8 @@ export function buildSportPropPicks(
       avg.proj && avg.cfg ? propChance(avg.proj, g.line, avg.cfg, "Over") : winProbability(avg.average, avg.stdDev, g.line, "Over");
     const pOverBase = avg.proj && avg.cfg && avg.baseMean !== undefined ? propChance({ ...avg.proj, mean: avg.baseMean }, g.line, avg.cfg, "Over") : pOverAdj;
     // How hard to lean on the adjustments: learned from graded picks (lib/model-weights.ts "adj:<sport>").
-    const pOverModel = scaleAdjustments(pOverBase, pOverAdj, adjStrength);
+    // Learned model calibration (lib/market-learn.ts fitModelCal) before the market blend.
+    const pOverModel = calibrateModel(scaleAdjustments(pOverBase, pOverAdj, adjStrength), marketLearn);
     // The final chance blends the model with the market's no-vig chance for
     // this line (see blendPropChance); no market, model alone.
     // No book posts both sides of this line (often an alt line): estimate
