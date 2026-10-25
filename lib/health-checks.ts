@@ -155,7 +155,8 @@ export async function runHealthChecks(now = new Date()): Promise<HealthReport> {
       .orderBy(desc(syncRuns.startedAt))
       .limit(1);
     const ev = row?.detail?.match(/(\d+) event\(s\), (\d+) raw line/);
-    if (ev && Number(ev[1]) >= 3 && Number(ev[2]) === 0) {
+    // "posted yet" = the books haven't put lines up for those games (between slates), not a broken feed.
+    if (ev && Number(ev[1]) >= 3 && Number(ev[2]) === 0 && !/posted yet/.test(row?.detail ?? "")) {
       issues.push({ id: `props:${key}`, level: "warn", message: `${key}: ${ev[1]} events but 0 prop lines.` });
     }
   }
