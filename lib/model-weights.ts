@@ -18,7 +18,7 @@ import { propModelWeightDefault, codedBookWeight } from "./props-model";
 import { fitCurveShares, curveRows } from "./curve-calibration";
 import { fitBookWeights, bookRows } from "./book-weights";
 import { curveK, CURVE_SHARE, CURVE_SHARE_DEFAULT } from "./market-curve";
-import { fitMarket, marketRows, fitStatBias, fitOneSided, oneSidedRows, fitArchiveWeights, fitClv, clvFactor, clvRows, fitModelCal, fitModelCalByStat } from "./market-learn";
+import { fitMarket, marketRows, fitStatBias, fitOneSided, oneSidedRows, fitArchiveWeights, fitClv, clvFactor, clvRows, fitModelCal, fitModelCalByStat, modelCalHoldout } from "./market-learn";
 import { ONE_SIDED_SHIFT } from "./market-adjust";
 
 const KEY = "modelWeights";
@@ -450,11 +450,19 @@ export async function refitModelWeights(): Promise<string> {
       // picks-only fit for a stat once it has enough player-games).
       const sportW = next[`prop:${s}`]?.weight ?? baseFor(`prop:${s}`);
       // Model calibration (applied before the blend, so the shares below are fitted on it).
-      const mc = fitModelCal(rows);
+      // Only used where it holds up out of sample: fitted on the older half of
+      // dates, it must beat the raw model on the newer half (NBA's didn't on
+      // its first weekend; college football's cut log loss 3.3%).
+      const hold = modelCalHoldout(rows);
+      const sportHelps = hold.test > 0 && hold.llSport < hold.llRaw - 1e-4;
+      const statHelps = sportHelps && hold.llStat < hold.llSport - 1e-4;
+      const mcFit = fitModelCal(rows);
+      const mc = sportHelps ? mcFit : { ...mcFit, t: 1, b: 0 };
+      msgs.push(`modelcal:${s} holdout raw ${hold.llRaw} / sport ${hold.llSport} / stat ${hold.llStat}${sportHelps ? "" : ", not used"}${sportHelps && !statHelps ? ", per-stat not used" : ""}`);
       next[`modelcal:${s}:t`] = { base: 1, n: mc.n, weight: mc.t, best: mc.fitT, llCurrent: mc.llRaw, llBest: mc.llFit, applied: mc.t !== 1, at };
       next[`modelcal:${s}:b`] = { base: 0, n: mc.n, weight: mc.b, best: mc.fitB, llCurrent: mc.llRaw, llBest: mc.llFit, applied: mc.b !== 0, at };
       if (mc.n) msgs.push(`modelcal:${s} t ${mc.t} b ${mc.b} (n=${mc.n}, fit ${mc.fitT}/${mc.fitB}, ll ${mc.llRaw}->${mc.llFit})`);
-      const mcStat = fitModelCalByStat(rows, { t: mc.t, b: mc.b });
+      const mcStat = statHelps ? fitModelCalByStat(rows, { t: mc.t, b: mc.b }) : {};
       for (const [stat, f] of Object.entries(mcStat)) {
         next[`modelcal:${s}:stat:${stat}:t`] = { base: mc.t, n: f.n, weight: f.t, best: f.fitT, llCurrent: f.llRaw, llBest: f.llFit, applied: true, at };
         next[`modelcal:${s}:stat:${stat}:b`] = { base: mc.b, n: f.n, weight: f.b, best: f.fitB, llCurrent: f.llRaw, llBest: f.llFit, applied: true, at };

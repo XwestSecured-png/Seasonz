@@ -33,6 +33,34 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.29.0",
+    date: "2026-10-25",
+    title: "Calibration per stat, only where it's proven",
+    summary: "The model's own chances are now corrected stat by stat, a correction is only used where it beats the raw model on games it wasn't fitted on, and everything re-learns twice a day.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Per-stat model calibration",
+        whatChanged:
+          "After Saturday's games were graded, college football's raw model turned out worse than a coin flip on some stats: Rush Attempts rated 35% hit 50%, Longest Reception rated 56% hit 51%. One correction for a whole sport can't fix stats that miss in opposite directions, so each stat now gets its own, shrunk toward the sport's.",
+        whatItMeans: "College football picks lean far less on the stats where the model has been wrong.",
+      },
+      {
+        kind: "improved",
+        title: "Corrections must prove themselves",
+        whatChanged:
+          "Every night, each sport's correction is fitted on the older half of graded games and scored on the newer half, and only used if it beats the raw model there. First run: college football's cut log loss 3.3% and is used; NHL's per-stat one helped slightly; NBA's made things worse, so the NBA model is left as is.",
+        whatItMeans: "No correction is applied on the strength of one lucky weekend.",
+      },
+      {
+        kind: "improved",
+        title: "Learns twice a day",
+        whatChanged: "Book weights, model shares and calibrations re-learn every 12 hours instead of once a day, so each morning's graded results are in use by the afternoon slate.",
+        whatItMeans: "Yesterday's results shape today's picks.",
+      },
+    ],
+  },
+  {
     version: "1.28.0",
     date: "2026-10-24",
     title: "The model checks its own percentages",
