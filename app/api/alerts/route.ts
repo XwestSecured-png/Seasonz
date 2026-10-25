@@ -37,7 +37,9 @@ export async function GET(req: NextRequest) {
       out.health = `error: ${e instanceof Error ? e.message : String(e)}`;
     }
   }
-  if (force || !last.weights || now.getTime() - Date.parse(last.weights) > 23 * 3600_000) {
+  // Re-learn twice a day (1.29.0): overnight grading lands a day's results
+  // by morning, and waiting up to 23 hours left them unused.
+  if (force || !last.weights || now.getTime() - Date.parse(last.weights) > 11.5 * 3600_000) {
     try {
       out.weights = await refitModelWeights();
       next.weights = now.toISOString();
