@@ -18,7 +18,7 @@ import { propModelWeightDefault, codedBookWeight } from "./props-model";
 import { fitCurveShares, curveRows } from "./curve-calibration";
 import { fitBookWeights, bookRows } from "./book-weights";
 import { curveK, CURVE_SHARE, CURVE_SHARE_DEFAULT } from "./market-curve";
-import { fitMarket, marketRows, fitStatBias, fitOneSided, oneSidedRows, fitArchiveWeights, fitClv, clvFactor, clvRows, fitModelCal, fitModelCalByStat, modelCalHoldout } from "./market-learn";
+import { fitMarket, marketRows, fitStatBias, fitOneSided, oneSidedRows, fitArchiveWeights, fitClv, clvFactor, clvRows, fitModelCal, fitModelCalByStat, modelCalHoldout, marketTempHoldout } from "./market-learn";
 import { ONE_SIDED_SHIFT } from "./market-adjust";
 
 const KEY = "modelWeights";
@@ -441,6 +441,10 @@ export async function refitModelWeights(): Promise<string> {
       next[`mkt:${s}:bias`] = { ...common, weight: fit.bias, best: fit.fitBias, applied: fit.bias !== 0 };
       next[`mkt:${s}:move`] = { ...common, weight: fit.move, best: fit.fitMove, applied: fit.move !== 0 };
       if (fit.bias || fit.move) msgs.push(`market:${s} over-bias ${fit.bias.toFixed(2)}, move ${fit.move.toFixed(2)} (n=${fit.n})`);
+      // Market sharpness, gated on the newer half of dates.
+      const mt = marketTempHoldout(rows, fit.bias, fit.move);
+      next[`mkt:${s}:temp`] = { ...common, base: 1, weight: mt.t, best: mt.fitT, llCurrent: mt.llTest1, llBest: mt.llTestFit, applied: mt.t !== 1 };
+      msgs.push(`market:${s} sharpness ${mt.t} (fit ${mt.fitT}, older-half fit ${mt.trainT}: newer half ${mt.llTest1} -> ${mt.llTestFit}${mt.helps ? "" : ", not used"})`);
       // Per-stat Over bias, shrunk toward the sport's.
       for (const [stat, f] of Object.entries(fitStatBias(rows, fit.bias, fit.move))) {
         next[`mkt:${s}:bias:${stat}`] = { ...common, n: f.n, weight: f.bias, best: f.fit, applied: f.bias !== fit.bias };

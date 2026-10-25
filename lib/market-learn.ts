@@ -169,6 +169,49 @@ export function marketHoldout(rows: MarketRow[]) {
   };
 }
 
+/**
+ * Market sharpness (1.30.0): the books' no-vig chances are too timid at the
+ * extremes. On the archive's graded lines, NBA props priced 15% hit 9.6% and
+ * 85% hit 88%; NHL 15% hit 11%, 76% hit 82%. A log-odds scale t > 1 spreads
+ * them back out: sigmoid(t * logit(close) + bias + move...). Fitted with the
+ * sport's bias and move held, and used only when the scale fitted on the older
+ * half of dates also beats t = 1 on the newer half.
+ */
+export function marketTempLogLoss(rows: MarketRow[], t: number, bias: number, move: number): number {
+  let s = 0;
+  let n = 0;
+  for (const r of rows) {
+    const q = clampP(sigmoid(t * logit(r.close) + bias + move * (logit(r.close) - logit(r.open))));
+    s -= r.w * (r.y ? Math.log(q) : Math.log(1 - q));
+    n += r.w;
+  }
+  return s / Math.max(1e-9, n);
+}
+const TEMPS = [0.8, 0.85, 0.9, 0.95, 1, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.4, 1.5];
+export function fitMarketTemp(rows: MarketRow[], bias: number, move: number) {
+  let best = { t: 1, v: marketTempLogLoss(rows, 1, bias, move) };
+  for (const t of TEMPS) {
+    const v = marketTempLogLoss(rows, t, bias, move);
+    if (v < best.v - 1e-12) best = { t, v };
+  }
+  return best;
+}
+export function marketTempHoldout(rows: MarketRow[], bias: number, move: number) {
+  const sorted = [...rows].sort((a, b) => a.at - b.at);
+  const cut = sorted[Math.floor(sorted.length / 2)]?.at ?? 0;
+  const train = sorted.filter((r) => r.at < cut);
+  const test = sorted.filter((r) => r.at >= cut);
+  const fitT = fitMarketTemp(train, bias, move).t;
+  const all = fitMarketTemp(sorted, bias, move);
+  const n = new Set(sorted.map((r) => r.key)).size;
+  const llTest1 = marketTempLogLoss(test, 1, bias, move);
+  const llTestFit = marketTempLogLoss(test, fitT, bias, move);
+  const helps = n >= MKT_MIN_N && test.length > 0 && llTestFit < llTest1 - 1e-4;
+  // Shrunk toward 1 by n/(n+PRIOR_N), like bias.
+  const t = helps ? +(1 + ((all.t - 1) * n) / (n + MKT_PRIOR_N)).toFixed(3) : 1;
+  return { t, fitT: all.t, trainT: fitT, n, llTest1: +llTest1.toFixed(4), llTestFit: +llTestFit.toFixed(4), helps };
+}
+
 /** Opening weighted no-vig Over chance per "player|stat|line" for this week's props (from the archive). */
 export async function openingMarket(sport: string, season: number, week: number): Promise<Map<string, number>> {
   const rows = await db
@@ -212,6 +255,7 @@ export async function liveMarketLearn(store: Record<string, { weight: number; ap
   for (const [k, v] of Object.entries(store)) if (k.startsWith("book:") && typeof v.weight === "number" && v.weight >= 0.25 && v.weight <= 8) bw[k.slice(5)] = v.weight;
   setLearnedBookWeights(Object.keys(bw).length ? bw : null);
   const os = store[`mkt:${sport}:oneSided`]?.weight;
+  const tempW = store[`mkt:${sport}:temp`]?.weight;
   const ce = store[`curve:${sport}:exact`]?.weight;
   const co = store[`curve:${sport}:one`]?.weight;
   const share = (w: number | undefined) => (typeof w === "number" && w >= 0 && w <= 1 ? w : undefined);
@@ -225,6 +269,7 @@ export async function liveMarketLearn(store: Record<string, { weight: number; ap
     open,
     biasByStat: Object.keys(biasByStat).length ? biasByStat : undefined,
     oneSided: typeof os === "number" && os >= -1.5 && os <= 0.3 ? os : undefined,
+    temp: typeof tempW === "number" && tempW >= 0.8 && tempW <= 1.5 ? tempW : undefined,
     modelCalByStat: (() => {
       const pre = `modelcal:${sport}:stat:`;
       const m: Record<string, { t: number; b: number }> = {};

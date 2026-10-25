@@ -4,6 +4,8 @@
 export interface MarketLearn {
   bias: number;
   move: number;
+  /** Log-odds scale on the market chance (lib/market-learn.ts fitMarketTemp); 1 = as priced. */
+  temp?: number;
   /** Per-stat Over bias (log-odds), shrunk toward the sport's; replaces `bias` for that stat. */
   biasByStat?: Record<string, number>;
   /** Log-odds shift for a price posted on one side only (alt ladders), see ONE_SIDED_SHIFT. */
@@ -30,10 +32,11 @@ export function adjustMarket(close: number, key: string, ml: MarketLearn | undef
   if (!ml) return close;
   const stat = key.split("|")[1];
   const bias = ml.biasByStat?.[stat] ?? ml.bias;
-  if (bias === 0 && ml.move === 0) return close;
+  const t = ml.temp ?? 1;
+  if (bias === 0 && ml.move === 0 && t === 1) return close;
   const open = ml.open?.get(key);
   const mv = open === undefined ? 0 : logit(close) - logit(open);
-  return clampP(sigmoid(logit(close) + bias + ml.move * Math.max(-1, Math.min(1, mv))));
+  return clampP(sigmoid(t * logit(close) + bias + ml.move * Math.max(-1, Math.min(1, mv))));
 }
 
 /**
@@ -56,7 +59,7 @@ export function oneSidedChance(overPrice: number | undefined, underPrice: number
 }
 
 export function adjustMarketMap(m: Map<string, number>, ml: MarketLearn | undefined): Map<string, number> {
-  if (!ml || (ml.bias === 0 && ml.move === 0 && !ml.biasByStat)) return m;
+  if (!ml || (ml.bias === 0 && ml.move === 0 && !ml.biasByStat && (ml.temp ?? 1) === 1)) return m;
   return new Map([...m].map(([k, v]) => [k, adjustMarket(v, k, ml)]));
 }
 

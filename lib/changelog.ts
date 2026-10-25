@@ -33,6 +33,21 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.30.0",
+    date: "2026-10-25",
+    title: "A sharper read of the market",
+    summary: "The market's chances are spread back out where the books are too timid, learned per sport and only used where it holds up on newer games.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Market sharpness",
+        whatChanged:
+          "On tens of thousands of graded props, the books' own no-vig chances were too cautious at the ends: NBA props priced at 15% hit under 10% and 85% hit 88%; hockey was the same. Each sport's market chance is now spread out by a learned amount, fitted on the older half of graded games and used only when it also improves the newer half.",
+        whatItMeans: "Long shots read as longer and near-locks as surer, so the market half of every pick (most of its weight) is more accurate.",
+      },
+    ],
+  },
+  {
     version: "1.29.0",
     date: "2026-10-25",
     title: "Calibration per stat, only where it's proven",
