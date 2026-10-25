@@ -1,3 +1,5 @@
+import { fitBookWeights, bookRows } from "@/lib/book-weights";
+import { codedBookWeight } from "@/lib/props-model";
 import { curveCal, curveRows } from "@/lib/curve-calibration";
 // Health check for the "Why" explanations: builds this week's insights for
 // a sport and reports counts (no user data). Cron-secret only.
@@ -144,6 +146,12 @@ export async function GET(req: NextRequest) {
         fams
       )
     );
+  }
+  // Book weight check (lib/book-weights.ts): ?bookcal=1.
+  if (req.nextUrl.searchParams.get("bookcal")) {
+    const rows = await bookRows();
+    const fit = fitBookWeights(rows, codedBookWeight);
+    return NextResponse.json({ ...fit, edges: Object.fromEntries(Object.entries(fit.edges).sort((a, b) => a[1].raw - b[1].raw)) });
   }
   // Market curve check (lib/curve-calibration.ts): ?curvecal=nba.
   const curvecal = req.nextUrl.searchParams.get("curvecal");

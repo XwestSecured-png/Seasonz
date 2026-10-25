@@ -751,7 +751,17 @@ export function isPlaceholderLine(book: string, overPrice?: number, underPrice?:
  * on both halves of the week. Everyone else counts once.
  */
 export const BOOK_WEIGHT: Record<string, number> = { Kalshi: 3, Polymarket: 3, "Polymarket US": 3, Novig: 2, ProphetX: 2, Pinnacle: 2 };
-export const bookWeight = (book: string) => BOOK_WEIGHT[book] ?? 1;
+/**
+ * Learned weights (1.27.0, lib/book-weights.ts), re-fitted nightly and set at
+ * the start of each sync's props stage; the coded ones until then, or if the
+ * learned set doesn't beat them.
+ */
+let learnedBookWeights: Record<string, number> | null = null;
+export function setLearnedBookWeights(w: Record<string, number> | null) {
+  learnedBookWeights = w && Object.keys(w).length ? w : null;
+}
+export const codedBookWeight = (book: string) => BOOK_WEIGHT[book] ?? 1;
+export const bookWeight = (book: string) => learnedBookWeights?.[book] ?? (learnedBookWeights ? 1 : codedBookWeight(book));
 
 export function marketOverChances(
   groups: Iterable<{ player: string; statType: string; book: string; line: number; overPrice?: number; underPrice?: number }>

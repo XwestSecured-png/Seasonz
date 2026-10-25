@@ -14,8 +14,9 @@ import { SPORTS, PRESEASON, type SportKey } from "./sports/types";
 import { GAME_MODEL } from "./sports/game-model";
 import { currentSeasonYear } from "./sports/espn";
 import { NFL_MODEL_WEIGHT } from "./elo";
-import { propModelWeightDefault } from "./props-model";
+import { propModelWeightDefault, codedBookWeight } from "./props-model";
 import { fitCurveShares, curveRows } from "./curve-calibration";
+import { fitBookWeights, bookRows } from "./book-weights";
 import { curveK, CURVE_SHARE, CURVE_SHARE_DEFAULT } from "./market-curve";
 import { fitMarket, marketRows, fitStatBias, fitOneSided, oneSidedRows, fitArchiveWeights, fitClv, clvFactor, clvRows } from "./market-learn";
 import { ONE_SIDED_SHIFT } from "./market-adjust";
@@ -394,6 +395,21 @@ export async function refitModelWeights(): Promise<string> {
       if (fit.applied) msgs.push(`adj:${s} strength ${fit.weight.toFixed(2)} (n=${fit.n})`);
     }
   }
+  // Book weights (lib/book-weights.ts): learned from every graded line, used
+  // only when they beat the coded weights on held-out dates.
+  try {
+    const bf = fitBookWeights(await bookRows(), codedBookWeight);
+    const at = new Date().toISOString();
+    const use = bf.llLearned < bf.llCoded - 1e-5 && bf.kappa > 0;
+    for (const [book, w] of Object.entries(bf.weights)) {
+      const e = bf.edges[book];
+      if (use) next[`book:${book}`] = { base: codedBookWeight(book), n: e.n, weight: w, best: e.raw, llCurrent: bf.llCoded, llBest: bf.llLearned, applied: true, at };
+    }
+    msgs.push(`books: kappa ${bf.kappa}, log loss coded ${bf.llCoded} / learned ${bf.llLearned} / equal ${bf.llEqual} (n=${bf.n})${use ? "" : ", kept coded"}`);
+  } catch {
+    // archive not reachable: keep the coded weights
+  }
+
   // Closing-line evidence per sport and stat (lib/market-learn.ts fitClv):
   // read first so the all-sports reference is known.
   const rowsBySport = new Map<string, Awaited<ReturnType<typeof marketRows>>>();

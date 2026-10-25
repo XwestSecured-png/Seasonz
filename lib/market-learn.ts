@@ -19,7 +19,7 @@
 import { db } from "@/db";
 import { lineArchive } from "@/db/schema";
 import { and, eq, gt, inArray, isNotNull, isNull, lt } from "drizzle-orm";
-import { bookWeight, isPlaceholderLine, americanToImpliedProb } from "./props-model";
+import { bookWeight, isPlaceholderLine, americanToImpliedProb, setLearnedBookWeights } from "./props-model";
 
 export const MKT_MIN_N = 300;
 export const MKT_PRIOR_N = 1500;
@@ -207,6 +207,10 @@ export { adjustMarket, type MarketLearn } from "./market-adjust";
 export async function liveMarketLearn(store: Record<string, { weight: number; applied?: boolean }>, sport: string, season: number, week: number): Promise<import("./market-adjust").MarketLearn | undefined> {
   const bias = store[`mkt:${sport}:bias`]?.weight ?? 0;
   const move = store[`mkt:${sport}:move`]?.weight ?? 0;
+  // Learned book weights (lib/book-weights.ts), stored "book:<name>".
+  const bw: Record<string, number> = {};
+  for (const [k, v] of Object.entries(store)) if (k.startsWith("book:") && typeof v.weight === "number" && v.weight >= 0.25 && v.weight <= 8) bw[k.slice(5)] = v.weight;
+  setLearnedBookWeights(Object.keys(bw).length ? bw : null);
   const os = store[`mkt:${sport}:oneSided`]?.weight;
   const ce = store[`curve:${sport}:exact`]?.weight;
   const co = store[`curve:${sport}:one`]?.weight;
