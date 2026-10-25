@@ -225,6 +225,18 @@ export async function liveMarketLearn(store: Record<string, { weight: number; ap
     open,
     biasByStat: Object.keys(biasByStat).length ? biasByStat : undefined,
     oneSided: typeof os === "number" && os >= -1.5 && os <= 0.3 ? os : undefined,
+    modelCalByStat: (() => {
+      const pre = `modelcal:${sport}:stat:`;
+      const m: Record<string, { t: number; b: number }> = {};
+      for (const [k, v] of Object.entries(store)) {
+        if (!k.startsWith(pre) || !k.endsWith(":t")) continue;
+        const stat = k.slice(pre.length, -2);
+        const t = v.weight;
+        const b = store[`${pre}${stat}:b`]?.weight;
+        if (typeof t === "number" && typeof b === "number" && t >= 0.2 && t <= 1.3 && Math.abs(b) <= 0.5) m[stat] = { t, b };
+      }
+      return Object.keys(m).length ? m : undefined;
+    })(),
     modelCal: (() => {
       const t = store[`modelcal:${sport}:t`]?.weight;
       const b = store[`modelcal:${sport}:b`]?.weight;
@@ -324,8 +336,8 @@ export function fitArchiveWeights(
   sportW: number,
   /** Where each stat's share starts before its own graded lines move it (closing-line evidence, fitClv). */
   priorOf: (stat: string) => number = () => sportW,
-  /** The model calibration in use (fitModelCal), applied before blending. */
-  cal: { t: number; b: number } = { t: 1, b: 0 }
+  /** The model calibration in use (fitModelCal), applied before blending, per stat. */
+  calOf: (stat: string) => { t: number; b: number } = () => ({ t: 1, b: 0 })
 ): Record<string, { weight: number; best: number; n: number; llCurrent: number; llBest: number }> {
   const byStat = new Map<string, MarketRow[]>();
   for (const r of rows) {
@@ -337,6 +349,7 @@ export function fitArchiveWeights(
     let s = 0;
     let n = 0;
     for (const r of l) {
+      const cal = calOf(r.key.split("|")[2]);
       const q = clampP(sigmoid(w * (cal.t * logit(r.model!) + cal.b) + (1 - w) * logit(r.close)));
       s -= r.w * (r.y ? Math.log(q) : Math.log(1 - q));
       n += r.w;
@@ -431,7 +444,7 @@ export async function clvRows(sport: string): Promise<MarketRow[]> {
 }
 
 export const MODELCAL_MIN_N = 300;
-export const MODELCAL_PRIOR_N = 1000;
+export const MODELCAL_PRIOR_N = 600;
 /**
  * Model calibration (1.28.0): the model's own Over chance re-scaled in
  * log-odds, sigmoid(t * logit(p) + b), before it's blended with the market.
@@ -441,7 +454,11 @@ export const MODELCAL_PRIOR_N = 1000;
  * First look (college football): Overs the model rated 25-55% hit ~8 points
  * less often.
  */
-export function fitModelCal(rows: MarketRow[]): { t: number; b: number; fitT: number; fitB: number; n: number; llRaw: number; llFit: number } {
+export function fitModelCal(
+  rows: MarketRow[],
+  /** What to shrink toward (the sport's calibration, for a stat) and from how many player-games it's trusted. */
+  prior: { t: number; b: number; minN?: number; priorN?: number } = { t: 1, b: 0 }
+): { t: number; b: number; fitT: number; fitB: number; n: number; llRaw: number; llFit: number } {
   const use = rows.filter((r) => r.model !== undefined);
   const n = new Set(use.map((r) => r.key)).size;
   const ll = (t: number, b: number) => {
@@ -456,11 +473,66 @@ export function fitModelCal(rows: MarketRow[]): { t: number; b: number; fitT: nu
   };
   let best = { t: 1, b: 0, v: ll(1, 0) };
   const llRaw = best.v;
-  for (let t = 0.4; t <= 1.3001; t += 0.05)
+  for (let t = 0.2; t <= 1.3001; t += 0.05)
     for (let b = -0.5; b <= 0.5001; b += 0.05) {
       const v = ll(t, b);
       if (v < best.v - 1e-12) best = { t: +t.toFixed(2), b: +b.toFixed(2), v };
     }
-  const k = n >= MODELCAL_MIN_N ? n / (n + MODELCAL_PRIOR_N) : 0;
-  return { t: +(1 + (best.t - 1) * k).toFixed(3), b: +(best.b * k).toFixed(3), fitT: best.t, fitB: best.b, n, llRaw: +llRaw.toFixed(4), llFit: +best.v.toFixed(4) };
+  const minN = prior.minN ?? MODELCAL_MIN_N;
+  const pn = prior.priorN ?? MODELCAL_PRIOR_N;
+  const k = n >= minN ? n / (n + pn) : 0;
+  return { t: +(prior.t + (best.t - prior.t) * k).toFixed(3), b: +(prior.b + (best.b - prior.b) * k).toFixed(3), fitT: best.t, fitB: best.b, n, llRaw: +llRaw.toFixed(4), llFit: +best.v.toFixed(4) };
+}
+
+/**
+ * Per-stat model calibration (1.29.0), shrunk toward the sport's: in college
+ * football the raw model was worse than a coin flip on Rush Attempts (rated
+ * 35%, hit 50%), Longest Reception (56% vs 51%) and Receptions, while Pass Yds
+ * and Anytime TD were fine, so one correction per sport can't fix both.
+ */
+export const MODELCAL_STAT_MIN_N = 100;
+export const MODELCAL_STAT_PRIOR_N = 300;
+export function fitModelCalByStat(rows: MarketRow[], sport: { t: number; b: number }): Record<string, ReturnType<typeof fitModelCal>> {
+  const by = new Map<string, MarketRow[]>();
+  for (const r of rows) {
+    if (r.model === undefined) continue;
+    const stat = r.key.split("|")[2];
+    (by.get(stat) ?? by.set(stat, []).get(stat)!).push(r);
+  }
+  const out: Record<string, ReturnType<typeof fitModelCal>> = {};
+  for (const [stat, l] of by) {
+    const f = fitModelCal(l, { ...sport, minN: MODELCAL_STAT_MIN_N, priorN: MODELCAL_STAT_PRIOR_N });
+    if (f.n >= MODELCAL_STAT_MIN_N) out[stat] = f;
+  }
+  return out;
+}
+
+/** Held-out check (insights ?modelcal=<sport>): fit on the older half of dates, score the newer half. */
+export function modelCalHoldout(rows: MarketRow[]) {
+  const use = rows.filter((r) => r.model !== undefined).sort((a, b) => a.at - b.at);
+  const cut = use[Math.floor(use.length / 2)]?.at ?? 0;
+  const tr = use.filter((r) => r.at < cut);
+  const te = use.filter((r) => r.at >= cut);
+  const sport = fitModelCal(tr);
+  const byStat = fitModelCalByStat(tr, { t: sport.t, b: sport.b });
+  const score = (cal: (r: MarketRow) => { t: number; b: number }) => {
+    let s = 0;
+    let w = 0;
+    for (const r of te) {
+      const c = cal(r);
+      const q = clampP(sigmoid(c.t * logit(r.model!) + c.b));
+      s -= r.w * (r.y ? Math.log(q) : Math.log(1 - q));
+      w += r.w;
+    }
+    return w ? +(s / w).toFixed(4) : 0;
+  };
+  return {
+    train: tr.length,
+    test: te.length,
+    sport: { t: sport.t, b: sport.b, n: sport.n },
+    stats: Object.fromEntries(Object.entries(byStat).map(([k, f]) => [k, { t: f.t, b: f.b, n: f.n }])),
+    llRaw: score(() => ({ t: 1, b: 0 })),
+    llSport: score(() => sport),
+    llStat: score((r) => byStat[r.key.split("|")[2]] ?? sport),
+  };
 }

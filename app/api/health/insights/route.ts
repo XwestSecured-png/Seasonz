@@ -1,4 +1,5 @@
 import { fitBookWeights, bookRows } from "@/lib/book-weights";
+import { modelCalHoldout } from "@/lib/market-learn";
 import { codedBookWeight } from "@/lib/props-model";
 import { curveCal, curveRows } from "@/lib/curve-calibration";
 // Health check for the "Why" explanations: builds this week's insights for
@@ -147,6 +148,9 @@ export async function GET(req: NextRequest) {
       )
     );
   }
+  // Model calibration check (lib/market-learn.ts): ?modelcal=nba.
+  const modelcal = req.nextUrl.searchParams.get("modelcal");
+  if (modelcal) return NextResponse.json(modelCalHoldout(await marketRows(modelcal)));
   // Book weight check (lib/book-weights.ts): ?bookcal=1.
   if (req.nextUrl.searchParams.get("bookcal")) {
     const rows = await bookRows();

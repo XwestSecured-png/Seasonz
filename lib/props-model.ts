@@ -952,7 +952,7 @@ export function buildPropPicks(
     const pOverBase = avg.proj && avg.cfg && avg.baseMean !== undefined ? propChance({ ...avg.proj, mean: avg.baseMean }, g.line, avg.cfg, "Over") : pOverAdj;
     // How hard to lean on the adjustments: learned from graded picks (lib/model-weights.ts "adj:<sport>").
     // Learned model calibration (lib/market-learn.ts fitModelCal) before the market blend.
-    const pOverModel = calibrateModel(scaleAdjustments(pOverBase, pOverAdj, adjStrength), marketLearn);
+    const pOverModel = calibrateModel(scaleAdjustments(pOverBase, pOverAdj, adjStrength), marketLearn, g.statType);
     // The final chance blends the model with the market's no-vig chance for
     // this line (see blendPropChance); no market, model alone.
     // No book posts both sides of this line (often an alt line): estimate

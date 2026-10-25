@@ -10,6 +10,8 @@ export interface MarketLearn {
   oneSided?: number;
   /** Model calibration in log-odds (lib/market-learn.ts fitModelCal): sigmoid(t*logit(p)+b). */
   modelCal?: { t: number; b: number };
+  /** Per-stat model calibration (replaces the sport's for that stat). */
+  modelCalByStat?: Record<string, { t: number; b: number }>;
   /** Learned Over/Under log-odds shift on a pick's final chance (lib/model-weights.ts "side:<sport>"). */
   side?: { Over: number; Under: number };
   /** Learned share of the market price curve (lib/market-curve.ts) against a two-sided / one-sided price. */
@@ -75,8 +77,8 @@ export function sideCalibrate(p: number, side: "Over" | "Under", ml: MarketLearn
 }
 
 /** The model's own Over chance after the learned calibration (1.28.0). */
-export function calibrateModel(pOver: number, ml: MarketLearn | undefined): number {
-  const c = ml?.modelCal;
+export function calibrateModel(pOver: number, ml: MarketLearn | undefined, stat?: string): number {
+  const c = (stat !== undefined ? ml?.modelCalByStat?.[stat] : undefined) ?? ml?.modelCal;
   if (!c || (c.t === 1 && c.b === 0)) return pOver;
   return clampP(sigmoid(c.t * logit(pOver) + c.b));
 }
