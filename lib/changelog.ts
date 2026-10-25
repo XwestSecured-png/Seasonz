@@ -33,6 +33,21 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.27.0",
+    date: "2026-10-24",
+    title: "The sharpest books count most",
+    summary: "How much each sportsbook counts in the market's number is now learned every night from graded lines.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Learned book weights",
+        whatChanged:
+          "The market's number for a prop weighted books by hand (prediction markets 3x; Pinnacle, Novig and ProphetX 2x). On 4,400 graded player-props, Kalshi was far sharper than everyone else (log loss .488 vs .523 on the same lines), Polymarket a little sharper, and Pinnacle, Novig and ProphetX no better than average on props, while DraftKings, BetMGM, Fanatics and some others were the least accurate. Weights are now re-learned nightly from every graded line and used only when they beat the hand-set ones on dates they weren't fitted on. First fit: Kalshi 8x, Polymarket 1.9x, Pinnacle 0.7x, DraftKings and BetMGM 0.25x.",
+        whatItMeans: "The market half of every pick (most of its weight) is sharper, and it keeps tracking which books are sharpest as that changes.",
+      },
+    ],
+  },
+  {
     version: "1.26.0",
     date: "2026-10-24",
     title: "Fresher props, honest Overs and Unders, bet sizes",
