@@ -192,6 +192,7 @@ async function NflProps({ bankrollUsd }: { bankrollUsd: number | null }) {
                 projection: p.projection,
                 edgePct: p.edgePct,
                 modelWinPct: p.modelWinPct,
+                marketPct: p.marketPct,
                 trust: (p.trust as TrustView | null) ?? null,
                 otherBooks,
               };
@@ -402,6 +403,7 @@ async function OtherSportPropsSection({ sport, userId, bankrollUsd }: { sport: S
                   projection: p.projection,
                   edgePct: p.edgePct,
                   modelWinPct: p.modelWinPct,
+                  marketPct: p.marketPct,
                   trust: (p.trust as TrustView | null) ?? null,
                   otherBooks,
                 };

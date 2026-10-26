@@ -1083,6 +1083,7 @@ export async function runSportSync(
             projection: p.projection,
             edgePct: p.edgePct,
             modelWinPct: p.modelWinPct,
+            marketPct: p.market ?? null,
             trust: p.trust ?? null,
             source: "LIVE",
           }));

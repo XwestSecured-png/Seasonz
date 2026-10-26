@@ -19,6 +19,8 @@ export interface SportPropRow {
   projection: number | null;
   edgePct: number | null;
   modelWinPct: number | null;
+  /** The market's no-vig chance for the side (null for picks saved before 1.32.0). */
+  marketPct?: number | null;
   trust?: TrustView | null;
   // Every sportsbook's price for this exact player/stat/line/side, best
   // price first (includes the one already shown as `book`/`priceAmerican`).
@@ -66,12 +68,13 @@ export function SportPropsExplorer({
       (statType === "All" || p.statType === statType),
   );
 
-  const [sort, setSort] = useState<PropSort>("confidence");
+  const [sort, setSort] = useState<PropSort>("edge");
   const score = (r: SportPropRow) =>
     sortScore(sort, {
       trust: r.trust,
       chance: r.modelWinPct,
       price: r.priceAmerican,
+      market: r.marketPct ?? null,
     });
 
   // Player cards: one per team + player. "Team (A-Z)" keeps the team
@@ -231,6 +234,27 @@ export function SportPropsExplorer({
                                   <>
                                     {" · "}
                                     <Verdict chance={r.modelWinPct} />
+                                    {r.marketPct != null &&
+                                      r.modelWinPct !== null && (
+                                        <span
+                                          className={
+                                            r.modelWinPct - r.marketPct >= 0.1
+                                              ? "text-emerald-400 font-medium"
+                                              : "text-neutral-400"
+                                          }
+                                          title="Our chance minus the betting market's own no-vig chance for this side"
+                                        >
+                                          {" "}
+                                          ·{" "}
+                                          {r.modelWinPct - r.marketPct >= 0
+                                            ? "+"
+                                            : ""}
+                                          {Math.round(
+                                            (r.modelWinPct - r.marketPct) * 100,
+                                          )}{" "}
+                                          pts vs market
+                                        </span>
+                                      )}
                                   </>
                                 )}
                                 {(() => {

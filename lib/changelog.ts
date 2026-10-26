@@ -33,6 +33,22 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.32.0",
+    date: "2026-10-26",
+    title: "Biggest edge first",
+    summary: "Every prop pick now shows how far our chance is above the market's, and the lists lead with the biggest edges, where the returns have been.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Edge vs the market on every pick",
+        whatChanged:
+          "Each pick shows '+X pts vs market': our chance minus the books' own no-vig chance for that side, highlighted at 10+ points. The Props lists now sort by it by default (the old orders are still in Sort by). On two weeks of graded picks, those 10+ points over the market returned about +14% a bet, against +2-7% for picks close to the market.",
+        whatItMeans: "The bets the books have priced worst are at the top of the list.",
+        href: "/props",
+      },
+    ],
+  },
+  {
     version: "1.31.0",
     date: "2026-10-26",
     title: "Scorecard: are we beating the books?",
