@@ -85,6 +85,7 @@ async function NflProps({ bankrollUsd }: { bankrollUsd: number | null }) {
   const scores = week !== null ? await scoreLines("nfl", season, week, browseLines).catch(() => ({})) : {};
   const booksByLine = new Map<string, { book: string; priceAmerican: number }[]>();
   for (const r of rawLines) {
+    if (Math.abs(r.priceAmerican) >= 5000) continue; // empty prediction-market contract, not a real price
     const key = `${r.player}|${r.statType}|${r.line}|${r.side}`;
     const list = booksByLine.get(key) ?? [];
     list.push({ book: r.book, priceAmerican: r.priceAmerican });
@@ -315,6 +316,7 @@ async function OtherSportPropsSection({ sport, userId, bankrollUsd }: { sport: S
       : {};
   const modelBooksByLine = new Map<string, { book: string; priceAmerican: number }[]>();
   for (const r of rawModelLines) {
+    if (Math.abs(r.priceAmerican) >= 5000) continue; // empty prediction-market contract, not a real price
     const key = `${r.player}|${r.statType}|${r.line}|${r.side}`;
     const list = modelBooksByLine.get(key) ?? [];
     list.push({ book: r.book, priceAmerican: r.priceAmerican });

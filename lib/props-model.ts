@@ -729,6 +729,19 @@ export const PICKEM_BOOKS = new Set([
   "OwnersBox",
 ]);
 
+/**
+ * A price no one can actually get (1.31.0): prediction markets list empty
+ * contracts at 1 cent (+9900), and a stale book can sit at a price that pays
+ * far more than the market says the side is worth. Kalshi listed NHL Unders
+ * the market had at 70-94% at +9900; those were taken as "the price" and made
+ * every such pick look like a huge edge. A side price is unusable when it's
+ * +/-5000 or beyond, or pays 15+ points more than the side's market chance.
+ */
+export function isUnusablePrice(price: number, sideChance: number | undefined): boolean {
+  if (Math.abs(price) >= 5000) return true;
+  return sideChance !== undefined && americanToImpliedProb(price) < sideChance - 0.15;
+}
+
 /** A book line that can't be used as a real price: pick'em apps, or both sides at even money. */
 export function isPlaceholderLine(book: string, overPrice?: number, underPrice?: number): boolean {
   if (PICKEM_BOOKS.has(book) || book.startsWith("Seasonz model")) return true;
@@ -968,6 +981,7 @@ export function buildPropPicks(
 
     const price = side === "Over" ? g.overPrice : g.underPrice;
     if (price == null) continue;
+    if (isUnusablePrice(price, mk === undefined ? undefined : side === "Over" ? mk : 1 - mk)) continue;
     // Only a pick when it beats the price (see MIN_PROP_EDGE).
     if (modelWinPct - americanToImpliedProb(price) < MIN_PROP_EDGE) continue;
 

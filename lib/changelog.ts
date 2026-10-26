@@ -33,6 +33,30 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.31.0",
+    date: "2026-10-26",
+    title: "Scorecard: are we beating the books?",
+    summary: "Results now shows, sport by sport, whether the picks are beating the market and what a flat bet on every pick has returned, and dead prediction-market prices no longer sneak into picks.",
+    changes: [
+      {
+        kind: "new",
+        title: "Scorecard vs the market",
+        whatChanged:
+          "For every graded prop pick in the last 14 days (counted once per player, stat and game): the chance we gave it, how often it hit, what the books' own prices said, and the return of a flat 1-unit bet at the price listed, with a verdict per sport and a day-by-day breakdown. First two weeks: NFL hit 86% where the market said 74% (+17.5% return), NHL 79% vs 76% (+4.4%), NBA 74.5% vs 72.4% (+7.5%), college football 72% vs 64% (+7.5%).",
+        whatItMeans: "One place to see whether the picks are truly beating the books, and to catch any sport that slips behind before it costs you.",
+        href: "/results",
+      },
+      {
+        kind: "fixed",
+        title: "Dead prediction-market prices",
+        whatChanged:
+          "Kalshi lists contracts nobody is trading at 1 cent (+9900). Those were being taken as a pick's price, so NHL Unders the market had at 70-94% showed +9900 and looked like enormous edges, with stake suggestions and results to match. Prices of +/-5000 or beyond, or that pay 15+ points more than the market says the side is worth, are no longer used for picks, book comparisons, better-line alerts or results.",
+        whatItMeans: "Every price on a pick is one you could actually bet, and the results only count those.",
+        href: "/props?sport=nhl",
+      },
+    ],
+  },
+  {
     version: "1.30.0",
     date: "2026-10-25",
     title: "A sharper read of the market",

@@ -208,7 +208,7 @@ export async function propLogSummary(): Promise<PropLogSummary[]> {
                     where a.sport = l.sport and a.market = 'prop' and a.season = l.season and a.week = l.week
                       and a.player = l.player and a.stat_type = l.stat_type and a.line = l.line and a.side = l.side and a.book = l.book
                     limit 1) as close_price
-      from prop_pick_log l where l.result in ('hit', 'miss')
+      from prop_pick_log l where l.result in ('hit', 'miss') and abs(l.price_american) < 5000
     ), q as (
       select *, case when price_american < 0 then -price_american / (-price_american + 100.0) else 100.0 / (price_american + 100) end as imp_taken,
                 case when close_price is null then null when close_price < 0 then -close_price / (-close_price + 100.0) else 100.0 / (close_price + 100) end as imp_close

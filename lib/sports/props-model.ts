@@ -11,7 +11,7 @@ import { scaleAdjustments, sideCalibrate, calibrateModel, type MarketLearn } fro
 import { gameDayFactor, type GameDayContext } from "./game-day";
 import { propTrust, calibrateTrust, trustFeatures, type Trust } from "../prop-trust";
 import type { PropOutcome } from "../odds";
-import { winProbability, americanToImpliedProb, MIN_PROP_EDGE, NFL_PROP_MODEL, isPlaceholderLine, curveMarket, blendPropChance, PROP_MODEL_WEIGHT_DEFAULT } from "../props-model";
+import { winProbability, americanToImpliedProb, MIN_PROP_EDGE, NFL_PROP_MODEL, isPlaceholderLine, isUnusablePrice, curveMarket, blendPropChance, PROP_MODEL_WEIGHT_DEFAULT } from "../props-model";
 import { projectProp, propChance, LEGACY_PROP_MODEL, streakFactor, streakReason, type PropModelConfig, type Projection } from "../prop-dist";
 import { MIN_MODEL_WIN_PCT } from "../confidence";
 import { STAT_EXTRACTORS } from "./stat-extract";
@@ -582,6 +582,8 @@ export function buildSportPropPicks(
 
     const price = side === "Over" ? g.overPrice : g.underPrice;
     if (price == null) continue;
+    // Empty prediction-market contracts (+9900) and stale prices (lib/props-model.ts isUnusablePrice).
+    if (isUnusablePrice(price, mk === undefined ? undefined : side === "Over" ? mk : 1 - mk)) continue;
     // Only a pick when it beats the price: a 75% chance at -500 (83%
     // implied) is a losing bet however likely it is.
     if (modelWinPct - americanToImpliedProb(price) < MIN_PROP_EDGE) continue;

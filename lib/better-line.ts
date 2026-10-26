@@ -62,7 +62,7 @@ export function betterLine(
   const gap = Math.max(0.5, Math.abs(pick.threshold) * 0.03);
   let best: BetterLine | null = null;
   for (const l of lines) {
-    if (l.side !== want || PICKEM_BOOKS.has(l.book) || l.priceAmerican < BETTER_LINE_MIN_PRICE) continue;
+    if (l.side !== want || PICKEM_BOOKS.has(l.book) || l.priceAmerican < BETTER_LINE_MIN_PRICE || l.priceAmerican > 1000) continue;
     if (nameKey(l.player) !== who) continue;
     const better = want === "Over" ? pick.threshold - l.line : l.line - pick.threshold;
     if (better < gap - 1e-9) continue;

@@ -1,6 +1,7 @@
 import { getResults, type Card, type SportResults } from "@/lib/results";
 import { getWeightReport } from "@/lib/model-weights";
 import { propLogSummary } from "@/lib/prop-log";
+import { getScorecard } from "@/lib/scorecard";
 import { PageInfo } from "../page-info";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +9,7 @@ export const dynamic = "force-dynamic";
 const f1 = (v: number | null, d = 1) => (v === null ? "—" : v.toFixed(d));
 
 export default async function ResultsPage() {
-  const [results, weights, props] = await Promise.all([getResults(), getWeightReport(), propLogSummary()]);
+  const [results, weights, props, card] = await Promise.all([getResults(), getWeightReport(), propLogSummary(), getScorecard(14)]);
   const liveTotal = results.reduce((s, r) => s + r.live.n, 0);
   const liveCorrect = results.reduce((s, r) => s + r.live.correct, 0);
 
@@ -46,6 +47,8 @@ export default async function ResultsPage() {
           <SportCard key={r.key} r={r} />
         ))}
       </div>
+
+      <ScorecardSection card={card} />
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-neutral-200">Prop picks, graded</h2>
@@ -204,5 +207,94 @@ function Row({ label, a, b }: { label: string; a: string; b: string }) {
       <td className="py-1 pr-2">{a}</td>
       <td className="py-1 pr-2">{b}</td>
     </tr>
+  );
+}
+
+const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
+const signed = (v: number, d = 1) => `${v >= 0 ? "+" : ""}${v.toFixed(d)}`;
+const VERDICT: Record<string, { label: string; cls: string }> = {
+  beating: { label: "Beating the market", cls: "text-emerald-400" },
+  matching: { label: "Even with the market", cls: "text-neutral-300" },
+  behind: { label: "Behind the market", cls: "text-rose-400" },
+  "too few": { label: "Too few yet", cls: "text-neutral-500" },
+};
+
+function ScorecardSection({ card }: { card: Awaited<ReturnType<typeof getScorecard>> }) {
+  return (
+    <section className="space-y-2">
+      <h2 className="text-sm font-semibold text-neutral-200">Scorecard: are the picks beating the market?</h2>
+      <p className="text-xs text-neutral-400 max-w-2xl">
+        Every graded prop pick in the last {card.days} days, counted once per player, stat and game. <strong>Market</strong> is what
+        the books&rsquo; own prices said the side would hit; a model that only copies the market hits that and loses the vig.{" "}
+        <strong>Return</strong> is the profit of a flat 1-unit bet on every pick at the price listed. &ldquo;Beating&rdquo; means
+        the hit rate is more than two standard errors above the market&rsquo;s (picks on one night move together, so treat
+        small samples with care).
+      </p>
+      {card.bySport.length === 0 ? (
+        <p className="text-xs text-neutral-500">No graded picks yet.</p>
+      ) : (
+        <div className="overflow-x-auto rounded-md border border-neutral-800">
+          <table className="w-full text-xs">
+            <thead className="bg-neutral-900 text-neutral-400 text-left">
+              <tr>
+                <th className="px-2.5 py-1.5 font-medium">Sport</th>
+                <th className="px-2.5 py-1.5 font-medium">Picks</th>
+                <th className="px-2.5 py-1.5 font-medium">We said</th>
+                <th className="px-2.5 py-1.5 font-medium">Hit</th>
+                <th className="px-2.5 py-1.5 font-medium">Market said</th>
+                <th className="px-2.5 py-1.5 font-medium">Return</th>
+                <th className="px-2.5 py-1.5 font-medium">Verdict</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-800">
+              {card.bySport.map((r) => (
+                <tr key={r.sport}>
+                  <td className="px-2.5 py-1.5 text-neutral-200">{r.sport.toUpperCase()}</td>
+                  <td className="px-2.5 py-1.5">{r.n}</td>
+                  <td className="px-2.5 py-1.5">{pct(r.pred)}</td>
+                  <td className="px-2.5 py-1.5">{pct(r.hits / r.n)}</td>
+                  <td className="px-2.5 py-1.5 text-neutral-400">{pct(r.market)}</td>
+                  <td className={`px-2.5 py-1.5 ${r.roi >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{signed(r.roi * 100)}%</td>
+                  <td className={`px-2.5 py-1.5 ${VERDICT[r.verdict].cls}`}>{VERDICT[r.verdict].label}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {card.daily.length > 0 && (
+        <details className="rounded-md border border-neutral-800 px-3 py-2">
+          <summary className="cursor-pointer text-xs text-neutral-300">By day</summary>
+          <div className="overflow-x-auto mt-2">
+            <table className="w-full text-xs">
+              <thead className="text-neutral-500 text-left">
+                <tr>
+                  <th className="py-1 pr-2 font-medium">Sport</th>
+                  <th className="py-1 pr-2 font-medium">Day</th>
+                  <th className="py-1 pr-2 font-medium">Picks</th>
+                  <th className="py-1 pr-2 font-medium">We said</th>
+                  <th className="py-1 pr-2 font-medium">Hit</th>
+                  <th className="py-1 pr-2 font-medium">Market</th>
+                  <th className="py-1 pr-2 font-medium">Return</th>
+                </tr>
+              </thead>
+              <tbody className="text-neutral-300">
+                {card.daily.map((r) => (
+                  <tr key={`${r.sport}|${r.date}`} className="border-t border-neutral-800/70">
+                    <td className="py-1 pr-2">{r.sport.toUpperCase()}</td>
+                    <td className="py-1 pr-2">{r.date}</td>
+                    <td className="py-1 pr-2">{r.n}</td>
+                    <td className="py-1 pr-2">{pct(r.pred)}</td>
+                    <td className="py-1 pr-2">{pct(r.hits / r.n)}</td>
+                    <td className="py-1 pr-2 text-neutral-400">{pct(r.market)}</td>
+                    <td className={`py-1 pr-2 ${r.roi >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{signed(r.roi * 100)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
+    </section>
   );
 }
