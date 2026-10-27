@@ -2,6 +2,7 @@
 // Everything here is computed from synced data: ESPN schedules, scores, box
 // scores, injury report and officiating crews, plus FanDuel and BetMGM
 // lines. No columnist or expert opinion is used anywhere.
+import { streaks } from "../streaks";
 import type { GameSim } from "./game-sim";
 import { db } from "@/db";
 import { sportGames, sportInjuryReports, sportPlayerGameStats, sportTeamGameStats } from "@/db/schema";
@@ -371,13 +372,24 @@ export async function getGameInsights(sport: SportKey, upcoming: GameRow[]): Pro
       }
       const margin = (x: GameRow) => (x.homeTeam === team ? x.homeScore! - x.awayScore! : x.awayScore! - x.homeScore!);
       const m5 = list.slice(-5).reduce((s, x) => s + margin(x), 0) / Math.max(1, Math.min(5, list.length));
-      return { l10: recStr(last10, team), streak: streak > 0 ? `W${streak}` : streak < 0 ? `L${-streak}` : "—", m5 };
+      // Streak history this season (last season's when this one has under 3 games).
+      const seasonList = finalsFor(team, season).length >= 3 ? finalsFor(team, season) : finalsFor(team, season - 1);
+      const st = streaks(seasonList.map((x) => ({ win: won(x, team) })), 6);
+      return {
+        l10: recStr(last10, team),
+        streak: streak > 0 ? `W${streak}` : streak < 0 ? `L${-streak}` : "—",
+        m5,
+        longest: st.longestWin ? `W${st.longestWin}` : "—",
+        history: st.history.map((r) => `${r.win ? "W" : "L"}${r.length}`).join(" · ") || "—",
+      };
     };
     const ta = trend(g.awayTeam);
     const th = trend(g.homeTeam);
     compare.push(
       { label: "Last 10 games", away: ta.l10, home: th.l10, edge: null },
       { label: "Streak", away: ta.streak, home: th.streak, edge: null },
+      { label: "Longest win streak, season", away: ta.longest, home: th.longest, edge: null },
+      { label: "Streak history (latest first)", away: ta.history, home: th.history, edge: null },
       { label: "Avg margin, last 5", away: signed(ta.m5), home: signed(th.m5), edge: ta.m5 === th.m5 ? null : th.m5 > ta.m5 ? "home" : "away" }
     );
 

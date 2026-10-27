@@ -33,6 +33,29 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.34.0",
+    date: "2026-10-27",
+    title: "Win streaks",
+    summary: "Streak counts and streak history for our picks and for every team.",
+    changes: [
+      {
+        kind: "new",
+        title: "Our picks' streaks",
+        whatChanged:
+          "Each sport on Results now shows the live game picks' current streak (W4, L2), the longest winning and losing runs, and the last eight streaks, latest first (hover one for its dates). The prop scorecard adds a Day streak column: profitable days in a row per sport, with the best run.",
+        whatItMeans: "You can see at a glance whether the picks are running hot or cold, and how long the runs have lasted.",
+        href: "/results",
+      },
+      {
+        kind: "new",
+        title: "Team win streaks on matchups",
+        whatChanged:
+          "The matchup comparison now shows each team's longest win streak this season and its streak history, latest first, next to the current streak. Before adding streaks to the model we tested them on about 5,000 MLB and college football games: teams on long winning or losing streaks won no more or less often than their Elo rating already said, because Elo already moves after every result. So streaks are shown, not added to the prediction.",
+        whatItMeans: "More context on form, without a hot streak inflating a pick it doesn't actually improve.",
+      },
+    ],
+  },
+  {
     version: "1.33.0",
     date: "2026-10-26",
     title: "Losing pick types bench themselves",

@@ -2,6 +2,7 @@ import { getResults, type Card, type SportResults } from "@/lib/results";
 import { getWeightReport } from "@/lib/model-weights";
 import { propLogSummary } from "@/lib/prop-log";
 import { getScorecard } from "@/lib/scorecard";
+import { streaks, streakLabel, type StreakSummary } from "@/lib/streaks";
 import { PageInfo } from "../page-info";
 
 export const dynamic = "force-dynamic";
@@ -173,6 +174,7 @@ function SportCard({ r }: { r: SportResults }) {
           </tbody>
         </table>
       </div>
+      {r.streak.history.length > 0 && <StreakLine s={r.streak} unit="pick" />}
       {r.calibration.length > 0 && (
         <div>
           <div className="text-[11px] uppercase tracking-wide text-neutral-500 mb-1">Calibration (rebuilt)</div>
@@ -193,6 +195,30 @@ function SportCard({ r }: { r: SportResults }) {
           <div className="text-[10px] text-neutral-600 mt-1">Bar = how often picks won; yellow tick = what the model said.</div>
         </div>
       )}
+    </div>
+  );
+}
+
+function StreakLine({ s, unit }: { s: StreakSummary; unit: string }) {
+  const cls = (win: boolean) => (win ? "bg-emerald-500/15 text-emerald-300" : "bg-rose-500/15 text-rose-300");
+  return (
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-baseline gap-x-3 text-[11px] text-neutral-400">
+        <span>
+          Streak:{" "}
+          <strong className={s.current > 0 ? "text-emerald-400" : s.current < 0 ? "text-rose-400" : "text-neutral-300"}>{streakLabel(s.current)}</strong>
+        </span>
+        <span>Longest win run: {s.longestWin}</span>
+        <span>Longest losing run: {s.longestLoss}</span>
+      </div>
+      <div className="flex flex-wrap gap-1" title={`Streak history, latest first (one ${unit} each)`}>
+        {s.history.map((h, i) => (
+          <span key={i} className={`rounded px-1.5 py-0.5 text-[10px] ${cls(h.win)}`} title={h.from && h.to ? (h.from === h.to ? h.from : `${h.from} to ${h.to}`) : undefined}>
+            {h.win ? "W" : "L"}
+            {h.length}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -219,7 +245,14 @@ const VERDICT: Record<string, { label: string; cls: string }> = {
   "too few": { label: "Too few yet", cls: "text-neutral-500" },
 };
 
+// "week 9" sorts before "week 10".
+const dayKey = (d: string) => d.replace(/^week (\d+)$/, (_, w: string) => `week ${w.padStart(3, "0")}`);
+
 function ScorecardSection({ card }: { card: Awaited<ReturnType<typeof getScorecard>> }) {
+  // Winning days in a row per sport: a day counts as a win when the flat-bet return was positive.
+  const dayStreak = new Map<string, StreakSummary>();
+  for (const sp of new Set(card.daily.map((d) => d.sport)))
+    dayStreak.set(sp, streaks(card.daily.filter((d) => d.sport === sp).sort((a, b) => dayKey(a.date).localeCompare(dayKey(b.date))).map((d) => ({ win: d.roi > 0, label: d.date })), 8));
   return (
     <section className="space-y-2">
       <h2 className="text-sm font-semibold text-neutral-200">Scorecard: are the picks beating the market?</h2>
@@ -244,6 +277,7 @@ function ScorecardSection({ card }: { card: Awaited<ReturnType<typeof getScoreca
                 <th className="px-2.5 py-1.5 font-medium">Market said</th>
                 <th className="px-2.5 py-1.5 font-medium">Return</th>
                 <th className="px-2.5 py-1.5 font-medium">Verdict</th>
+                <th className="px-2.5 py-1.5 font-medium" title="Profitable days in a row (W) or losing days (L); best run in brackets">Day streak</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-800">
@@ -256,6 +290,18 @@ function ScorecardSection({ card }: { card: Awaited<ReturnType<typeof getScoreca
                   <td className="px-2.5 py-1.5 text-neutral-400">{pct(r.market)}</td>
                   <td className={`px-2.5 py-1.5 ${r.roi >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{signed(r.roi * 100)}%</td>
                   <td className={`px-2.5 py-1.5 ${VERDICT[r.verdict].cls}`}>{VERDICT[r.verdict].label}</td>
+                  <td className="px-2.5 py-1.5 whitespace-nowrap">
+                    {(() => {
+                      const d = dayStreak.get(r.sport);
+                      if (!d) return "—";
+                      return (
+                        <span title={d.history.map((h) => `${h.win ? "W" : "L"}${h.length}`).join(" · ")}>
+                          <span className={d.current > 0 ? "text-emerald-400" : "text-rose-400"}>{streakLabel(d.current)}</span>
+                          <span className="text-neutral-500"> (best {d.longestWin})</span>
+                        </span>
+                      );
+                    })()}
+                  </td>
                 </tr>
               ))}
             </tbody>

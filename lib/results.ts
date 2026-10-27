@@ -7,6 +7,7 @@
 //     pre-game inputs, including games from before locking existed. It uses
 //     only information from before each game, but the model itself was tuned
 //     on these seasons, so it reads a little better than a true live record.
+import { streaks, type StreakSummary } from "./streaks";
 import { db } from "@/db";
 import { games, sportGames } from "@/db/schema";
 import { and, eq, inArray, ne } from "drizzle-orm";
@@ -52,6 +53,17 @@ export interface SportResults {
   rebuilt: Card;
   calibration: Bucket[]; // rebuilt set (bigger sample)
   liveSince: string | null;
+  /** Streaks of the live pre-game picks (right/wrong), in kickoff order. */
+  streak: StreakSummary;
+}
+
+/** Live picks in kickoff order -> streak summary (labels are dates). */
+function pickStreaks(rows: { t: number; p: number; won: 0 | 1 }[]): StreakSummary {
+  const sorted = [...rows].sort((a, b) => a.t - b.t);
+  return streaks(
+    sorted.map((r) => ({ win: (r.p > 0.5 ? 1 : 0) === r.won, label: r.t ? new Date(r.t).toISOString().slice(0, 10) : undefined })),
+    8
+  );
 }
 
 const clampP = (p: number) => Math.min(0.999, Math.max(0.001, p));
@@ -168,19 +180,21 @@ export async function getResults(): Promise<SportResults[]> {
   const nflLive: Graded[] = [];
   const nflRebuilt: Graded[] = [];
   let nflSince: string | null = null;
+  const nflSeq: { t: number; p: number; won: 0 | 1 }[] = [];
   for (const g of nfl) {
     if (g.homeScore === null || g.awayScore === null || g.homeScore === g.awayScore) continue;
     const won = (g.homeScore > g.awayScore ? 1 : 0) as 0 | 1;
     const book = g.lockedMarketPct ?? null;
     if (g.lockedPct != null) {
       nflLive.push({ p: g.lockedPct, won, book });
+      nflSeq.push({ t: g.kickoffAt?.getTime() ?? 0, p: g.lockedPct, won });
       const at = g.lockedAt?.toISOString() ?? null;
       if (at && (!nflSince || at < nflSince)) nflSince = at;
     }
     const p = g.lockedPct ?? g.homeWinPctPre;
     if (p != null) nflRebuilt.push({ p, won, book });
   }
-  out.push({ key: "nfl", label: "NFL", live: scoreCard(nflLive), rebuilt: scoreCard(nflRebuilt), calibration: calibration(nflRebuilt), liveSince: nflSince });
+  out.push({ key: "nfl", label: "NFL", live: scoreCard(nflLive), rebuilt: scoreCard(nflRebuilt), calibration: calibration(nflRebuilt), liveSince: nflSince, streak: pickStreaks(nflSeq) });
 
   for (const sport of OTHER) {
     const season = currentSeasonYear(sport);
@@ -193,13 +207,17 @@ export async function getResults(): Promise<SportResults[]> {
     const live: Graded[] = [];
     const rebuilt: Graded[] = [];
     let since: string | null = null;
+    const seq: { t: number; p: number; won: 0 | 1 }[] = [];
     for (const g of rows) {
       const r = sportGraded(g);
-      if (r.live) live.push(r.live);
+      if (r.live) {
+        live.push(r.live);
+        seq.push({ t: g.kickoffAt?.getTime() ?? 0, p: r.live.p, won: r.live.won });
+      }
       if (r.rebuilt) rebuilt.push(r.rebuilt);
       if (r.lockedAt && (!since || r.lockedAt < since)) since = r.lockedAt;
     }
-    out.push({ key: sport, label: SPORTS[sport].label, live: scoreCard(live), rebuilt: scoreCard(rebuilt), calibration: calibration(rebuilt), liveSince: since });
+    out.push({ key: sport, label: SPORTS[sport].label, live: scoreCard(live), rebuilt: scoreCard(rebuilt), calibration: calibration(rebuilt), liveSince: since, streak: pickStreaks(seq) });
   }
   return out;
 }
