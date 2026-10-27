@@ -14,6 +14,8 @@ export interface MarketLearn {
   modelCal?: { t: number; b: number };
   /** Per-stat model calibration (replaces the sport's for that stat). */
   modelCalByStat?: Record<string, { t: number; b: number }>;
+  /** "stat|side" pairs benched for losing to the market (lib/model-weights.ts benchedFor). */
+  benched?: Set<string>;
   /** Learned Over/Under log-odds shift on a pick's final chance (lib/model-weights.ts "side:<sport>"). */
   side?: { Over: number; Under: number };
   /** Learned share of the market price curve (lib/market-curve.ts) against a two-sided / one-sided price. */

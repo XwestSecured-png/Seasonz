@@ -975,6 +975,8 @@ export function buildPropPicks(
     const side: "Over" | "Under" = pOver >= 0.5 ? "Over" : "Under";
     // Learned Over/Under calibration (lib/model-weights.ts "side:<sport>").
     const modelWinPct = sideCalibrate(side === "Over" ? pOver : 1 - pOver, side, marketLearn);
+    // Benched: this stat and side has been clearly losing to the market (lib/model-weights.ts).
+    if (marketLearn?.benched?.has(`${g.statType}|${side}`)) continue;
     const modelOnly = side === "Over" ? pOverModel : 1 - pOverModel;
     const modelBase = side === "Over" ? pOverBase : 1 - pOverBase;
     if (modelWinPct < MIN_MODEL_WIN_PCT) continue;

@@ -33,6 +33,21 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.33.0",
+    date: "2026-10-26",
+    title: "Losing pick types bench themselves",
+    summary: "Any stat and side whose picks are clearly losing to the market now stops being picked automatically, and comes back when that changes.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Auto-bench",
+        whatChanged:
+          "Every 12 hours, each stat and side (NBA Assists Unders, NHL Goals Overs...) is checked on its last 30 days of graded picks. If it's hitting clearly below what the market said (more than two standard errors, 60+ picks) and losing money at the prices taken, it's benched from the picks list until it isn't. Right now nothing qualifies: of the ten biggest groups, nine are returning +3% to +21%, and the weakest, NBA Assists Unders (69% hit vs 75% market over 74 picks), is within normal variance.",
+        whatItMeans: "If a pick type stops working, it stops showing up on its own, without waiting for anyone to notice.",
+      },
+    ],
+  },
+  {
     version: "1.32.0",
     date: "2026-10-26",
     title: "Biggest edge first",

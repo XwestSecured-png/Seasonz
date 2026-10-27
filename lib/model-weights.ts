@@ -200,6 +200,47 @@ export function sideShiftFor(store: WeightStore, sport: string): { Over: number;
   return { Over: g("Over"), Under: g("Under") };
 }
 
+/**
+ * Auto-bench (1.33.0): a stat and side (e.g. NBA Assists Unders) whose
+ * graded picks over the last 30 days are clearly losing to the market (hit
+ * rate more than 2 standard errors below the market's own chance, with a
+ * negative return at the prices taken, 60+ player-games) stops being picked
+ * until that's no longer true. First check: none qualified (NBA Assists
+ * Unders, the worst, were 1.2 standard errors below).
+ */
+export const BENCH_MIN_N = 60;
+async function benchedStats(): Promise<{ key: string; n: number; gap: number; se: number; roi: number }[]> {
+  const rows = await db.execute<{ sport: string; stat: string; side: string; n: number; hit: number; market: number; roi: number }>(sql`
+    with g as (
+      select distinct on (sport, player, stat_type, coalesce(game_date::text, week::text), side) *
+      from prop_pick_log
+      where result in ('hit', 'miss') and market is not null and abs(price_american) < 5000
+        and (case when price_american < 0 then -price_american / (-price_american + 100.0) else 100.0 / (price_american + 100) end) >= market - 0.15
+        and logged_at > now() - interval '30 days'
+      order by sport, player, stat_type, coalesce(game_date::text, week::text), side, logged_at desc
+    )
+    select sport, stat_type as stat, side, count(*)::int as n, avg((result = 'hit')::int)::float as hit, avg(market)::float as market,
+           avg(case when result = 'hit' then (case when price_american > 0 then price_american / 100.0 else 100.0 / -price_american end) else -1 end)::float as roi
+    from g group by 1, 2, 3 having count(*) >= ${BENCH_MIN_N}`);
+  const out: { key: string; n: number; gap: number; se: number; roi: number }[] = [];
+  for (const r of rows) {
+    const n = Number(r.n);
+    const m = Number(r.market);
+    const se = Math.sqrt((m * (1 - m)) / n);
+    const gap = Number(r.hit) - m;
+    if (gap < -2 * se && Number(r.roi) < 0) out.push({ key: `${r.sport}:${r.stat}:${r.side}`, n, gap, se, roi: Number(r.roi) });
+  }
+  return out;
+}
+
+/** Benched "stat|side" pairs for a sport (lib/props-model.ts skips them). */
+export function benchedFor(store: WeightStore, sport: string): Set<string> {
+  const pre = `bench:${sport}:`;
+  const out = new Set<string>();
+  for (const [k, v] of Object.entries(store)) if (k.startsWith(pre) && v.weight === 1) out.add(k.slice(pre.length).replace(/:(Over|Under)$/, "|$1"));
+  return out;
+}
+
 const ADJ_MIN_N = 100;
 const ADJ_PRIOR_N = 300;
 /**
@@ -373,6 +414,16 @@ export async function refitModelWeights(): Promise<string> {
       next[`trust:${s}`] = { ...fit, at: new Date().toISOString() };
       if (fit.applied) msgs.push(`trust:${s} shift ${fit.weight.toFixed(2)} (n=${fit.n})`);
     }
+  }
+
+  // Auto-bench stats whose picks are clearly losing to the market.
+  try {
+    for (const b of await benchedStats()) {
+      next[`bench:${b.key}`] = { base: 0, n: b.n, weight: 1, best: +b.gap.toFixed(3), llCurrent: +b.se.toFixed(3), llBest: +b.roi.toFixed(3), applied: true, at: new Date().toISOString() };
+      msgs.push(`bench ${b.key}: hit ${(b.gap * 100).toFixed(1)} pts vs market (${(b.gap / b.se).toFixed(1)} SE), return ${(b.roi * 100).toFixed(1)}% (n=${b.n})`);
+    }
+  } catch {
+    // pick log not reachable: nothing benched
   }
 
   // Over/Under calibration on the final chance.

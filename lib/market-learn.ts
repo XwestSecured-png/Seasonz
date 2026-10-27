@@ -270,6 +270,12 @@ export async function liveMarketLearn(store: Record<string, { weight: number; ap
     biasByStat: Object.keys(biasByStat).length ? biasByStat : undefined,
     oneSided: typeof os === "number" && os >= -1.5 && os <= 0.3 ? os : undefined,
     temp: typeof tempW === "number" && tempW >= 0.8 && tempW <= 1.5 ? tempW : undefined,
+    benched: (() => {
+      const pre = `bench:${sport}:`;
+      const set = new Set<string>();
+      for (const [k, v] of Object.entries(store)) if (k.startsWith(pre) && v.weight === 1) set.add(k.slice(pre.length).replace(/:(Over|Under)$/, "|$1"));
+      return set.size ? set : undefined;
+    })(),
     modelCalByStat: (() => {
       const pre = `modelcal:${sport}:stat:`;
       const m: Record<string, { t: number; b: number }> = {};
