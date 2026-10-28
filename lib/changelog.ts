@@ -33,6 +33,21 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.35.0",
+    date: "2026-10-27",
+    title: "Leaner background work",
+    summary: "The app does about a third less background work and calls the server about 60% less often, with no change to the picks.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Only sync what's in season",
+        whatChanged:
+          "The scheduler now checks the database before calling the app. A sport with no games from 36 hours ago to 4 days ahead is skipped, apart from a Monday catch-up so its schedule stays current (college basketball synced about four times a day last week with no games). The 11am and 5pm refreshes only run for sports playing in the next 14 hours. The pre-game props pass runs at most once every 110 minutes per sport instead of every 50, and only when a game is 30 to 150 minutes away. Alerts run when a game starts within the hour, and every second hour otherwise. Health checks run every 4 hours, and the model's self-learning refit once a day after the overnight results are in. Measured on last week's runs, this would have cut about a third of the sync time; refits are halved.",
+        whatItMeans: "The app stays well inside its hosting limits. Picks still update before every game.",
+      },
+    ],
+  },
+  {
     version: "1.34.0",
     date: "2026-10-27",
     title: "Win streaks",

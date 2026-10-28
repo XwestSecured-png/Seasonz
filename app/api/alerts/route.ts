@@ -9,8 +9,9 @@ import { refitModelWeights } from "@/lib/model-weights";
 export const maxDuration = 120;
 
 /**
- * Every 30 minutes (pg_cron): push alerts; hourly: sync health checks;
- * daily: re-test the model-vs-line weights. Cron secret only.
+ * pg_cron calls this when a game starts within the hour (lock reminders)
+ * and every second hour otherwise (1.35.0): push alerts; every 4 hours:
+ * sync health checks; daily: re-learn the model weights. Cron secret only.
  */
 export async function GET(req: NextRequest) {
   if (!process.env.CRON_SECRET || req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
     out.alerts = `error: ${e instanceof Error ? e.message : String(e)}`;
   }
   const next = { ...last };
-  if (force || !last.health || now.getTime() - Date.parse(last.health) > 55 * 60_000) {
+  if (force || !last.health || now.getTime() - Date.parse(last.health) > 235 * 60_000) {
     try {
       const r = await runHealthChecks(now);
       out.health = r.ok ? `ok (${r.checked} checks)` : `${r.issues.length} issue(s): ${r.issues.map((i) => i.id).join(", ")}`;
@@ -37,9 +38,12 @@ export async function GET(req: NextRequest) {
       out.health = `error: ${e instanceof Error ? e.message : String(e)}`;
     }
   }
-  // Re-learn twice a day (1.29.0): overnight grading lands a day's results
-  // by morning, and waiting up to 23 hours left them unused.
-  if (force || !last.weights || now.getTime() - Date.parse(last.weights) > 11.5 * 3600_000) {
+  // Re-learn once a day (1.35.0, was twice): the refit is the heaviest job
+  // the app runs, and a day's grading lands overnight anyway. The first run
+  // after 10am ET picks up that night's results.
+  const etHour = Number(now.toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }));
+  const dueWeights = !last.weights || now.getTime() - Date.parse(last.weights) > 23.5 * 3600_000 || (etHour >= 10 && now.getTime() - Date.parse(last.weights) > 16 * 3600_000);
+  if (force || dueWeights) {
     try {
       out.weights = await refitModelWeights();
       next.weights = now.toISOString();

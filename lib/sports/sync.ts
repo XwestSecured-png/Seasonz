@@ -1247,7 +1247,7 @@ export async function sportsDueForPregame(now = new Date()): Promise<SportKey[]>
   const recent = await db
     .selectDistinct({ stage: syncRuns.stage })
     .from(syncRuns)
-    .where(and(eq(syncRuns.status, "ok"), gte(syncRuns.startedAt, new Date(now.getTime() - 50 * 60_000)), like(syncRuns.stage, "%:props")));
+    .where(and(eq(syncRuns.status, "ok"), gte(syncRuns.startedAt, new Date(now.getTime() - 110 * 60_000)), like(syncRuns.stage, "%:props")));
   const fresh = new Set(recent.map((r) => r.stage.split(":")[0]));
   return soon.map((r) => r.sport as SportKey).filter((s) => s in SPORTS && !fresh.has(s));
 }

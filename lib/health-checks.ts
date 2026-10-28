@@ -62,17 +62,32 @@ export async function runHealthChecks(now = new Date()): Promise<HealthReport> {
     });
   }
 
-  // 2. Each sport's last successful schedule sync (syncs run 3–4× a day).
+  // 2. Each in-season sport's last successful schedule sync (syncs run 2–4× a day).
   const last = await db
     .select({ stage: syncRuns.stage, at: sql<Date>`max(${syncRuns.startedAt})` })
     .from(syncRuns)
     .where(and(eq(syncRuns.status, "ok"), gte(syncRuns.startedAt, new Date(now.getTime() - 7 * 24 * HOUR))))
     .groupBy(syncRuns.stage);
   const lastAt = new Map(last.map((r) => [r.stage, new Date(r.at).getTime()]));
+  // Only sports in season (games from 36 hours ago to 4 days ahead): the
+  // scheduler skips the rest apart from a Monday catch-up (1.35.0).
+  const winFrom = new Date(now.getTime() - 36 * HOUR);
+  const winTo = new Date(now.getTime() + 4 * 24 * HOUR);
+  const activeRows = await db
+    .selectDistinct({ sport: sportGames.sport })
+    .from(sportGames)
+    .where(and(gte(sportGames.kickoffAt, winFrom), lt(sportGames.kickoffAt, winTo)));
+  const [nflActive] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(games)
+    .where(and(gte(games.kickoffAt, winFrom), lt(games.kickoffAt, winTo)));
+  const active = new Set(activeRows.map((r) => `${r.sport}:schedule`));
+  if (nflActive?.n) active.add("schedule");
   for (const key of ["schedule", ...OTHER.map((s) => `${s}:schedule`)]) {
+    if (!active.has(key)) continue;
     checked++;
     const t = lastAt.get(key);
-    if (!t || now.getTime() - t > 15 * HOUR) {
+    if (!t || now.getTime() - t > 26 * HOUR) {
       issues.push({ id: `stale:${key}`, level: "error", message: `${key} hasn't synced in ${t ? Math.round((now.getTime() - t) / HOUR) + "h" : "7+ days"}.` });
     }
   }
