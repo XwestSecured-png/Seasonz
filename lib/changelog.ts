@@ -33,6 +33,21 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.36.0",
+    date: "2026-11-01",
+    title: "Background work moved to GitHub",
+    summary: "Syncs, pre-game props, alerts and the daily model refit now run on GitHub Actions instead of the website's host.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Syncs run on GitHub Actions",
+        whatChanged:
+          "Every 30 minutes a GitHub Actions job (free for this public repo) checks what's due and runs it straight against the database: full syncs at midnight and 2pm ET, pre-game refreshes at 11am and 5pm ET for sports playing that day, the props pass before games, and alerts, health checks and the daily refit. The rules are the same as 1.35.0; only where they run changed. The website's host now only serves pages.",
+        whatItMeans: "Picks keep updating even when the website's hosting plan runs low, and the site itself uses far less of its free allowance.",
+      },
+    ],
+  },
+  {
     version: "1.35.0",
     date: "2026-10-27",
     title: "Leaner background work",

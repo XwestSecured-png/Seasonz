@@ -1,0 +1,46 @@
+# Seasonz background jobs (1.36.0): syncs, pre-game props, alerts and the
+# daily model refit, every 30 minutes. scripts/cron.ts decides what's due.
+# Needs repository secrets: DATABASE_URL, plus whichever odds keys you use
+# (PROPLINE_API_KEY, SPORTSGAMEODDS_API_KEY, ODDS_API_KEYS_FREE,
+# PROPLINE_API_KEYS_FREE).
+name: Seasonz sync
+
+on:
+  schedule:
+    - cron: "0,30 * * * *"
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "Force one task (blank = whatever is due)"
+        required: false
+        default: ""
+        type: choice
+        options: ["", sync, refresh, pregame, alerts]
+
+concurrency:
+  group: seasonz-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund --ignore-scripts
+      - name: Run due jobs
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PROPLINE_API_KEY: ${{ secrets.PROPLINE_API_KEY }}
+          PROPLINE_API_KEYS_FREE: ${{ secrets.PROPLINE_API_KEYS_FREE }}
+          SPORTSGAMEODDS_API_KEY: ${{ secrets.SPORTSGAMEODDS_API_KEY }}
+          ODDS_API_KEYS_FREE: ${{ secrets.ODDS_API_KEYS_FREE }}
+          NODE_ENV: production
+        run: npx tsx --tsconfig tsconfig.json scripts/cron.ts ${{ inputs.task && format('--task={0}', inputs.task) || '' }}
