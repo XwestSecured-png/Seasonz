@@ -60,6 +60,11 @@ interface ModelExtra {
   formShift: number;
   formDiff?: number | null;
   injuryShift: number;
+  tradeShift?: number;
+  homeTradeValue?: number | null;
+  awayTradeValue?: number | null;
+  weatherShift?: number;
+  weatherTotalShift?: number;
   homeForm: (TeamForm & { n?: number; avg?: number }) | null;
   awayForm: (TeamForm & { n?: number; avg?: number }) | null;
   homeOut: OutPlayer[];
@@ -257,10 +262,16 @@ export async function getGameInsights(sport: SportKey, upcoming: GameRow[]): Pro
         .map((p) => `${p.player} (${p.ppg} ${OUT_STAT[sport]})`);
       reasons.push(`Injuries and suspensions move it ${signed(m.injuryShift * 100 * sideSign)} points${top.length ? `: biggest absences ${top.join(", ")}` : ""}.`);
     }
+    if (m && m.tradeShift) {
+      reasons.push(`Recent trades move it ${signed(m.tradeShift * 100 * sideSign)} points (players traded in or out, fading as each team plays with its new roster; see Trades).`);
+    }
     if ((sport === "mlb" || sport === "ncaaf") && ex.weather) {
       const w = ex.weather;
       reasons.push(
-        `Forecast at start: ${w.tempF}°F, wind ${w.windMph} mph${w.precipPct != null ? `, ${w.precipPct}% chance of rain` : ""}. Shown for context, not used in the pick${sport === "mlb" ? " (in testing on past seasons it didn't help predict winners)" : ""}.`
+        `Forecast at start: ${w.tempF}°F, wind ${w.windMph} mph${w.precipPct != null ? `, ${w.precipPct}% chance of rain` : ""}.` +
+          (m?.weatherShift || m?.weatherTotalShift
+            ? ` Weather moves the pick ${signed((m.weatherShift ?? 0) * 100 * sideSign)} points (rough conditions make upsets likelier) and the projected total ${signed(m.weatherTotalShift ?? 0)} ${UNIT[sport]}.`
+            : " Mild enough that it doesn't move the pick or the total.")
       );
     } else if ((sport === "mlb" || sport === "ncaaf") && ex.preview?.venue?.indoor) {
       reasons.push(`Indoor venue${ex.preview.venue.name ? ` (${ex.preview.venue.name})` : ""}, so weather doesn't apply.`);

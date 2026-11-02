@@ -43,8 +43,12 @@ import {
   inningsToNumber,
   type Calibration,
 } from "./game-model";
-import { geocodeCity, forecastAt, type GameWeather } from "./weather";
+import { geocodeCity, forecastAt, archiveAt, type GameWeather } from "./weather";
+import { syncTrades } from "../trades";
 import { statGroup } from "./stat-extract";
+import { wxFeatures, wxTotalShift, wxWeightsFrom, wxWinShrink, type WxSport } from "../weather-weight";
+import { netTradeValue, NEW_TEAM_SHARE, recentTrades, saveTradeValues, tradeFade, type TradeSport, type TradeRow } from "../trades";
+import { nameKey } from "../player-names";
 
 type StageResult = { stage: string; status: "ok" | "error" | "skipped"; detail: string };
 type LogStage = (stage: string, fn: () => Promise<string>) => Promise<StageResult>;
@@ -381,6 +385,55 @@ export async function runModelStages(sport: SportKey, year: number, logStage: Lo
   }
 
   // -------------------------------------------------------------------- model
+  // ------------------------------------------------------------- trades (1.37.0)
+  if (sport === "nba" || sport === "wnba" || sport === "nhl" || sport === "mlb") {
+    results.push(await logStage(`${sport}:trades`, () => syncTrades(sport)));
+  }
+
+  // ---------------------------------------------- weather history (1.37.0)
+  // Measured game-time weather for finished outdoor games, so the nightly
+  // refit can learn the weather weight from real results. Up to 300 games a run.
+  if (sport === "mlb" || sport === "ncaaf") {
+    results.push(
+      await logStage(`${sport}:weatherHistory`, async () => {
+        const rows = (
+          await db
+            .select({ id: sportGames.id, kickoffAt: sportGames.kickoffAt, extra: sportGames.extra })
+            .from(sportGames)
+            .where(and(eq(sportGames.sport, sport), inArray(sportGames.season, [year - 1, year]), eq(sportGames.isFinal, true)))
+        ).filter((g) => {
+          const ex = (g.extra ?? {}) as GameExtra;
+          return g.kickoffAt && g.kickoffAt.getTime() < Date.now() - 2 * DAY && !ex.wxArchive && ex.preview?.venue?.city && ex.preview.venue.indoor !== true;
+        });
+        if (rows.length === 0) return "No finished outdoor games missing weather.";
+        const byVenue = new Map<string, typeof rows>();
+        for (const g of rows.slice(0, 300)) {
+          const v = ((g.extra ?? {}) as GameExtra).preview!.venue!;
+          const k = `${v.city}|${v.state ?? ""}`;
+          byVenue.set(k, [...(byVenue.get(k) ?? []), g]);
+        }
+        const saved: { id: number; value: unknown }[] = [];
+        let failed = 0;
+        await pool([...byVenue.entries()], 4, async ([k, gs]) => {
+          const [city, state] = k.split("|");
+          try {
+            const loc = await geocodeCity(city, state || null);
+            if (!loc) return;
+            const got = await archiveAt(loc.lat, loc.lon, gs.map((g) => g.kickoffAt!));
+            for (const g of gs) {
+              const w = got.get(g.kickoffAt!.toISOString().slice(0, 13));
+              if (w) saved.push({ id: g.id, value: w });
+            }
+          } catch {
+            failed++;
+          }
+        });
+        await mergeExtra("wxArchive", saved);
+        return `Game-time weather saved for ${saved.length} of ${Math.min(300, rows.length)} finished outdoor game(s) (${rows.length} missing)${failed ? `, ${failed} place(s) failed` : ""}.`;
+      })
+    );
+  }
+
   results.push(await logStage(`${sport}:model`, () => runModel(sport, year)));
   return results;
 }
@@ -394,7 +447,10 @@ interface PlayerValue {
 
 async function runModel(sport: SportKey, year: number): Promise<string> {
   const P = GAME_MODEL[sport];
-  const modelWeight = weightFor(await getModelWeights().catch(() => ({})), sport);
+  const weightStore = await getModelWeights().catch(() => ({}));
+  const modelWeight = weightFor(weightStore, sport);
+  const wxSport: WxSport | null = sport === "mlb" || sport === "ncaaf" ? sport : null;
+  const wxW = wxSport ? wxWeightsFrom(weightStore, wxSport) : null;
   const games = await db
     .select()
     .from(sportGames)
@@ -554,6 +610,20 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
   }
   for (const list of outByTeam.values()) list.sort((a, b) => b.value - a.value);
 
+  // --- Trades (1.37.0): players in/out in the last few months, faded by games played since.
+  const tradeSport: TradeSport | null = sport === "nba" || sport === "wnba" || sport === "nhl" || sport === "mlb" ? sport : null;
+  const tradeRows: TradeRow[] = tradeSport ? await recentTrades(tradeSport).catch(() => []) : [];
+  const byKey = new Map<string, string>();
+  for (const name of perPlayer.keys()) byKey.set(nameKey(name), name);
+  const tradeValue = (r: TradeRow) => valueOf(byKey.get(nameKey(r.player)) ?? r.player);
+  const teamGameTimes = new Map<string, number[]>();
+  for (const g of games) {
+    if (!g.isFinal || g.seasonType === PRESEASON) continue;
+    for (const t of [g.homeTeam, g.awayTeam]) teamGameTimes.set(t, [...(teamGameTimes.get(t) ?? []), ms(g)]);
+  }
+  const gamesSinceAt = (before: number) => (team: string, since: Date) =>
+    (teamGameTimes.get(team) ?? []).filter((x) => x > since.getTime() && x < before).length;
+
   // --- Score every game.
   const teamGoalieCount = new Map<string, Map<string, number>>();
   const out: {
@@ -640,7 +710,21 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
       const lost = (l: PlayerValue[]) => l.reduce((s, p) => s + p.value, 0);
       injShift = injuryShift(sport, pModel, lost(homeOut), lost(awayOut));
     }
-    const modelOnly = pModel + injShift;
+    // Trades: the team's net value traded in/out, counted like an injury in reverse.
+    let tradeShift = 0;
+    let homeTrade = 0;
+    let awayTrade = 0;
+    if (tradeSport && upcoming && tradeRows.length) {
+      const since = gamesSinceAt(t);
+      homeTrade = netTradeValue(tradeSport, g.homeTeam, tradeRows, (r) => tradeValue(r).value, since);
+      awayTrade = netTradeValue(tradeSport, g.awayTeam, tradeRows, (r) => tradeValue(r).value, since);
+      if (homeTrade || awayTrade) tradeShift = injuryShift(sport, pModel + injShift, -homeTrade, -awayTrade);
+    }
+    // Weather (MLB, college football): rough conditions pull the favorite toward 50-50.
+    const wxF = wxSport && upcoming ? wxFeatures(ex.weather ?? null, ex.preview?.venue?.indoor === true) : null;
+    const beforeWx = pModel + injShift + tradeShift;
+    const modelOnly = wxW && wxF ? wxWinShrink(beforeWx, wxF, wxW) : beforeWx;
+    const weatherShift = modelOnly - beforeWx;
 
     // Market: the consensus of every book's no-vig line (sharp books
     // count double), else ESPN's line.
@@ -688,6 +772,11 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
         awayForm,
         starter,
         injuryShift: injShift,
+        tradeShift,
+        homeTradeValue: homeTrade || null,
+        awayTradeValue: awayTrade || null,
+        weatherShift,
+        weatherTotalShift: wxSport && wxW && wxF ? wxTotalShift(wxSport, wxF, wxW) : 0,
         homeOut: homeOut.slice(0, 8),
         awayOut: awayOut.slice(0, 8),
         modelOnlyPct: modelOnly,
@@ -725,7 +814,29 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
       total: g.totalLine,
       overPrice: g.totalOverPriceAmerican,
       underPrice: g.totalUnderPriceAmerican,
+      totalShift: typeof o.model.weatherTotalShift === "number" ? o.model.weatherTotalShift : 0,
     });
+  }
+
+  // Trades tab: each trade side's value and what it's worth to the team now.
+  if (tradeSport && tradeRows.length) {
+    const since = gamesSinceAt(now);
+    await saveTradeValues(
+      tradeRows.map((r) => {
+        const v = tradeValue(r);
+        const gs = since(r.team, r.tradeDate);
+        const lost = r.direction === "out" ? v.value : -NEW_TEAM_SHARE * v.value;
+        const impact = v.value > 0 ? injuryShift(sport, 0.5, lost, 0) : null;
+        return {
+          id: r.id,
+          value: v.value || null,
+          valueLabel: v.shown ? `${v.shown.toFixed(1)} ${sport === "nhl" ? "pts" : sport === "mlb" ? "R+RBI/2" : "ppg"}` : null,
+          impactPct: impact,
+          impactNowPct: impact != null ? impact * tradeFade(tradeSport, gs) : null,
+          gamesSince: gs,
+        };
+      })
+    ).catch(() => {});
   }
 
   // Write: every game's number; the full breakdown for upcoming and recent games.
@@ -778,8 +889,10 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
     return s && s.home && s.away;
   }).length;
   const withInj = up.filter((o) => o.model.injuryShift !== 0).length;
+  const withTrade = up.filter((o) => o.model.tradeShift !== 0).length;
+  const withWx = up.filter((o) => o.model.weatherShift !== 0 || o.model.weatherTotalShift !== 0).length;
   return (
-    `Model scored ${out.length} game(s) (${up.length} upcoming: ${withMarket} with a betting line, ${withInj} with injury adjustments` +
+    `Model scored ${out.length} game(s) (${up.length} upcoming: ${withMarket} with a betting line, ${withInj} with injury adjustments, ${withTrade} with trade adjustments${wxSport ? `, ${withWx} weather-adjusted` : ""}` +
     (sport === "mlb" || sport === "nhl" ? `, ${withStarter} with both starters known` : "") +
     `). Calibration on ${cal.n} graded game(s): ${cal.applied ? `applied (a ${cal.a}, b ${cal.b})` : "not needed"}.`
   );

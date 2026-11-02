@@ -49,6 +49,8 @@ export interface SimInput {
   total?: number | null;
   overPrice?: number | null;
   underPrice?: number | null;
+  /** Points (runs) the weather takes off the expected total (1.37.0, lib/weather-weight.ts). */
+  totalShift?: number;
 }
 
 export interface GameSim {
@@ -202,7 +204,7 @@ export function simulateGame(sport: SportKey | "nfl", x: SimInput): GameSim {
   if (P.kind === "normal") {
     const mu = P.sdMargin * PhiInv(x.homePct);
     // The book's expected total: its line, nudged by how the over is priced.
-    const T = x.total != null ? x.total + (bookOver != null ? P.sdTotal * PhiInv(bookOver) : 0) : P.avgTotal;
+    const T = (x.total != null ? x.total + (bookOver != null ? P.sdTotal * PhiInv(bookOver) : 0) : P.avgTotal) + (x.totalShift ?? 0);
     return {
       projHome: round(T / 2 + mu / 2),
       projAway: round(T / 2 - mu / 2),
@@ -229,6 +231,7 @@ export function simulateGame(sport: SportKey | "nfl", x: SimInput): GameSim {
     }
     T = (lo + hi) / 2;
   }
+  T = Math.max(0.5, T + (x.totalShift ?? 0));
   const [lh, la] = solveCount(x.homePct, T, P.nbSize);
   const d = countDist(lh, la, P.nbSize);
   return {

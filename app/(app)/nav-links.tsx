@@ -12,6 +12,7 @@ const LINKS = [
   { href: "/best-builds", label: "Model Builds" },
   { href: "/factor-performance", label: "Factor Performance" },
   { href: "/injury-impact", label: "Injury Impact" },
+  { href: "/trades", label: "Trades" },
   { href: "/model-tracker", label: "Model Tracker" },
   { href: "/props", label: "Player Props" },
   { href: "/td-props", label: "TD Props" },

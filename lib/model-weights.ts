@@ -9,7 +9,8 @@
 // work. Results are stored in app_settings "modelWeights".
 import { db } from "@/db";
 import { appSettings, games, propPickLog, sportGames } from "@/db/schema";
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, ne, sql } from "drizzle-orm";
+import { WX_PRIOR, fitWxTotals, fitWxWinners, wxFeatures, type WxReading, type WxSport, type WxTotalRow, type WxWinRow } from "./weather-weight";
 import { SPORTS, PRESEASON, type SportKey } from "./sports/types";
 import { GAME_MODEL } from "./sports/game-model";
 import { currentSeasonYear } from "./sports/espn";
@@ -39,6 +40,39 @@ export interface WeightFit {
 export type WeightStore = Record<string, WeightFit>;
 
 const clampP = (p: number) => Math.min(0.999, Math.max(0.001, p));
+
+/** Graded games with game-time weather and a closing total (and, outside the NFL, a locked win chance). */
+async function weatherRows(sport: WxSport): Promise<{ totals: WxTotalRow[]; winners: WxWinRow[] }> {
+  const since = new Date(Date.now() - 2 * 365 * 86_400_000);
+  const totals: WxTotalRow[] = [];
+  const winners: WxWinRow[] = [];
+  if (sport === "nfl") {
+    const rows = await db
+      .select({ k: games.kickoffAt, roof: games.roof, t: games.tempF, w: games.windMph, pp: games.precipPct, tl: games.totalLine, h: games.homeScore, a: games.awayScore })
+      .from(games)
+      .where(and(eq(games.isFinal, true), gte(games.kickoffAt, since)));
+    for (const r of rows) {
+      const f = wxFeatures({ tempF: r.t, windMph: r.w, precipPct: r.pp }, r.roof === "dome" || r.roof === "closed");
+      if (!f || r.tl == null || r.h == null || r.a == null) continue;
+      totals.push({ at: r.k?.getTime() ?? 0, f, resid: r.h + r.a - r.tl });
+    }
+    return { totals, winners };
+  }
+  const rows = await db
+    .select({ k: sportGames.kickoffAt, extra: sportGames.extra, tl: sportGames.totalLine, h: sportGames.homeScore, a: sportGames.awayScore })
+    .from(sportGames)
+    .where(and(eq(sportGames.sport, sport), eq(sportGames.isFinal, true), gte(sportGames.kickoffAt, since)));
+  for (const r of rows) {
+    const ex = (r.extra ?? {}) as { wxArchive?: WxReading; weather?: WxReading; preview?: { venue?: { indoor?: boolean } }; locked?: { pct?: number } };
+    const f = wxFeatures(ex.wxArchive ?? ex.weather ?? null, ex.preview?.venue?.indoor === true);
+    if (!f || r.h == null || r.a == null) continue;
+    const at = r.k?.getTime() ?? 0;
+    if (r.tl != null) totals.push({ at, f, resid: r.h + r.a - r.tl });
+    const p = ex.locked?.pct;
+    if (typeof p === "number" && r.h !== r.a) winners.push({ at, f, p, y: r.h > r.a ? 1 : 0 });
+  }
+  return { totals, winners };
+}
 const logit = (p: number) => Math.log(clampP(p) / (1 - clampP(p)));
 const sigmoid = (z: number) => 1 / (1 + Math.exp(-z));
 
@@ -552,6 +586,27 @@ export async function refitModelWeights(): Promise<string> {
     } catch {
       // archive not reachable: keep going
     }
+  }
+
+  // Weather weight (1.37.0): totals and winners, learned per sport, kept only if better on held-out dates.
+  try {
+    const at = new Date().toISOString();
+    for (const s of ["nfl", "ncaaf", "mlb"] as const) {
+      const { totals, winners } = await weatherRows(s);
+      const prior = WX_PRIOR[s];
+      const ft = fitWxTotals(totals, prior);
+      (["wind", "cold", "wet"] as const).forEach((k, i) => {
+        next[`wx:${s}:${k}`] = { base: prior[k], n: ft.n, weight: ft.weights[i], best: ft.learned?.[i] ?? null, llCurrent: ft.msePrior, llBest: ft.mseLearned, applied: ft.applied, at };
+      });
+      msgs.push(`wx:${s} totals ${ft.applied ? "learned" : "prior"} [${ft.weights.map((x) => x.toFixed(3)).join(",")}] (n=${ft.n})`);
+      if (s !== "nfl") {
+        const fw = fitWxWinners(winners, prior);
+        next[`wx:${s}:shrink`] = { base: prior.shrink, n: fw.n, weight: fw.shrink, best: fw.best, llCurrent: fw.llPrior, llBest: fw.llBest, applied: fw.applied, at };
+        msgs.push(`wx:${s} winners shrink ${fw.shrink} (n=${fw.n})`);
+      }
+    }
+  } catch (e) {
+    msgs.push(`wx: ${e instanceof Error ? e.message : String(e)}`);
   }
 
   await db

@@ -73,3 +73,29 @@ export function describeWeather(w: GameWeather): string {
   if (w.precipPct != null) parts.push(`${w.precipPct}% chance of rain`);
   return parts.join(", ");
 }
+
+/** Measured weather at each start time (Open-Meteo archive), for past games at one place. */
+export async function archiveAt(
+  lat: number,
+  lon: number,
+  times: Date[]
+): Promise<Map<string, { tempF: number; windMph: number; precipMm: number }>> {
+  const out = new Map<string, { tempF: number; windMph: number; precipMm: number }>();
+  if (times.length === 0) return out;
+  const days = times.map((t) => t.toISOString().slice(0, 10)).sort();
+  const data = await getJson(
+    `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&start_date=${days[0]}&end_date=${days[days.length - 1]}&hourly=temperature_2m,wind_speed_10m,precipitation&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=UTC`
+  );
+  const idx = new Map<string, number>(((data?.hourly?.time ?? []) as string[]).map((t, i) => [t.slice(0, 13), i]));
+  for (const t of times) {
+    const h = t.toISOString().slice(0, 13);
+    const i = idx.get(h);
+    if (i === undefined || data.hourly.temperature_2m[i] == null) continue;
+    out.set(h, {
+      tempF: Math.round(Number(data.hourly.temperature_2m[i])),
+      windMph: Math.round(Number(data.hourly.wind_speed_10m[i])),
+      precipMm: Number(data.hourly.precipitation?.[i] ?? 0),
+    });
+  }
+  return out;
+}

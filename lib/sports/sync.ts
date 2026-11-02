@@ -162,7 +162,7 @@ export async function runSportSync(
   // Pre-game refresh (11am / 5pm ET): only what moves close to game time —
   // scores, ratings, injuries, starters, lines, weather and the model.
   // Box scores, team stats and player props wait for the full sync.
-  const REFRESH_SKIP = new Set(["teamMetrics", "playerStats", "teamGameStats", "props", "propGrading"]);
+  const REFRESH_SKIP = new Set(["teamMetrics", "playerStats", "teamGameStats", "props", "propGrading", "weatherHistory"]);
   const logStage = (stage: string, fn: () => Promise<string>): Promise<SportSyncStageResult> =>
     opts.pregame && !PREGAME_RUN.has(stage.split(":")[1])
       ? Promise.resolve({ stage, status: "skipped" as const, detail: "Skipped in pre-game props pass." })

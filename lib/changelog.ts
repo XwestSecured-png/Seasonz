@@ -33,6 +33,36 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.37.0",
+    date: "2026-11-02",
+    title: "Weather is back, and trades count",
+    summary: "Weather now moves college football and MLB picks and every outdoor over/under; trades shift each team's chance, with a new Trades tab.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Weather back in the model",
+        whatChanged:
+          "Wind, cold and rain now take points (or runs) off the projected total in NFL, college football and MLB games, which can turn an over/under into a pick. In college football and MLB, rough weather also pulls the favorite slightly toward 50-50, since fewer scoring chances make upsets likelier (the NFL's win model already had its own weather term). The starting weights are small, because the books already price the forecast. Every night the model re-learns them from graded games with game-time weather, and a learned weight replaces the starting one only when it predicts better on games it didn't learn from. The sync now also saves the measured weather for finished outdoor games so there is plenty to learn from.",
+        whatItMeans: "Windy, cold and wet games get lower totals and slightly closer win chances, and the weights keep themselves honest against real results.",
+      },
+      {
+        kind: "new",
+        title: "Trade weight",
+        whatChanged:
+          "Trades from each league's transaction wire (NFL, NBA, NHL, MLB, WNBA) now count like an injury in reverse: the team that sends a player loses his production above a replacement-level fill-in, and the team that gets him gains 80% of it at first. The effect fades as the team plays games with its new roster (6 NFL games, 20 NBA/NHL, 30 MLB), because by then its rating and form show the change, and it's capped like injuries.",
+        whatItMeans: "A team that just landed (or lost) a star is rated for it right away, instead of weeks later.",
+        href: "/trades",
+      },
+      {
+        kind: "new",
+        title: "Trades tab",
+        whatChanged: "A new Trades tab lists every trade from the last four months by league, who went where, each player's value, and how much the trade moves each team's chance now and when it happened.",
+        whatItMeans: "See at a glance which deals the model thinks matter.",
+        href: "/trades",
+      },
+    ],
+  },
+  {
     version: "1.36.0",
     date: "2026-11-01",
     title: "Background work moved to GitHub",

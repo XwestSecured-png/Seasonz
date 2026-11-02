@@ -83,6 +83,8 @@ import { buildScoringBoard, saveScoringBoard } from "./scoring-board";
 import { gradePropLog, logPropPicks } from "./prop-log";
 import { saveProjections } from "./prop-score";
 import { MIN_MODEL_WIN_PCT } from "./confidence";
+import { wxFeatures, wxTotalShift, wxWeightsFrom } from "./weather-weight";
+import { netTradeValue, nflTradeValues, NFL_TRADE_CAP, NEW_TEAM_SHARE, recentTrades, saveTradeValues, syncTrades, tradeFade } from "./trades";
 import { sql, eq, and, desc, gt, isNull, inArray } from "drizzle-orm";
 
 export interface SyncStageResult {
@@ -368,6 +370,8 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
     })
   );
 
+  results.push(await logStage("trades", () => syncTrades("nfl")));
+
   results.push(
     await logStage("elo", async () => {
       // Weather needs each team's season-to-date pass reliance; referee bias
@@ -394,6 +398,13 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
       // written to injuryReports later, without fetching injuries twice.
       impactRows = computeInjuryImpact(injuries, schedule, playerStats);
       const injuryImpactByTeam = sumTeamInjuryImpact(impactRows);
+      // Trades (1.37.0): players moved in the last few months, valued like injuries, faded by games since.
+      const nflTrades = await recentTrades("nfl").catch(() => []);
+      const nflTradeVal = nflTradeValues(nflTrades, playerStats);
+      const playedAt = (team: string) =>
+        schedule.filter((g) => g.isFinal && (g.homeTeam === team || g.awayTeam === team) && g.kickoffAt).map((g) => g.kickoffAt!.getTime());
+      const gamesSinceNfl = (before: number) => (team: string, since: Date) => playedAt(team).filter((x) => x > since.getTime() && x < before).length;
+      let tradeAdjusted = 0;
       // The injury report is only ever "this week's" — never apply it to an
       // already-final game (no history) or to a future game beyond the very
       // next one for each team.
@@ -516,6 +527,16 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
         );
         if (epaAdjPct !== 0) epaAdjusted++;
 
+        let tradeAdjPct = 0;
+        if (!r.game.isFinal && nflTrades.length) {
+          const before = r.game.kickoffAt?.getTime() ?? Date.now();
+          const v = (row: (typeof nflTrades)[number]) => nflTradeVal.get(row.id)?.value ?? 0;
+          const h = netTradeValue("nfl", r.game.homeTeam, nflTrades, v, gamesSinceNfl(before));
+          const a = netTradeValue("nfl", r.game.awayTeam, nflTrades, v, gamesSinceNfl(before));
+          tradeAdjPct = Math.max(-NFL_TRADE_CAP, Math.min(NFL_TRADE_CAP, h - a));
+          if (tradeAdjPct !== 0) tradeAdjusted++;
+        }
+
         const finalHomeWinPct = Math.max(
           0.02,
           Math.min(
@@ -528,7 +549,8 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
               espn.totalAdjPct +
               ngs.totalAdjPct +
               injuryAdjPct +
-              epaAdjPct
+              epaAdjPct +
+              tradeAdjPct
           )
         );
         finalHomeWinPctByGame.set(
@@ -565,6 +587,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
             injuryAdjPct,
             ngsSeparationAdjPct: ngs.ngsSeparationAdjPct,
             pressureAdjPct: ngs.pressureAdjPct,
+            tradeAdjPct,
           })
           .where(
             sql`${games.season} = ${r.game.season} AND ${games.week} = ${r.game.week} AND ${games.homeTeam} = ${r.game.homeTeam} AND ${games.awayTeam} = ${r.game.awayTeam}`
@@ -593,6 +616,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
             { factor: "NGS_SEPARATION", adjPct: ngs.ngsSeparationAdjPct },
             { factor: "PRESSURE", adjPct: ngs.pressureAdjPct },
             { factor: "EPA", adjPct: epaAdjPct },
+            { factor: "TRADE", adjPct: tradeAdjPct },
           ];
           for (const nf of namedFactors) {
             if (nf.adjPct === 0) continue;
@@ -649,7 +673,18 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
           : `${espnAdjusted} ESPN-adjusted (FPI for ${espnFpiMap.size} team(s)${qbrFailures > 0 ? `, QBR fetch failed for ${qbrFailures} week(s)` : ""}).`;
 
       const blend = await applyNflLineBlend(season);
-      return `Line blend: ${blend.blended} of ${blend.locked} upcoming game(s) had a line. Elo replayed: ${eloResults.length} game(s), ${finalRatings.size} team(s) rated (${weatherAdjusted} weather-adjusted, ${restTravelAdjusted} rest/travel-adjusted, ${refAdjusted} referee-adjusted, ${factorsAdjusted} team-factor-adjusted, ${injuryAdjusted} injury-adjusted, ${epaAdjusted} EPA-adjusted, ${ngsAdjusted} Next Gen Stats/pressure-adjusted${ngsError ? ` — NGS unavailable: ${ngsError}` : ""}). ${espnDetail} ${snapshotsWritten} factor snapshot(s) recorded for calibration tracking.`;
+      if (nflTrades.length) {
+        const since = gamesSinceNfl(Date.now());
+        await saveTradeValues(
+          nflTrades.map((t) => {
+            const v = nflTradeVal.get(t.id) ?? { value: 0, label: null };
+            const gs = since(t.team, t.tradeDate);
+            const impact = v.value > 0 ? (t.direction === "out" ? -v.value : NEW_TEAM_SHARE * v.value) : null;
+            return { id: t.id, value: v.value || null, valueLabel: v.label, impactPct: impact, impactNowPct: impact != null ? impact * tradeFade("nfl", gs) : null, gamesSince: gs };
+          })
+        ).catch(() => {});
+      }
+      return `Line blend: ${blend.blended} of ${blend.locked} upcoming game(s) had a line. Elo replayed: ${eloResults.length} game(s), ${finalRatings.size} team(s) rated (${weatherAdjusted} weather-adjusted, ${restTravelAdjusted} rest/travel-adjusted, ${refAdjusted} referee-adjusted, ${factorsAdjusted} team-factor-adjusted, ${injuryAdjusted} injury-adjusted, ${epaAdjusted} EPA-adjusted, ${ngsAdjusted} Next Gen Stats/pressure-adjusted, ${tradeAdjusted} trade-adjusted${ngsError ? ` — NGS unavailable: ${ngsError}` : ""}). ${espnDetail} ${snapshotsWritten} factor snapshot(s) recorded for calibration tracking.`;
     })
   );
 
@@ -937,6 +972,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
       await logStage("gameOdds", async () => {
         const { moneylines, spreads, totals, note: boardNote } = await fetchGameOdds();
         const teamScoring = computeTeamScoring(schedule);
+        const nflWx = wxWeightsFrom((await getModelWeights().catch(() => ({}))) as Record<string, { weight: number }>, "nfl");
 
         const keyOf = (home: string, away: string) => `${home}|${away}`;
         const spreadByTeams = new Map<string, (typeof spreads)[number]>();
@@ -997,10 +1033,16 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
             teamScoring.get(home),
             teamScoring.get(away)
           );
+          // Weather (1.37.0): wind, cold and rain take points off the projected total.
+          const wxShift = wxTotalShift(
+            "nfl",
+            wxFeatures({ tempF: game.tempF, windMph: game.windMph, precipPct: game.precipPct }, game.roof === "dome" || game.roof === "closed"),
+            nflWx
+          );
           const totalResult =
             totalLine && predictedTotal !== null
               ? computeTotalEdge(
-                  predictedTotal,
+                  predictedTotal + wxShift,
                   totalLine.totalLine,
                   totalLine.overPriceAmerican,
                   totalLine.underPriceAmerican

@@ -100,6 +100,8 @@ export const games = pgTable(
     // (lib/ngs.ts, lib/ngs-matchup.ts).
     ngsSeparationAdjPct: real("ngs_separation_adj_pct"),
     pressureAdjPct: real("pressure_adj_pct"),
+    // 1.37.0: players traded in/out in the last few weeks (lib/trades.ts), home-perspective, fades as the new roster plays.
+    tradeAdjPct: real("trade_adj_pct"),
     // ESPN's own analyst metrics — Football Power Index and Total QBR, same
     // small-and-capped treatment (see lib/espn-factors.ts). fpi/sos/qbr raw
     // values are stored for display even though only fpiAdjPct/qbrAdjPct are
@@ -1310,4 +1312,33 @@ export const lineArchive = pgTable(
     key: uniqueIndex("line_archive_key").on(t.sport, t.season, t.week, t.market, t.gameKey, t.player, t.statType, t.line, t.side, t.book),
     playerIdx: index("line_archive_player_idx").on(t.sport, t.player, t.statType, t.line),
   })
+);
+
+// ---------------------------------------------------------------------------
+// Trades (1.37.0): one row per player per team side of a trade, from ESPN's
+// transactions feed (lib/trades.ts). "out" rows are the team that sent the
+// player, "in" rows the team that received him. value/impactPct are filled
+// by each sport's model stage: the player's production above a replacement
+// and what it is worth to that team's chance of winning today (fading as
+// the team plays games with its new roster).
+export const trades = pgTable(
+  "trades",
+  {
+    id: serial("id").primaryKey(),
+    sport: text("sport").notNull(),
+    tradeDate: timestamp("trade_date").notNull(),
+    team: text("team").notNull(),
+    direction: text("direction").notNull(), // "in" | "out"
+    player: text("player").notNull(),
+    position: text("position"),
+    otherTeam: text("other_team"),
+    description: text("description").notNull(),
+    value: real("value"),
+    valueLabel: text("value_label"),
+    impactPct: real("impact_pct"),
+    impactNowPct: real("impact_now_pct"),
+    gamesSince: integer("games_since"),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("trades_uniq").on(t.sport, t.team, t.direction, t.player, t.tradeDate)]
 );
