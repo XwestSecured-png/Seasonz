@@ -29,6 +29,7 @@ const SLOTS: { hour: number; kind: "sync" | "refresh" }[] = [
 
 const clean = (s: string) =>
   s
+    .replace(/postgres(?:ql)?:\/\/[^\s"']+/gi, "postgres://…")
     .replace(/(https?:\/\/[^\s?"']+)\?[^\s"']*/g, "$1?…")
     .replace(/(api[_-]?key|apikey|key|token)=[^&\s"']+/gi, "$1=…")
     .slice(0, 160);
@@ -159,5 +160,11 @@ main()
   .then(() => process.exit(0))
   .catch((e) => {
     console.error(`failed: ${clean(e instanceof Error ? e.message : String(e))}`);
+    // The database driver's own reason (bad password, wrong host...) is on .cause.
+    const cause = e instanceof Error ? (e as { cause?: unknown }).cause : null;
+    if (cause) {
+      const c = cause as { message?: string; code?: string; errno?: string };
+      console.error(`cause: ${clean(`${c.code ?? c.errno ?? ""} ${c.message ?? String(cause)}`)}`);
+    }
     process.exit(1);
   });
