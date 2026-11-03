@@ -110,6 +110,21 @@ async function main() {
   const now = new Date();
   const forced = process.argv.find((a) => a.startsWith("--task="))?.split("=")[1];
   console.log(`seasonz cron at ${now.toISOString()}${forced ? ` (task=${forced})` : ""}`);
+  if (forced === "keys") {
+    // Shape of each odds key (never the key): spots pasting problems.
+    for (const name of ["PROPLINE_API_KEY", "PROPLINE_API_KEYS_FREE", "SPORTSGAMEODDS_API_KEY", "ODDS_API_KEYS_FREE"]) {
+      const v = process.env[name] ?? "";
+      if (!v) {
+        console.log(`${name}: not set`);
+        continue;
+      }
+      console.log(
+        `${name}: length ${v.length}, trimmed ${v.trim().length}, spaces inside ${/\s/.test(v.trim())}, quotes ${/["'‘’“”]/.test(v)}, brackets ${/[[\]<>{}]/.test(v)}, ` +
+          `commas ${(v.match(/,/g) ?? []).length}, has '=' ${v.includes("=")}, looks like a name ${/^[A-Z_]+$/.test(v.trim())}, chars ${/^[A-Za-z0-9_\-.,\s]+$/.test(v) ? "plain" : "unusual"}`
+      );
+    }
+    return;
+  }
 
   // 1. Full sync / pre-game refresh, once per slot.
   if (forced === "sync" || forced === "refresh") {

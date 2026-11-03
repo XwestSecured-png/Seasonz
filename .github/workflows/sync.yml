@@ -15,7 +15,7 @@ on:
         required: false
         default: ""
         type: choice
-        options: ["", sync, refresh, pregame, alerts, refit]
+        options: ["", sync, refresh, pregame, alerts, refit, keys]
 
 concurrency:
   group: seasonz-sync
