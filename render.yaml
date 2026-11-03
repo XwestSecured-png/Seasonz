@@ -1,0 +1,45 @@
+# Render Blueprint (free plan) for the Seasonz website.
+#
+# The site only serves pages here: syncs, pre-game props, alerts and the
+# nightly refit run on GitHub Actions (.github/workflows/sync.yml), so the
+# free instance (512 MB, sleeps after 15 idle minutes) is enough.
+#
+# Setup: render.com -> New -> Blueprint -> pick this repo. Render asks for
+# every value marked `sync: false`; the generated ones are created for you.
+services:
+  - type: web
+    name: seasonz
+    runtime: node
+    plan: free
+    region: virginia # next to the Supabase database (us-east-1)
+    branch: main
+    autoDeploy: true
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      # Required: the same Supabase Transaction pooler link saved in GitHub.
+      - key: DATABASE_URL
+        sync: false
+      # Signs login cookies (everyone signs in again once after the move).
+      - key: SESSION_SECRET
+        generateValue: true
+      # Protects /api/sync and /api/alerts if they're ever called directly.
+      - key: CRON_SECRET
+        generateValue: true
+      - key: ADMIN_USERNAMES
+        value: BankrollKing
+      # Optional: master invite code for sign-ups.
+      - key: APP_PASSWORD
+        sync: false
+      # Odds keys: only used by the admin "Sync now" button on the site.
+      - key: PROPLINE_API_KEY
+        sync: false
+      - key: SPORTSGAMEODDS_API_KEY
+        sync: false
+      - key: ODDS_API_KEYS_FREE
+        sync: false
