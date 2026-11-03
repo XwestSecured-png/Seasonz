@@ -66,10 +66,25 @@ interface KeyState {
 const RETRY_AFTER_MS = 24 * 60 * 60 * 1000;
 const STATE_TTL_MS = 5 * 60 * 1000;
 
+/**
+ * A key as pasted into a settings box, cleaned: surrounding spaces and
+ * quotes, a "NAME =" or "export NAME=" prefix, and "Bearer " are removed,
+ * so `PROPLINE_API_KEY = "abc123"` reads as abc123.
+ */
+export function cleanKey(raw: string | undefined | null): string {
+  let k = (raw ?? "").trim();
+  k = k.replace(/^export\s+/i, "");
+  const m = /^[A-Za-z_][A-Za-z0-9_]*\s*[:=]\s*(.+)$/.exec(k);
+  if (m) k = m[1].trim();
+  k = k.replace(/^["'\u2018\u2019\u201c\u201d]+|["'\u2018\u2019\u201c\u201d;]+$/g, "").trim();
+  k = k.replace(/^Bearer\s+/i, "").trim();
+  return k;
+}
+
 function splitList(raw: string | undefined): string[] {
   return (raw ?? "")
     .split(/[,\n]/)
-    .map((s) => s.trim())
+    .map((s) => cleanKey(s))
     .filter(Boolean);
 }
 
@@ -92,7 +107,7 @@ export function getKeyPool(): PoolKey[] {
   splitList(process.env.PROPLINE_API_KEYS_FREE).forEach((k, i) =>
     add("propline", "free", k, `Free ${i + 1} (PropLine)`)
   );
-  const paid = (process.env.PROPLINE_API_KEY || process.env.propline_api_key)?.trim();
+  const paid = cleanKey(process.env.PROPLINE_API_KEY || process.env.propline_api_key);
   if (paid) add("propline", "paid", paid, "Paid (PropLine)");
   return pool;
 }

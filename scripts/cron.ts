@@ -15,6 +15,7 @@ import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { runFullSync } from "@/lib/sync";
 import { runSportSync, sportsDueForPregame } from "@/lib/sports/sync";
 import { runMaintenance } from "@/lib/maintenance";
+import { cleanKey } from "@/lib/odds-provider";
 import type { SportKey } from "@/lib/sports/types";
 
 const OTHER: SportKey[] = ["nba", "wnba", "nhl", "mlb", "ncaaf", "ncaab"];
@@ -120,7 +121,7 @@ async function main() {
       }
       console.log(
         `${name}: length ${v.length}, trimmed ${v.trim().length}, spaces inside ${/\s/.test(v.trim())}, quotes ${/["'‘’“”]/.test(v)}, brackets ${/[[\]<>{}]/.test(v)}, ` +
-          `commas ${(v.match(/,/g) ?? []).length}, has '=' ${v.includes("=")}, looks like a name ${/^[A-Z_]+$/.test(v.trim())}, chars ${/^[A-Za-z0-9_\-.,\s]+$/.test(v) ? "plain" : "unusual"}`
+          `cleaned length ${cleanKey(v).length}, commas ${(v.match(/,/g) ?? []).length}, has '=' ${v.includes("=")}, looks like a name ${/^[A-Z_]+$/.test(v.trim())}, chars ${/^[A-Za-z0-9_\-.,\s]+$/.test(v) ? "plain" : "unusual"}`
       );
     }
     return;

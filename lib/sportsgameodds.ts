@@ -26,6 +26,7 @@
 // nflverse's CSV columns, to avoid a silently-empty feature from a wrong
 // field name.
 
+import { cleanKey } from "./odds-provider";
 import type { OddsEvent, MoneylineOdds, PropOutcome, SpreadOdds, TotalOdds } from "./odds";
 
 const SGO_BASE = "https://api.sportsgameodds.com/v2";
@@ -61,7 +62,7 @@ function bookDisplayName(bookmakerId: string): string {
 }
 
 function getSgoKey(): string | undefined {
-  return (process.env.SPORTSGAMEODDS_API_KEY || process.env.sportsgame_odds_api_key)?.trim() || undefined;
+  return cleanKey(process.env.SPORTSGAMEODDS_API_KEY || process.env.sportsgame_odds_api_key) || undefined;
 }
 
 /** Whether a SportsGameOdds API key is configured at all. */
