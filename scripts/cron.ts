@@ -124,6 +124,22 @@ async function main() {
           `cleaned length ${cleanKey(v).length}, commas ${(v.match(/,/g) ?? []).length}, has '=' ${v.includes("=")}, looks like a name ${/^[A-Z_]+$/.test(v.trim())}, chars ${/^[A-Za-z0-9_\-.,\s]+$/.test(v) ? "plain" : "unusual"}`
       );
     }
+    // Live check: one light call per provider, printing only the status code.
+    const code = async (url: string, headers: Record<string, string> = {}) => {
+      try {
+        const r = await fetch(url, { headers: { Accept: "application/json", ...headers } });
+        const body = r.ok ? "" : (await r.text()).slice(0, 120).replace(/[A-Za-z0-9]{20,}/g, "…");
+        return `${r.status}${body ? ` ${body}` : ""}`;
+      } catch (e) {
+        return `network error ${e instanceof Error ? e.message : String(e)}`;
+      }
+    };
+    const pl = cleanKey(process.env.PROPLINE_API_KEY);
+    if (pl) console.log(`PropLine paid key check: ${await code(`https://api.prop-line.com/v1/sports?apiKey=${encodeURIComponent(pl)}`)}`);
+    const sgo = cleanKey(process.env.SPORTSGAMEODDS_API_KEY);
+    if (sgo) console.log(`SportsGameOdds key check: ${await code("https://api.sportsgameodds.com/v2/account/usage", { "X-Api-Key": sgo })}`);
+    for (const [i, k] of (process.env.ODDS_API_KEYS_FREE ?? "").split(/[,\n]/).map(cleanKey).filter(Boolean).entries())
+      console.log(`The Odds API key ${i + 1} check: ${await code(`https://api.the-odds-api.com/v4/sports?apiKey=${encodeURIComponent(k)}`)}`);
     return;
   }
 
