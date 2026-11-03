@@ -165,6 +165,19 @@ main()
     if (cause) {
       const c = cause as { message?: string; code?: string; errno?: string };
       console.error(`cause: ${clean(`${c.code ?? c.errno ?? ""} ${c.message ?? String(cause)}`)}`);
+      // Non-secret shape of DATABASE_URL, to spot a malformed link (never the password itself).
+      const raw = process.env.DATABASE_URL ?? "";
+      try {
+        const u = new URL(raw.trim());
+        const pw = decodeURIComponent(u.password);
+        console.error(
+          `link check: scheme=${u.protocol} user=${decodeURIComponent(u.username)} host=${u.hostname} port=${u.port} db=${u.pathname} ` +
+            `password length=${pw.length} brackets=${/[[\]]/.test(pw)} spaces=${/\s/.test(pw)} quotes=${/["'‘’“”]/.test(raw)} ` +
+            `extra spaces around link=${raw !== raw.trim()} has ?options=${u.search !== ""}`
+        );
+      } catch {
+        console.error(`link check: not a valid URL (length ${raw.length}, starts with "${raw.trim().slice(0, 11)}")`);
+      }
     }
     process.exit(1);
   });
