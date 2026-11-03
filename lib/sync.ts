@@ -402,7 +402,7 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
       const nflTrades = await recentTrades("nfl").catch(() => []);
       const nflTradeVal = nflTradeValues(nflTrades, playerStats);
       const playedAt = (team: string) =>
-        schedule.filter((g) => g.isFinal && (g.homeTeam === team || g.awayTeam === team) && g.kickoffAt).map((g) => g.kickoffAt!.getTime());
+        schedule.filter((g) => (g.homeTeam === team || g.awayTeam === team) && g.kickoffAt).map((g) => g.kickoffAt!.getTime());
       const gamesSinceNfl = (before: number) => (team: string, since: Date) => playedAt(team).filter((x) => x > since.getTime() && x < before).length;
       let tradeAdjusted = 0;
       // The injury report is only ever "this week's" — never apply it to an

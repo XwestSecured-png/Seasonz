@@ -617,8 +617,10 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
   for (const name of perPlayer.keys()) byKey.set(nameKey(name), name);
   const tradeValue = (r: TradeRow) => valueOf(byKey.get(nameKey(r.player)) ?? r.player);
   const teamGameTimes = new Map<string, number[]>();
+  // Every scheduled game counts (played or not): a game in January has the
+  // games between the trade and January behind it, so the trade has faded by then.
   for (const g of games) {
-    if (!g.isFinal || g.seasonType === PRESEASON) continue;
+    if (g.seasonType === PRESEASON) continue;
     for (const t of [g.homeTeam, g.awayTeam]) teamGameTimes.set(t, [...(teamGameTimes.get(t) ?? []), ms(g)]);
   }
   const gamesSinceAt = (before: number) => (team: string, since: Date) =>
