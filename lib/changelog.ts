@@ -33,6 +33,22 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.38.0",
+    date: "2026-11-03",
+    title: "Confidence that matches results",
+    summary: "Each sport's win chances now learn how confident they should be from that sport's graded games.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Self-calibrating win chances",
+        whatChanged:
+          "The model's own win chance (before the betting line) can run too timid or too bold for a sport. On this season's graded games it was far too timid in college basketball (big favorites won more often than it said) and slightly off in the NBA and NHL. Each night the model now learns a correction per sport, fitting on one half of the dates and checking on the other, and uses it only when it clearly predicts better on the games it didn't learn from. On this season's games that check improved college basketball's accuracy score (log loss) from .399 to .359 and the NBA's from .641 to .638; college football was already well calibrated, so it's left as is.",
+        whatItMeans: "A 75% pick means about 75%, sport by sport, and the model keeps checking itself as results come in.",
+        href: "/results",
+      },
+    ],
+  },
+  {
     version: "1.37.0",
     date: "2026-11-02",
     title: "Weather is back, and trades count",

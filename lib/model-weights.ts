@@ -10,6 +10,7 @@
 import { db } from "@/db";
 import { appSettings, games, propPickLog, sportGames } from "@/db/schema";
 import { and, eq, gte, inArray, ne, sql } from "drizzle-orm";
+import { fitGameCal, type GameCalRow } from "./game-cal";
 import { WX_PRIOR, fitWxTotals, fitWxWinners, wxFeatures, type WxReading, type WxSport, type WxTotalRow, type WxWinRow } from "./weather-weight";
 import { SPORTS, PRESEASON, type SportKey } from "./sports/types";
 import { GAME_MODEL } from "./sports/game-model";
@@ -40,6 +41,22 @@ export interface WeightFit {
 export type WeightStore = Record<string, WeightFit>;
 
 const clampP = (p: number) => Math.min(0.999, Math.max(0.001, p));
+
+/** Graded games' raw model-only chance (before calibration), last 365 days. */
+async function gameCalRows(sport: SportKey): Promise<GameCalRow[]> {
+  const rows = await db
+    .select({ k: sportGames.kickoffAt, extra: sportGames.extra, h: sportGames.homeScore, a: sportGames.awayScore })
+    .from(sportGames)
+    .where(and(eq(sportGames.sport, sport), eq(sportGames.isFinal, true), ne(sportGames.seasonType, PRESEASON), gte(sportGames.kickoffAt, new Date(Date.now() - 365 * 86_400_000))));
+  const out: GameCalRow[] = [];
+  for (const r of rows) {
+    const l = (r.extra as { locked?: { modelRaw?: number; modelOnly?: number } } | null)?.locked;
+    const p = l?.modelRaw ?? l?.modelOnly;
+    if (typeof p !== "number" || r.h == null || r.a == null || r.h === r.a) continue;
+    out.push({ at: r.k?.getTime() ?? 0, p, y: r.h > r.a ? 1 : 0 });
+  }
+  return out;
+}
 
 /** Graded games with game-time weather and a closing total (and, outside the NFL, a locked win chance). */
 async function weatherRows(sport: WxSport): Promise<{ totals: WxTotalRow[]; winners: WxWinRow[] }> {
@@ -314,6 +331,16 @@ async function fitAdjStrength(sport: string): Promise<Omit<WeightFit, "at"> | nu
 }
 
 /** Learned adjustment strength for a sport; 1 until enough graded picks. */
+/** Game-model calibration in use for a sport (identity until learned and proven). */
+export function gameCalFor(store: WeightStore, sport: string): { a: number; b: number } {
+  const a = store[`gamecal:${sport}:a`];
+  const b = store[`gamecal:${sport}:b`];
+  if (!a?.applied || !b?.applied) return { a: 0, b: 1 };
+  const av = Math.max(-0.3, Math.min(0.3, a.weight));
+  const bv = Math.max(0.5, Math.min(2.5, b.weight));
+  return { a: av, b: bv };
+}
+
 export function adjStrengthFor(store: WeightStore, sport: string): number {
   const f = store[`adj:${sport}`];
   return f && typeof f.weight === "number" && f.weight >= 0 && f.weight <= 2 ? f.weight : 1;
@@ -586,6 +613,20 @@ export async function refitModelWeights(): Promise<string> {
     } catch {
       // archive not reachable: keep going
     }
+  }
+
+  // Game-model confidence calibration (1.38.0): per sport, held-out gated.
+  try {
+    const at = new Date().toISOString();
+    for (const s of OTHER) {
+      const rows = await gameCalRows(s);
+      const c = fitGameCal(rows);
+      next[`gamecal:${s}:a`] = { base: 0, n: c.n, weight: c.a, best: c.a, llCurrent: c.llRaw, llBest: c.llHeld, applied: c.applied, at };
+      next[`gamecal:${s}:b`] = { base: 1, n: c.n, weight: c.b, best: c.b, llCurrent: c.llRaw, llBest: c.llHeld, applied: c.applied, at };
+      msgs.push(`gamecal:${s} ${c.applied ? `a ${c.a} b ${c.b}` : "none"} (n=${c.n}${c.llRaw != null ? `, ll ${c.llRaw} -> held-out ${c.llHeld}` : ""})`);
+    }
+  } catch (e) {
+    msgs.push(`gamecal: ${e instanceof Error ? e.message : String(e)}`);
   }
 
   // Weather weight (1.37.0): totals and winners, learned per sport, kept only if better on held-out dates.

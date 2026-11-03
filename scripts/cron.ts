@@ -139,6 +139,13 @@ async function main() {
   }
 
   // 2. Pre-game props pass: sports with games 30-150 minutes away and no props pass in 110 minutes.
+  // Force the nightly self-learning refit now (and print what it learned).
+  if (forced === "refit") {
+    const out = await runMaintenance(now, true);
+    for (const [k, v] of Object.entries(out)) for (const part of String(v ?? "").split(", ")) console.log(`${k}: ${clean(part)}`);
+    return;
+  }
+
   if (!forced || forced === "pregame") {
     const due = await sportsDueForPregame();
     if (due.length === 0) console.log("pregame: nothing due");

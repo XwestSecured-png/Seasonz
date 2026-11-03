@@ -11,7 +11,8 @@ import { db } from "@/db";
 import { sportGames, sportInjuryReports, sportPlayerGameStats, sportTeamGameStats, sportTeams } from "@/db/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { SPORTS, PRESEASON, type SportKey } from "./types";
-import { getModelWeights, weightFor } from "../model-weights";
+import { getModelWeights, weightFor, gameCalFor } from "../model-weights";
+import { applyGameCal } from "../game-cal";
 import { fetchScoreboardPreview, fetchEspnEventMoneyline, type PreviewEvent } from "./espn";
 import { fetchGameOddsForSport, pickSpread, pickTotal } from "./game-odds";
 import { simulateGame } from "./game-sim";
@@ -449,6 +450,7 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
   const P = GAME_MODEL[sport];
   const weightStore = await getModelWeights().catch(() => ({}));
   const modelWeight = weightFor(weightStore, sport);
+  const gameCal = gameCalFor(weightStore, sport);
   const wxSport: WxSport | null = sport === "mlb" || sport === "ncaaf" ? sport : null;
   const wxW = wxSport ? wxWeightsFrom(weightStore, wxSport) : null;
   const games = await db
@@ -725,8 +727,10 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
     // Weather (MLB, college football): rough conditions pull the favorite toward 50-50.
     const wxF = wxSport && upcoming ? wxFeatures(ex.weather ?? null, ex.preview?.venue?.indoor === true) : null;
     const beforeWx = pModel + injShift + tradeShift;
-    const modelOnly = wxW && wxF ? wxWinShrink(beforeWx, wxF, wxW) : beforeWx;
-    const weatherShift = modelOnly - beforeWx;
+    const modelRaw = wxW && wxF ? wxWinShrink(beforeWx, wxF, wxW) : beforeWx;
+    const weatherShift = modelRaw - beforeWx;
+    // Confidence calibration learned from this sport's graded games (lib/game-cal.ts).
+    const modelOnly = applyGameCal(modelRaw, gameCal);
 
     // Market: the consensus of every book's no-vig line (sharp books
     // count double), else ESPN's line.
@@ -782,6 +786,8 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
         homeOut: homeOut.slice(0, 8),
         awayOut: awayOut.slice(0, 8),
         modelOnlyPct: modelOnly,
+        modelRawPct: modelRaw,
+        gameCalShift: modelOnly - modelRaw,
         marketPct,
         marketSource,
         marketShift: blended - modelOnly,
@@ -865,7 +871,7 @@ async function runModel(sport: SportKey, year: number): Promise<string> {
     "locked",
     out
       .filter((o) => !finalById.get(o.id) && (kickById.get(o.id) ?? 0) > now)
-      .map((o) => ({ id: o.id, value: { pct: o.pct, at: new Date(now).toISOString(), market: o.model.marketPct ?? null, modelOnly: o.model.modelOnlyPct ?? null } }))
+      .map((o) => ({ id: o.id, value: { pct: o.pct, at: new Date(now).toISOString(), market: o.model.marketPct ?? null, modelOnly: o.model.modelOnlyPct ?? null, modelRaw: o.model.modelRawPct ?? null } }))
   );
   // Opening snapshot: the first time a game has a line, record the line
   // and the model's own number. Comparing it with the closing line (the
