@@ -92,6 +92,15 @@ export function ShieldIcon({ className }: IconProps) {
   );
 }
 
+export function SwapIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className} aria-hidden>
+      <path d="M4 8h14l-3.5-3.5" />
+      <path d="M20 16H6l3.5 3.5" />
+    </svg>
+  );
+}
+
 export function StarIcon({ className }: IconProps) {
   return (
     <svg {...base} className={className} aria-hidden>
