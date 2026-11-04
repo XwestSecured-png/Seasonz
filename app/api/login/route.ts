@@ -10,16 +10,23 @@ export async function POST(req: NextRequest) {
   const password = String(form.get("password") ?? "");
   const next = String(form.get("next") ?? "/");
 
-  const fail = () => {
+  const fail = (code = "1") => {
     const url = new URL("/login", req.url);
-    url.searchParams.set("error", "1");
+    url.searchParams.set("error", code);
     url.searchParams.set("next", next);
     return NextResponse.redirect(url, { status: 303 });
   };
 
   if (!username || !password) return fail();
 
-  const [user] = await db.select().from(users).where(eq(users.username, username));
+  // If the database can't be reached, say so on the login page instead of a blank error page.
+  let user: typeof users.$inferSelect | undefined;
+  try {
+    [user] = await db.select().from(users).where(eq(users.username, username));
+  } catch (e) {
+    console.error("login: database unavailable", e instanceof Error ? e.message : e);
+    return fail("server");
+  }
   if (!user || !verifyPasswordHash(password, user.passwordHash) || user.isBanned) {
     return fail();
   }

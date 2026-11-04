@@ -36,7 +36,9 @@ export default async function LoginPage({
           />
           {error && (
             <p className="text-sm text-red-400">
-              Wrong username or password — try again.
+              {error === "server"
+                ? "Can't reach the database right now — please try again in a minute."
+                : "Wrong username or password — try again."}
             </p>
           )}
           <button
