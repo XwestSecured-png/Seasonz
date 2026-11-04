@@ -1,10 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { redirectTo } from "@/lib/redirect";
 import { COOKIE_NAME } from "@/lib/auth";
 
-export async function POST(req: NextRequest) {
-  const res = NextResponse.redirect(new URL("/login", req.url), {
-    status: 303,
-  });
+export async function POST() {
+  const res = redirectTo("/login");
   res.cookies.delete(COOKIE_NAME);
   return res;
 }

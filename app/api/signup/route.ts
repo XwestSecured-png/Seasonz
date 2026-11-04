@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { redirectTo } from "@/lib/redirect";
+import { NextRequest } from "next/server";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -18,9 +19,7 @@ export async function POST(req: NextRequest) {
   const confirmPassword = String(form.get("confirmPassword") ?? "");
 
   const fail = (error: string) => {
-    const url = new URL("/signup", req.url);
-    url.searchParams.set("error", error);
-    return NextResponse.redirect(url, { status: 303 });
+    return redirectTo(`/signup?error=${encodeURIComponent(error)}`);
   };
 
   // A platform invite code from the admin list (lib/invite-codes.ts), or the
@@ -49,7 +48,7 @@ export async function POST(req: NextRequest) {
     .returning();
   if (listed) await recordInviteUse(listed.id);
 
-  const res = NextResponse.redirect(new URL("/", req.url), { status: 303 });
+  const res = redirectTo("/");
   res.cookies.set(COOKIE_NAME, createSessionToken(user.id), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

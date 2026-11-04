@@ -1,3 +1,4 @@
+import { siteOrigin } from "@/lib/redirect";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { users } from "@/db/schema";
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const origin = req.nextUrl.origin;
+  const origin = siteOrigin(req);
   const session = await stripe.identity.verificationSessions.create({
     type: "document",
     metadata: { appUserId: String(user.id) },

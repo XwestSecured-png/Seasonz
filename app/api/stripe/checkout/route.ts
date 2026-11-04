@@ -1,3 +1,4 @@
+import { siteOrigin } from "@/lib/redirect";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { users } from "@/db/schema";
@@ -60,7 +61,7 @@ export async function POST(req: NextRequest) {
     await db.update(users).set({ stripeCustomerId: customerId }).where(eq(users.id, user.id));
   }
 
-  const origin = req.nextUrl.origin;
+  const origin = siteOrigin(req);
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer: customerId,

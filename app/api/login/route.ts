@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { redirectTo } from "@/lib/redirect";
+import { NextRequest } from "next/server";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -11,10 +12,7 @@ export async function POST(req: NextRequest) {
   const next = String(form.get("next") ?? "/");
 
   const fail = (code = "1") => {
-    const url = new URL("/login", req.url);
-    url.searchParams.set("error", code);
-    url.searchParams.set("next", next);
-    return NextResponse.redirect(url, { status: 303 });
+    return redirectTo(`/login?error=${encodeURIComponent(code)}&next=${encodeURIComponent(next)}`);
   };
 
   if (!username || !password) return fail();
@@ -31,9 +29,7 @@ export async function POST(req: NextRequest) {
     return fail();
   }
 
-  const res = NextResponse.redirect(new URL(next || "/", req.url), {
-    status: 303,
-  });
+  const res = redirectTo(next || "/");
   res.cookies.set(COOKIE_NAME, createSessionToken(user.id), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

@@ -31,6 +31,18 @@ for (const [label, dev, b, scheme] of [["iPhone Safari light", devices["iPhone 1
     console.log(`  text: ${text || "(empty)"}`);
     for (const e of [...new Set(errs)].slice(0, 15)) console.log(`  ! ${e}`);
   }
+  // Submit the login form with a made-up account: the browser must land back on this site, not "localhost".
+  try {
+    await page.goto(base + "/login", { waitUntil: "networkidle", timeout: 120000 });
+    await page.fill('input[name="username"]', "site-check-nobody");
+    await page.fill('input[name="password"]', "not-a-real-password");
+    await Promise.all([page.waitForLoadState("networkidle"), page.click('button[type="submit"]')]);
+    await page.waitForTimeout(2000);
+    const msg = (await page.evaluate(() => document.querySelector("form p")?.textContent ?? "")).trim();
+    console.log(`[${label}] login submit -> ${page.url()} | ${msg}`);
+  } catch (e) {
+    console.log(`[${label}] login submit failed: ${String(e).slice(0, 200)} (now at ${page.url()})`);
+  }
   await ctx.close();
 }
 await chrome.close();
