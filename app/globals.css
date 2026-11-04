@@ -1,8 +1,12 @@
 @import "tailwindcss";
 
+/* Seasonz is dark-only: the same colors whatever the phone's light/dark
+   setting. (A white light-mode default here used to override the body's
+   dark background, leaving white text on a white page.) */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #09090b;
+  --foreground: #ededed;
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -12,12 +16,6 @@
   --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
 
 body {
   background: var(--background);

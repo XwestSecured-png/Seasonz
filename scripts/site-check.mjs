@@ -1,10 +1,11 @@
 // Loads the site in a real phone-sized browser and prints what a visitor
 // would hit: final address, console/page errors, failed requests, visible text.
-import { chromium, devices } from "playwright";
+import { chromium, webkit, devices } from "playwright";
 const base = process.argv[2] || "https://seasonz.onrender.com";
-const browser = await chromium.launch();
-for (const [label, dev] of [["iPhone", devices["iPhone 14"]], ["desktop", devices["Desktop Chrome"]]]) {
-  const ctx = await browser.newContext({ ...dev });
+const chrome = await chromium.launch();
+const safari = await webkit.launch();
+for (const [label, dev, b, scheme] of [["iPhone Safari light", devices["iPhone 14"], safari, "light"], ["iPhone Safari dark", devices["iPhone 14"], safari, "dark"], ["desktop Chrome", devices["Desktop Chrome"], chrome, "light"]]) {
+  const ctx = await b.newContext({ ...dev, colorScheme: scheme });
   const page = await ctx.newPage();
   const errs = [];
   page.on("console", (m) => m.type() === "error" && errs.push(`console: ${m.text().slice(0, 200)}`));
@@ -32,4 +33,5 @@ for (const [label, dev] of [["iPhone", devices["iPhone 14"]], ["desktop", device
   }
   await ctx.close();
 }
-await browser.close();
+await chrome.close();
+await safari.close();
