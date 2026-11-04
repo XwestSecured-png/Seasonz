@@ -1,0 +1,22 @@
+# Loads the live website in a real browser and prints errors (manual).
+name: Site check
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Site address"
+        required: false
+        default: "https://seasonz.onrender.com"
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm i --no-save --no-audit --no-fund playwright@1.48.2 && npx playwright install --with-deps chromium
+      - run: node scripts/site-check.mjs "${{ inputs.url }}"
