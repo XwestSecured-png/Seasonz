@@ -1342,3 +1342,12 @@ export const trades = pgTable(
   },
   (t) => [uniqueIndex("trades_uniq").on(t.sport, t.team, t.direction, t.player, t.tradeDate)]
 );
+
+// Client-side diagnostics (app/api/client-log): what a visitor's browser loaded.
+export const clientLogs = pgTable("client_logs", {
+  id: serial("id").primaryKey(),
+  at: timestamp("at").notNull().defaultNow(),
+  kind: text("kind").notNull(),
+  ua: text("ua"),
+  detail: jsonb("detail"),
+});
