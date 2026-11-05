@@ -24,6 +24,8 @@ export interface SportBestBetRow {
   score: number;
   tier: ConfidenceTier;
   href: string;
+  /** Game start (ISO), for the time badge. */
+  kickoffAt: string | null;
 }
 
 /** One sport's upcoming game, for Parlays — the model's favorite only (never the underdog; picking against your own model isn't a "model pick"), priced with fair (no-vig) odds since these sports have no real sportsbook line synced yet. */
@@ -90,6 +92,7 @@ export async function otherSportsBestBets(perSport = 2): Promise<SportBestBetRow
         score,
         tier: confidenceTier(score),
         href: `/sports/${sportKey}`,
+        kickoffAt: g.kickoffAt?.toISOString() ?? null,
       });
     }
   }

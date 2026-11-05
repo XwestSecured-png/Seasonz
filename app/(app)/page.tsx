@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { StartTime } from "./start-time";
 import { db } from "@/db";
 import { games, injuryReports, parlayPicks } from "@/db/schema";
 import { count, desc, eq, sql } from "drizzle-orm";
@@ -29,6 +30,7 @@ interface BestBetRow {
   stakePct: number | null;
   stakeUsd: number | null;
   highlightFav: boolean;
+  kickoffAt: string | null;
 }
 
 /** True when the Best Bet's own market line or price has moved since the opening number — same opening-vs-current columns CLV uses, just as a yes/no badge for the Dashboard summary list. */
@@ -155,6 +157,7 @@ export default async function DashboardPage() {
           ? suggestedStakeUsd(g.bestMarketConfidencePct, price, user?.bankrollUsd ?? null)
           : null,
       highlightFav: g.homeTeam === favTeam?.code || g.awayTeam === favTeam?.code,
+      kickoffAt: g.kickoffAt?.toISOString() ?? null,
     };
   });
 
@@ -171,6 +174,7 @@ export default async function DashboardPage() {
     stakePct: null,
     stakeUsd: null,
     highlightFav: false,
+    kickoffAt: b.kickoffAt,
   }));
 
   // One ranked list across every sport — real NFL edge picks and every
@@ -340,6 +344,7 @@ export default async function DashboardPage() {
                       {row.sportLabel}
                     </span>
                     <span className="text-neutral-400 truncate">{row.matchup}</span>
+                    <StartTime iso={row.kickoffAt} />
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-emerald-400 font-medium">

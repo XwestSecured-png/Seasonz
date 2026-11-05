@@ -33,6 +33,22 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.40.0",
+    date: "2026-11-05",
+    title: "Start times on every best bet",
+    summary: "Best bets on the home page and the Best Bets tab now show when each game or prop starts, with a countdown.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Start time badges",
+        whatChanged:
+          "Each best bet, on the home page and on Best Bets, shows its start time in Eastern time (Today 7:30 PM ET, Tomorrow 1:00 PM ET...) and a countdown that updates every minute. It turns amber in the last hour and red with \"started\" once the game is under way.",
+        whatItMeans: "You can see at a glance what you need to bet now and what can wait.",
+        href: "/best-bets",
+      },
+    ],
+  },
+  {
     version: "1.39.0",
     date: "2026-11-05",
     title: "Loading bar",

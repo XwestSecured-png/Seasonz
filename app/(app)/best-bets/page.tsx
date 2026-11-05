@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/current-user";
 import { getBestBetsFeed } from "@/lib/best-bets-feed";
-import { formatEt } from "@/lib/week-window";
+import { StartTime } from "../start-time";
 import { PageInfo } from "../page-info";
 import { LogBetButton } from "../log-bet-button";
 import { TrustBadge } from "../trust-badge";
@@ -98,8 +98,11 @@ export default async function BestBetsPage({ searchParams }: { searchParams: Pro
                     <span className="text-neutral-500 mr-1.5">{i + 1}.</span>
                     {x.label}
                   </div>
-                  <div className="text-xs text-neutral-500">
-                    <span className="text-neutral-400">{x.sportLabel}</span> · {x.kind} · {x.matchup} · {x.kickoffAt ? formatEt(new Date(x.kickoffAt)) : "TBD"}
+                  <div className="mt-1">
+                    <StartTime iso={x.kickoffAt} />
+                  </div>
+                  <div className="mt-1 text-xs text-neutral-500">
+                    <span className="text-neutral-400">{x.sportLabel}</span> · {x.kind} · {x.matchup}
                     {x.preseason && <span className="ml-1 text-amber-300">· Preseason</span>}
                   </div>
                 </div>
