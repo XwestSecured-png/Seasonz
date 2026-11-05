@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getCurrentUser } from "@/lib/current-user";
 import { getBestBetsFeed } from "@/lib/best-bets-feed";
 import { StartTime } from "../start-time";
+import { VenueLine } from "../venue-line";
 import { PageInfo } from "../page-info";
 import { LogBetButton } from "../log-bet-button";
 import { TrustBadge } from "../trust-badge";
@@ -105,6 +106,7 @@ export default async function BestBetsPage({ searchParams }: { searchParams: Pro
                     <span className="text-neutral-400">{x.sportLabel}</span> · {x.kind} · {x.matchup}
                     {x.preseason && <span className="ml-1 text-amber-300">· Preseason</span>}
                   </div>
+                  <VenueLine venue={x.venue} className="mt-0.5" />
                 </div>
                 <div className="text-right shrink-0">
                   <div className="text-sm font-semibold text-emerald-400">+{(x.edge * 100).toFixed(1)} pts</div>

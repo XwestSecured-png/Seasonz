@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { VenueLine } from "./venue-line";
+import type { VenueInfo } from "@/lib/sports/venue";
 import { StartTime } from "./start-time";
 import { db } from "@/db";
 import { games, injuryReports, parlayPicks } from "@/db/schema";
@@ -31,6 +33,7 @@ interface BestBetRow {
   stakeUsd: number | null;
   highlightFav: boolean;
   kickoffAt: string | null;
+  venue: VenueInfo | null;
 }
 
 /** True when the Best Bet's own market line or price has moved since the opening number — same opening-vs-current columns CLV uses, just as a yes/no badge for the Dashboard summary list. */
@@ -158,6 +161,7 @@ export default async function DashboardPage() {
           : null,
       highlightFav: g.homeTeam === favTeam?.code || g.awayTeam === favTeam?.code,
       kickoffAt: g.kickoffAt?.toISOString() ?? null,
+      venue: null,
     };
   });
 
@@ -175,6 +179,7 @@ export default async function DashboardPage() {
     stakeUsd: null,
     highlightFav: false,
     kickoffAt: b.kickoffAt,
+    venue: b.venue,
   }));
 
   // One ranked list across every sport — real NFL edge picks and every
@@ -339,12 +344,15 @@ export default async function DashboardPage() {
                   className="px-4 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-3 text-sm"
                   style={favoriteHighlightStyle(favTeam, row.highlightFav)}
                 >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="shrink-0 rounded border border-neutral-700 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-400">
-                      {row.sportLabel}
-                    </span>
-                    <span className="text-neutral-400 truncate">{row.matchup}</span>
-                    <StartTime iso={row.kickoffAt} />
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="shrink-0 rounded border border-neutral-700 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-400">
+                        {row.sportLabel}
+                      </span>
+                      <span className="text-neutral-400 truncate">{row.matchup}</span>
+                      <StartTime iso={row.kickoffAt} />
+                    </div>
+                    {row.venue && <VenueLine venue={row.venue} />}
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-emerald-400 font-medium">

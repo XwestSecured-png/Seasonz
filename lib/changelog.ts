@@ -33,6 +33,22 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.41.0",
+    date: "2026-11-05",
+    title: "Where college games are played",
+    summary: "College football and basketball games now show the stadium and city, and flag neutral-site games.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Stadium and city on college games",
+        whatChanged:
+          "College football and college basketball games show where they're played (for example, Gerald J. Ford Stadium · Dallas, TX) on the sport page, on Best Bets and in the home page's best bets. Games at a neutral site, like bowls and kickoff classics, get a Neutral site tag and read \"vs\" instead of \"@\".",
+        whatItMeans: "You can see at a glance whether the home team really has home-field advantage.",
+        href: "/sports/ncaaf",
+      },
+    ],
+  },
+  {
     version: "1.40.0",
     date: "2026-11-05",
     title: "Start times on every best bet",

@@ -13,6 +13,8 @@ import { isPickLocked, PICK_LOCK_MINUTES_BEFORE_KICKOFF } from "@/lib/time";
 import { SPORTS, type SportKey } from "@/lib/sports/types";
 import { currentSeasonYear } from "@/lib/sports/espn";
 import { etWeekWindow, inWindow, formatEt } from "@/lib/week-window";
+import { venueOf } from "@/lib/sports/venue";
+import { VenueLine } from "../../venue-line";
 import { getGameInsights } from "@/lib/sports/insights";
 import { GameInsight } from "./game-insight";
 import { LogBetButton } from "../../log-bet-button";
@@ -359,12 +361,13 @@ export default async function SportPage({ params }: { params: Promise<{ sport: s
             {upcoming.map((g) => (
               <div key={g.id} className="rounded-md border border-neutral-800 p-3 text-sm space-y-1.5">
                 <div className="font-medium">
-                  {g.awayTeam} @ {g.homeTeam}
+                  {g.awayTeam} {g.neutralSite ? "vs" : "@"} {g.homeTeam}
                   {g.seasonType === 1 && <PreseasonTag />}
                 </div>
                 <div className="text-neutral-500 text-xs">
                   {formatEt(g.kickoffAt)}
                 </div>
+                {(sport === "ncaaf" || sport === "ncaab") && <VenueLine venue={venueOf(g.extra, g.neutralSite)} />}
                 <div className="text-neutral-400 text-xs">
                   Model:{" "}
                   {g.homeWinPctPre === null

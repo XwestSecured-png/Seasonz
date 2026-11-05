@@ -16,6 +16,7 @@ import { and, eq, gt, inArray, lt, max } from "drizzle-orm";
 import { SPORTS, type SportKey } from "./sports/types";
 import { MAIN_BOOKS, MODEL_FAIR_BOOK } from "./football-markets";
 import type { BetOption } from "@/app/(app)/log-bet-button";
+import { venueOf, type VenueInfo } from "./sports/venue";
 
 export interface FeedItem {
   key: string;
@@ -24,6 +25,8 @@ export interface FeedItem {
   kind: "Game" | "Prop";
   kickoffAt: string | null;
   matchup: string;
+  /** College games: stadium and city (lib/sports/venue.ts). */
+  venue?: VenueInfo | null;
   label: string;
   modelPct: number;
   bestPrice: number;
@@ -90,6 +93,7 @@ export async function getBestBetsFeed(windowHours = 36): Promise<FeedItem[]> {
         kind: "Game",
         kickoffAt: g.kickoffAt?.toISOString() ?? null,
         matchup: `${g.awayTeam} @ ${g.homeTeam}`,
+        venue: g.sport === "ncaaf" || g.sport === "ncaab" ? venueOf(g.extra, g.neutralSite) : null,
         label: `${team} to win`,
         modelPct: p,
         bestPrice: best.price,
@@ -187,6 +191,7 @@ export async function getBestBetsFeed(windowHours = 36): Promise<FeedItem[]> {
         kind: "Prop",
         kickoffAt: g.kickoffAt?.toISOString() ?? null,
         matchup: `${g.awayTeam} @ ${g.homeTeam}`,
+        venue: g.sport === "ncaaf" || g.sport === "ncaab" ? venueOf(g.extra, g.neutralSite) : null,
         label: `${p.player} ${side} ${p.line} ${p.statType}`,
         modelPct: p.modelWinPct,
         bestPrice: best.price,

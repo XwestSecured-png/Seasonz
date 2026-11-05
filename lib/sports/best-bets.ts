@@ -8,6 +8,7 @@
 // Dashboard for an NFL game with no betting line, just generalized across
 // sports. Nothing here is a real betting edge — only NFL rows (built
 // separately in app/(app)/page.tsx from real odds) carry an edge%.
+import { venueOf, type VenueInfo } from "./venue";
 import { db } from "@/db";
 import { sportGames } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -26,6 +27,8 @@ export interface SportBestBetRow {
   href: string;
   /** Game start (ISO), for the time badge. */
   kickoffAt: string | null;
+  /** College games: stadium and city. */
+  venue: VenueInfo | null;
 }
 
 /** One sport's upcoming game, for Parlays — the model's favorite only (never the underdog; picking against your own model isn't a "model pick"), priced with fair (no-vig) odds since these sports have no real sportsbook line synced yet. */
@@ -93,6 +96,7 @@ export async function otherSportsBestBets(perSport = 2): Promise<SportBestBetRow
         tier: confidenceTier(score),
         href: `/sports/${sportKey}`,
         kickoffAt: g.kickoffAt?.toISOString() ?? null,
+        venue: sportKey === "ncaaf" || sportKey === "ncaab" ? venueOf(g.extra, g.neutralSite) : null,
       });
     }
   }
