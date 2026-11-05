@@ -33,6 +33,21 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.39.0",
+    date: "2026-11-05",
+    title: "Loading bar",
+    summary: "Tapping a tab now shows a loading bar right away, so a slow page never looks frozen.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Loading bar and Loading… indicator",
+        whatChanged:
+          "As soon as you tap a tab, link or button, a fire-colored bar runs across the top of the screen while the next page loads, and a Loading… indicator appears if it takes more than a moment. Both disappear when the page arrives. The app also records how long each page takes to load so the slowest pages can be sped up.",
+        whatItMeans: "You always know your tap registered. No more tapping twice.",
+      },
+    ],
+  },
+  {
     version: "1.38.0",
     date: "2026-11-03",
     title: "Confidence that matches results",

@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { BackgroundField } from "./background-field";
+import { NavProgress } from "./nav-progress";
+import { Suspense } from "react";
 
 export const metadata: Metadata = {
   title: "Seasonz",
@@ -47,6 +49,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       </head>
       <body className="min-h-full flex flex-col font-sans bg-[#09090b]">
         <BackgroundField />
+        <Suspense fallback={null}>
+          <NavProgress />
+        </Suspense>
         {children}
       </body>
     </html>
