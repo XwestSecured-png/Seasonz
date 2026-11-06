@@ -1,5 +1,5 @@
-// Seasonz background: the word SEASONZ outlined in fire over a dark,
-// ember-lit backdrop. Original artwork built from SVG (gradients,
+// Seasonz background: the word SEASONZ outlined in fire over a dark
+// backdrop with $100 bills drifting down. Original artwork built from SVG (gradients,
 // turbulence and blur), no images. Fixed behind every page and kept low
 // enough in opacity that tables and text stay readable on top.
 //
@@ -7,22 +7,34 @@
 // SVG. All motion is CSS opacity/transform on plain HTML wrappers and
 // spans, which phones run on the GPU. Animating SVG filters (turbulence,
 // blur) every frame crashed iPhone Safari into a blank white page.
-const EMBERS = [
-  { x: 180, d: 9, delay: 0, r: 2.2 },
-  { x: 340, d: 12, delay: 3, r: 1.6 },
-  { x: 520, d: 10, delay: 6, r: 2.4 },
-  { x: 690, d: 13, delay: 1.5, r: 1.8 },
-  { x: 860, d: 11, delay: 4.5, r: 2.6 },
-  { x: 1020, d: 9.5, delay: 7, r: 1.7 },
-  { x: 1190, d: 12.5, delay: 2, r: 2.1 },
-  { x: 1360, d: 10.5, delay: 5.5, r: 1.9 },
-  { x: 1480, d: 14, delay: 8, r: 1.5 },
-  { x: 260, d: 11, delay: 9, r: 1.4 },
-  { x: 610, d: 8.5, delay: 2.5, r: 2 },
-  { x: 940, d: 12, delay: 10, r: 1.6 },
-  { x: 1280, d: 9, delay: 6.5, r: 2.3 },
-  { x: 1560, d: 10, delay: 3.5, r: 1.8 },
-  { x: 90, d: 13.5, delay: 5, r: 2 },
+// Falling $100 bills (1.42.0, replaced the rising fire sparks). Each bill
+// is one original SVG drawing (no portrait, no real-currency text), set as a
+// CSS background so all of them share a single image.
+const BILL_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 52">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e3f0d9"/><stop offset=".5" stop-color="#c4dcb5"/><stop offset="1" stop-color="#a9c99a"/></linearGradient>
+<linearGradient id="s" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".45"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs>
+<rect x=".75" y=".75" width="118.5" height="50.5" rx="3" fill="url(#g)" stroke="#2f5a29" stroke-width="1.5"/>
+<rect x="5" y="5" width="110" height="42" rx="2" fill="none" stroke="#3f7436" stroke-width="1.1" stroke-dasharray="2.5 1.5"/>
+<ellipse cx="60" cy="26" rx="15" ry="17" fill="#b7d4a8" stroke="#2f5a29" stroke-width="1.2"/>
+<text x="60" y="32.5" font-family="Georgia,serif" font-size="19" font-weight="700" text-anchor="middle" fill="#1f441b">$</text>
+<g font-family="Georgia,serif" font-weight="700" fill="#1f441b"><text x="10" y="18" font-size="11">100</text><text x="110" y="44" font-size="11" text-anchor="end">100</text><text x="110" y="18" font-size="7" text-anchor="end">100</text><text x="10" y="44" font-size="7">100</text></g>
+<rect x="38" y="0" width="26" height="52" fill="url(#s)" transform="skewX(-20)"/>
+</svg>`;
+const BILL_URL = `url("data:image/svg+xml,${encodeURIComponent(BILL_SVG)}")`;
+
+const BILLS = [
+  { x: 120, d: 13, delay: 0, w: 62 },
+  { x: 300, d: 16, delay: 4, w: 54 },
+  { x: 470, d: 14, delay: 8, w: 68 },
+  { x: 650, d: 17, delay: 2, w: 56 },
+  { x: 820, d: 15, delay: 6, w: 64 },
+  { x: 990, d: 13.5, delay: 10, w: 52 },
+  { x: 1150, d: 16.5, delay: 3, w: 66 },
+  { x: 1320, d: 14.5, delay: 7, w: 58 },
+  { x: 1480, d: 18, delay: 1, w: 62 },
+  { x: 230, d: 15.5, delay: 11, w: 50 },
+  { x: 740, d: 12.5, delay: 5, w: 60 },
+  { x: 1240, d: 17.5, delay: 9, w: 54 },
 ];
 
 export function BackgroundField() {
@@ -59,19 +71,20 @@ export function BackgroundField() {
       <rect width="1600" height="900" fill="url(#szn-vignette)" />
     </svg>
 
-    {/* Heat glow + embers: HTML layers so the animation stays on the GPU. */}
+    {/* Heat glow + falling bills: HTML layers so the animation stays on the GPU. */}
     <div aria-hidden="true" className="szn-heat-pulse pointer-events-none fixed inset-0 -z-20" />
     <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-      {EMBERS.map((e) => (
+      {BILLS.map((b, i) => (
         <span
-          key={e.x}
-          className="szn-ember"
+          key={b.x}
+          className={`szn-bill ${i % 2 ? "szn-bill-b" : ""}`}
           style={{
-            left: `${(e.x / 1600) * 100}%`,
-            width: e.r * 2,
-            height: e.r * 2,
-            animationDuration: `${e.d}s`,
-            animationDelay: `${e.delay}s`,
+            left: `${(b.x / 1600) * 100}%`,
+            width: b.w,
+            height: Math.round(b.w * 0.433),
+            backgroundImage: BILL_URL,
+            animationDuration: `${b.d}s`,
+            animationDelay: `${b.delay}s`,
           }}
         />
       ))}

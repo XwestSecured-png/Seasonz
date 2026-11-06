@@ -33,6 +33,20 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.42.0",
+    date: "2026-11-06",
+    title: "Money in the air",
+    summary: "The fire sparks in the background are now $100 bills drifting down the screen.",
+    changes: [
+      {
+        kind: "improved",
+        title: "$100 bills instead of sparks",
+        whatChanged: "The small fire sparks that rose behind every page are replaced by crisp $100 bills that flutter down.",
+        whatItMeans: "Just a new look. They stay faint so your picks and tables are easy to read, and if your phone is set to reduce motion they don't appear.",
+      },
+    ],
+  },
+  {
     version: "1.41.0",
     date: "2026-11-05",
     title: "Where college games are played",
