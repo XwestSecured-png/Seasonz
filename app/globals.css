@@ -101,6 +101,25 @@ a {
   will-change: transform, opacity;
 }
 .szn-bill-b { animation-name: szn-fall-b; }
+/* Cash drop: a 40s cycle where the bill falls fast in the first 5s, then rests hidden. */
+.szn-drop { animation: szn-drop 40s ease-in infinite; }
+.szn-drop-b { animation-name: szn-drop-b; }
+@keyframes szn-drop {
+  0% { transform: translate3d(0, -15vh, 0) rotate(-25deg) rotateX(0deg); opacity: 0; }
+  1% { opacity: 0.95; }
+  6% { transform: translate3d(24px, 50vh, 0) rotate(15deg) rotateX(60deg); }
+  11% { opacity: 0.9; }
+  12% { transform: translate3d(-18px, 110vh, 0) rotate(-20deg) rotateX(20deg); opacity: 0; }
+  100% { transform: translate3d(-18px, 110vh, 0); opacity: 0; }
+}
+@keyframes szn-drop-b {
+  0% { transform: translate3d(0, -15vh, 0) rotate(20deg) rotateX(40deg); opacity: 0; }
+  1% { opacity: 0.95; }
+  6.5% { transform: translate3d(-30px, 55vh, 0) rotate(-12deg) rotateX(0deg); }
+  11% { opacity: 0.9; }
+  12.5% { transform: translate3d(16px, 110vh, 0) rotate(22deg) rotateX(50deg); opacity: 0; }
+  100% { transform: translate3d(16px, 110vh, 0); opacity: 0; }
+}
 @keyframes szn-fall {
   0% { transform: translate3d(0, -10vh, 0) rotate(-18deg) rotateX(0deg); opacity: 0; }
   8% { opacity: 0.85; }

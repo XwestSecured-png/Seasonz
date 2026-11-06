@@ -33,6 +33,26 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.42.2",
+    date: "2026-11-06",
+    title: "Real-looking $100s and cash drops",
+    summary: "The falling bills now look like today's $100, and every so often a cash drop showers the screen.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Bills that look like the real $100",
+        whatChanged: "The background bills are redrawn after the current $100: blue-green paper, Franklin's portrait, the blue security ribbon, the copper bell and the gold 100.",
+        whatItMeans: "Just a new look. They stay faint behind your picks.",
+      },
+      {
+        kind: "new",
+        title: "Cash drop",
+        whatChanged: "About every 40 seconds a burst of bills rains down the screen for a few seconds.",
+        whatItMeans: "Just for fun. If your phone is set to reduce motion, no bills fall.",
+      },
+    ],
+  },
+  {
     version: "1.42.0",
     date: "2026-11-06",
     title: "Money in the air",
