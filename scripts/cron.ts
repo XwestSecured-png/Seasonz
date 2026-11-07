@@ -16,6 +16,7 @@ import { runFullSync } from "@/lib/sync";
 import { runSportSync, sportsDueForPregame } from "@/lib/sports/sync";
 import { runMaintenance } from "@/lib/maintenance";
 import { cleanKey } from "@/lib/odds-provider";
+import { pushToGoogleSheet } from "@/lib/sheet-export";
 import type { SportKey } from "@/lib/sports/types";
 
 const OTHER: SportKey[] = ["nba", "wnba", "nhl", "mlb", "ncaaf", "ncaab"];
@@ -104,6 +105,12 @@ async function runSlot(kind: "sync" | "refresh", now: Date) {
       continue;
     }
     log(s, await runSportSync(s, undefined, { refresh }));
+  }
+  // Refresh the Google Sheet copy (1.43.0) when its key is set; never fails the sync.
+  try {
+    console.log(`google sheet: ${await pushToGoogleSheet()}`);
+  } catch (e) {
+    console.log(`google sheet: error ${clean(e instanceof Error ? e.message : String(e))}`);
   }
 }
 

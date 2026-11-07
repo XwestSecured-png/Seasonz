@@ -2,7 +2,8 @@
 # daily model refit, every 30 minutes. scripts/cron.ts decides what's due.
 # Needs repository secrets: DATABASE_URL, plus whichever odds keys you use
 # (PROPLINE_API_KEY, SPORTSGAMEODDS_API_KEY, ODDS_API_KEYS_FREE,
-# PROPLINE_API_KEYS_FREE).
+# PROPLINE_API_KEYS_FREE). Optional: GOOGLE_SERVICE_ACCOUNT_JSON and
+# SEASONZ_SHEET_ID refresh the Google Sheet copy after each sync.
 name: Seasonz sync
 
 on:
@@ -42,5 +43,7 @@ jobs:
           PROPLINE_API_KEYS_FREE: ${{ secrets.PROPLINE_API_KEYS_FREE }}
           SPORTSGAMEODDS_API_KEY: ${{ secrets.SPORTSGAMEODDS_API_KEY }}
           ODDS_API_KEYS_FREE: ${{ secrets.ODDS_API_KEYS_FREE }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SEASONZ_SHEET_ID: ${{ secrets.SEASONZ_SHEET_ID }}
           NODE_ENV: production
         run: npx tsx --tsconfig tsconfig.json scripts/cron.ts ${{ inputs.task && format('--task={0}', inputs.task) || '' }}

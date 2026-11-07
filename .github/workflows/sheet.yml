@@ -1,0 +1,53 @@
+# Seasonz → Google Sheets (1.43.0).
+# Manual run: builds every tab of the app's data. With a "cert" (a public
+# certificate) the tabs are encrypted to that certificate and saved as a
+# 1-day artifact, so only the holder of the matching private key can read
+# them (the repo and its artifacts are public). With the Google secrets set
+# (GOOGLE_SERVICE_ACCOUNT_JSON, SEASONZ_SHEET_ID) it also refreshes the Sheet;
+# the regular sync job refreshes it automatically after each sync.
+name: Seasonz sheet export
+
+on:
+  workflow_dispatch:
+    inputs:
+      cert:
+        description: "Base64 public certificate to encrypt the export to (optional)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund --ignore-scripts
+      - name: Build tabs (and refresh the Sheet if configured)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SEASONZ_SHEET_ID: ${{ secrets.SEASONZ_SHEET_ID }}
+          NODE_ENV: production
+        run: npx tsx --tsconfig tsconfig.json scripts/sheet-export.ts --out=sheet.json --push
+      - name: Encrypt the export
+        if: ${{ inputs.cert != '' }}
+        env:
+          CERT_B64: ${{ inputs.cert }}
+        run: |
+          printf '%s' "$CERT_B64" | base64 -d > cert.pem
+          openssl cms -encrypt -binary -aes256 -outform DER -in sheet.json -out sheet.json.enc cert.pem
+          rm -f sheet.json
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.cert != '' }}
+        with:
+          name: sheet-export
+          path: sheet.json.enc
+          retention-days: 1
