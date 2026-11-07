@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       cert:
-        description: "Base64 public certificate to encrypt the export to (optional)"
+        description: "Base64 public certificate to encrypt the export to (optional; blank = just refresh the Sheet and clean up)"
         required: false
         default: ""
         type: string
@@ -30,6 +30,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund --ignore-scripts
+      # Remove the previous run's hand-off branch, if any.
+      - name: Clean up old export branch
+        run: git push -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" --delete sheet-export-tmp || true
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Build tabs (and refresh the Sheet if configured)
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

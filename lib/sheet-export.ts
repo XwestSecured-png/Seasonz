@@ -27,6 +27,8 @@ const ET = "America/New_York";
 const etTime = (col: string) => sql.raw(`to_char((${col} at time zone 'UTC') at time zone '${ET}', 'Dy Mon DD HH12:MI AM')`);
 const pct = (v: unknown) => (v == null ? null : Math.round(Number(v) * 1000) / 10);
 const num = (v: unknown) => (v == null ? null : Number(v));
+/** A 0-1 fraction shown as a percentage with one decimal. */
+const fr = (v: unknown) => (v == null ? null : Math.round(Number(v) * 1000) / 10);
 
 function nflSeason(now = new Date()) {
   return now.getMonth() >= 1 ? now.getFullYear() : now.getFullYear() - 1;
@@ -53,12 +55,16 @@ export async function buildSheetTabs(): Promise<SheetTab[]> {
     name: `NFL Week ${week ?? "?"}`,
     note: "Every game this week with the model's win chance, picks and best bet.",
     headers: ["Away", "Home", "Kickoff (ET)", "Home win %", "Model pick", "ML edge %", "Away ML", "Home ML", "Home spread", "Spread pick", "Spread edge %", "Total", "Total pick", "Total edge %", "Best bet", "Best bet edge %", "Confidence %", "Temp °F", "Wind mph", "Final", "Score"],
-    rows: nfl.map((g) => [
-      g.away_team as string, g.home_team as string, g.kickoff as string, pct(g.locked_pct ?? g.home_win_pct_pre), g.ai_pick_team as string, num(g.ai_edge_pct),
-      num(g.moneyline_away_odds), num(g.moneyline_home_odds), num(g.spread_home_line), g.spread_ai_pick_team as string, num(g.spread_ai_edge_pct),
-      num(g.total_line), g.total_ai_pick as string, num(g.total_ai_edge_pct), g.best_market_label as string, num(g.best_market_edge_pct), num(g.best_market_confidence_pct),
-      num(g.temp_f), num(g.wind_mph), g.is_final ? "Final" : "", g.is_final ? `${g.away_score}-${g.home_score}` : "",
-    ]),
+    rows: nfl.map((g) => {
+      const hp = pct(g.locked_pct ?? g.home_win_pct_pre);
+      const pick = (g.ai_pick_team as string) || (hp == null ? null : hp >= 50 ? (g.home_team as string) : (g.away_team as string));
+      return [
+        g.away_team as string, g.home_team as string, g.kickoff as string, hp, pick, fr(g.ai_edge_pct),
+        num(g.moneyline_away_odds), num(g.moneyline_home_odds), num(g.spread_home_line), (g.spread_ai_pick_team as string) ?? null, fr(g.spread_ai_edge_pct),
+        num(g.total_line), g.total_ai_pick as string, fr(g.total_ai_edge_pct), g.best_market_label as string, fr(g.best_market_edge_pct), fr(g.best_market_confidence_pct),
+        num(g.temp_f), num(g.wind_mph), g.is_final ? "Final" : "", g.is_final ? `${g.away_score}-${g.home_score}` : "",
+      ];
+    }),
   });
 
   // Other sports: yesterday through the next three days.
@@ -76,7 +82,7 @@ export async function buildSheetTabs(): Promise<SheetTab[]> {
       const hp = pct(g.home_win_pct_pre);
       return [
         String(g.sport).toUpperCase(), g.away_team as string, g.home_team as string, g.kickoff as string, hp, hp == null ? null : hp >= 50 ? (g.home_team as string) : (g.away_team as string),
-        num(g.moneyline_away_odds), num(g.moneyline_home_odds), num(g.spread_home_line), num(g.total_line), g.best_market_label as string, num(g.best_market_edge_pct), num(g.best_market_confidence_pct),
+        num(g.moneyline_away_odds), num(g.moneyline_home_odds), num(g.spread_home_line), num(g.total_line), g.best_market_label as string, fr(g.best_market_edge_pct), fr(g.best_market_confidence_pct),
         g.is_final ? "Final" : "", g.is_final ? `${g.away_score}-${g.home_score}` : "", (g.venue as string) ?? "",
       ];
     }),
@@ -95,7 +101,7 @@ export async function buildSheetTabs(): Promise<SheetTab[]> {
     name: "Best Bets",
     note: "Upcoming games where the model's best market has a positive edge, most confident first.",
     headers: ["Sport", "Game", "Start (ET)", "Bet", "Edge %", "Confidence %"],
-    rows: best.map((b) => [b.sport as string, b.matchup as string, b.kickoff as string, b.best_market_label as string, num(b.best_market_edge_pct), num(b.best_market_confidence_pct)]),
+    rows: best.map((b) => [b.sport as string, b.matchup as string, b.kickoff as string, b.best_market_label as string, fr(b.best_market_edge_pct), fr(b.best_market_confidence_pct)]),
   });
 
   // Player props.
@@ -108,7 +114,7 @@ export async function buildSheetTabs(): Promise<SheetTab[]> {
     name: "NFL Props",
     note: "This week's NFL player props with the model's chance, the market's chance and the edge.",
     headers: ["Player", "Team", "Prop", "Line", "Side", "Book", "Price", "Projection", "Model %", "Market %", "Edge %", "Trust"],
-    rows: props.map((p) => [p.player as string, p.team as string, p.stat_type as string, num(p.line), p.side as string, p.book as string, num(p.price_american), num(p.projection), num(p.model_win_pct), num(p.market_pct), num(p.edge_pct), (p.trust as string) ?? null]),
+    rows: props.map((p) => [p.player as string, p.team as string, p.stat_type as string, num(p.line), p.side as string, p.book as string, num(p.price_american), num(p.projection), fr(p.model_win_pct), fr(p.market_pct), fr(p.edge_pct), (p.trust as string) ?? null]),
   });
   const sprops = await rowsOf<Record<string, unknown>>(sql`
     select distinct on (sport, player, stat_type, line, side) sport, player, team, stat_type, line, side, book, price_american, projection, model_win_pct, market_pct, edge_pct
@@ -119,7 +125,7 @@ export async function buildSheetTabs(): Promise<SheetTab[]> {
     name: "Other Props",
     note: "Player props for the other sports from the last 36 hours.",
     headers: ["Sport", "Player", "Team", "Prop", "Line", "Side", "Book", "Price", "Projection", "Model %", "Market %", "Edge %"],
-    rows: sprops.map((p) => [String(p.sport).toUpperCase(), p.player as string, p.team as string, p.stat_type as string, num(p.line), p.side as string, p.book as string, num(p.price_american), num(p.projection), num(p.model_win_pct), num(p.market_pct), num(p.edge_pct)]),
+    rows: sprops.map((p) => [String(p.sport).toUpperCase(), p.player as string, p.team as string, p.stat_type as string, num(p.line), p.side as string, p.book as string, num(p.price_american), num(p.projection), fr(p.model_win_pct), fr(p.market_pct), fr(p.edge_pct)]),
   });
 
   // Long shots.
@@ -134,7 +140,7 @@ export async function buildSheetTabs(): Promise<SheetTab[]> {
   // Injuries.
   const inj = await rowsOf<Record<string, unknown>>(sql`
     select team, player, position, status, next_opponent, game_missed_label, anticipated_return, win_pct_impact
-    from injury_reports where season = ${season} and week = (select max(week) from injury_reports where season = ${season})
+    from injury_reports where season = ${season} and updated_at > now() - interval '4 days' 
     order by abs(coalesce(win_pct_impact, 0)) desc, team, player`);
   tabs.push({
     name: "NFL Injuries",
@@ -180,17 +186,23 @@ export async function buildSheetTabs(): Promise<SheetTab[]> {
   });
 
   // Records: game picks and props.
+  // NFL game picks graded from final scores: the model's side is the one it gave 50%+.
   const mt = await rowsOf<Record<string, unknown>>(sql`
-    select season, week, count(*) filter (where result = 'win') as w, count(*) filter (where result = 'loss') as l
-    from model_tracker where graded_at is not null group by season, week order by season desc, week desc`);
+    select season, week,
+      count(*) filter (where (coalesce(locked_pct, home_win_pct_pre) >= 0.5) = (home_score > away_score)) as w,
+      count(*) filter (where (coalesce(locked_pct, home_win_pct_pre) >= 0.5) <> (home_score > away_score)) as l
+    from games where is_final and home_score <> away_score and coalesce(locked_pct, home_win_pct_pre) is not null
+      and season >= ${season - 1}
+    group by season, week order by season desc, week desc`);
   const pr = await rowsOf<Record<string, unknown>>(sql`
-    select upper(sport) as sport, stat_type, count(*) filter (where result = 'win') as w, count(*) filter (where result = 'loss') as l,
-      count(*) filter (where result = 'push') as p
-    from prop_pick_log where graded_at is not null group by 1, 2 order by 1, (count(*)) desc`);
+    select upper(sport) as sport, stat_type, count(*) filter (where result = 'hit') as w, count(*) filter (where result = 'miss') as l,
+      count(*) filter (where result in ('void', 'push')) as p
+    from prop_pick_log where graded_at is not null group by 1, 2
+    having count(*) filter (where result in ('hit', 'miss')) > 0 order by 1, (count(*)) desc`);
   tabs.push({
     name: "Record",
     note: "The model's graded record: NFL game picks by week, then player props by sport and prop type.",
-    headers: ["Section", "Season / Sport", "Week / Prop", "Wins", "Losses", "Pushes", "Hit %"],
+    headers: ["Section", "Season / Sport", "Week / Prop", "Wins / Hits", "Losses / Misses", "Voids", "Hit %"],
     rows: [
       ...mt.map((r) => {
         const w = Number(r.w), l = Number(r.l);
@@ -212,7 +224,7 @@ export async function buildSheetTabs(): Promise<SheetTab[]> {
     name: "Parlays",
     note: "Parlays built by the model (not users' own), newest first.",
     headers: ["Title", "Kind", "Season", "Week", "Legs", "Combined win %", "Weakest leg %", "Confidence", "Status", "Made", "Leg details"],
-    rows: pl.map((r) => [r.title as string, r.kind as string, num(r.season), num(r.week), num(r.size), num(r.combined_win_pct), num(r.weakest_leg_win_pct), r.confidence as string, r.status as string, r.made as string, String(r.legs ?? "").slice(0, 4000)]),
+    rows: pl.map((r) => [r.title as string, r.kind as string, num(r.season), num(r.week), num(r.size), fr(r.combined_win_pct), fr(r.weakest_leg_win_pct), r.confidence as string, r.status as string, r.made as string, String(r.legs ?? "").slice(0, 4000)]),
   });
 
   return tabs;
