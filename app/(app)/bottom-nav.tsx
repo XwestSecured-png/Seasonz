@@ -56,6 +56,7 @@ const MORE_LINKS = [
   { href: "/best-builds", label: "Model Builds", Icon: TicketIcon, pro: false },
   { href: "/bet-tracker", label: "Bet Tracker", Icon: DollarIcon, pro: false },
   { href: "/td-props", label: "TD Props", Icon: FootballIcon, pro: false },
+  { href: "/long-shots", label: "Long Shots", Icon: TargetIcon, pro: false },
   { href: "/touchdowns", label: "TDs & Turnovers", Icon: FootballIcon, pro: false },
   { href: "/factor-performance", label: "Factor Performance", Icon: ChartIcon, pro: true },
   { href: "/injury-impact", label: "Injury Impact", Icon: ShieldIcon, pro: true },

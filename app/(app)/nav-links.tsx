@@ -16,6 +16,7 @@ const LINKS = [
   { href: "/model-tracker", label: "Model Tracker" },
   { href: "/props", label: "Player Props" },
   { href: "/td-props", label: "TD Props" },
+  { href: "/long-shots", label: "Long Shots" },
   { href: "/touchdowns", label: "TDs & Turnovers" },
   { href: "/parlays", label: "Parlays" },
   { href: "/bet-tracker", label: "Bet Tracker" },

@@ -33,6 +33,23 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.43.0",
+    date: "2026-11-07",
+    title: "Long Shots",
+    summary: "A new page lists every NFL player's touchdown chance next to the sportsbooks' price, so you can find surprise scorers.",
+    changes: [
+      {
+        kind: "new",
+        title: "Long Shots page",
+        whatChanged:
+          "Every NFL player with a touchdown projection this week, with our chance, the books' chance, the gap between them and the best price. Sort any column, filter by team or game, and hide each team's top two to see only the surprise options.",
+        whatItMeans:
+          "The biggest positive gaps are players we think the books are underrating. They're still long shots, so keep stakes small and check injuries first.",
+        href: "/long-shots",
+      },
+    ],
+  },
+  {
     version: "1.42.2",
     date: "2026-11-06",
     title: "Real-looking $100s and cash drops",
