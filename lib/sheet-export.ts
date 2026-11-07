@@ -27,6 +27,9 @@ const ET = "America/New_York";
 const etTime = (col: string) => sql.raw(`to_char((${col} at time zone 'UTC') at time zone '${ET}', 'Dy Mon DD HH12:MI AM')`);
 const pct = (v: unknown) => (v == null ? null : Math.round(Number(v) * 1000) / 10);
 const num = (v: unknown) => (v == null ? null : Number(v));
+/** The props trust badge (an object with a tier) as a single word. */
+const trustTier = (v: unknown): string | null =>
+  v == null ? null : typeof v === "object" ? String((v as { tier?: string }).tier ?? "") || null : String(v);
 /** A 0-1 fraction shown as a percentage with one decimal. */
 const fr = (v: unknown) => (v == null ? null : Math.round(Number(v) * 1000) / 10);
 
@@ -114,7 +117,7 @@ export async function buildSheetTabs(): Promise<SheetTab[]> {
     name: "NFL Props",
     note: "This week's NFL player props with the model's chance, the market's chance and the edge.",
     headers: ["Player", "Team", "Prop", "Line", "Side", "Book", "Price", "Projection", "Model %", "Market %", "Edge %", "Trust"],
-    rows: props.map((p) => [p.player as string, p.team as string, p.stat_type as string, num(p.line), p.side as string, p.book as string, num(p.price_american), num(p.projection), fr(p.model_win_pct), fr(p.market_pct), fr(p.edge_pct), (p.trust as string) ?? null]),
+    rows: props.map((p) => [p.player as string, p.team as string, p.stat_type as string, num(p.line), p.side as string, p.book as string, num(p.price_american), num(p.projection), fr(p.model_win_pct), fr(p.market_pct), fr(p.edge_pct), trustTier(p.trust)]),
   });
   const sprops = await rowsOf<Record<string, unknown>>(sql`
     select distinct on (sport, player, stat_type, line, side) sport, player, team, stat_type, line, side, book, price_american, projection, model_win_pct, market_pct, edge_pct
@@ -224,10 +227,23 @@ export async function buildSheetTabs(): Promise<SheetTab[]> {
     name: "Parlays",
     note: "Parlays built by the model (not users' own), newest first.",
     headers: ["Title", "Kind", "Season", "Week", "Legs", "Combined win %", "Weakest leg %", "Confidence", "Status", "Made", "Leg details"],
-    rows: pl.map((r) => [r.title as string, r.kind as string, num(r.season), num(r.week), num(r.size), fr(r.combined_win_pct), fr(r.weakest_leg_win_pct), r.confidence as string, r.status as string, r.made as string, String(r.legs ?? "").slice(0, 4000)]),
+    rows: pl.map((r) => [(r.title as string) || `${r.size}-leg ${String(r.kind).replace(/_/g, " ")}`, r.kind as string, num(r.season), num(r.week), num(r.size), fr(r.combined_win_pct), fr(r.weakest_leg_win_pct), r.confidence as string, r.status as string, r.made as string, legsText(r.legs)]),
   });
 
   return tabs;
+}
+
+/** Parlay legs as one readable line: "Player Under 3.5 Receptions (-1329, Kalshi, 97%) | ...". */
+function legsText(raw: unknown): string {
+  try {
+    const legs = JSON.parse(String(raw ?? "[]")) as { player?: string; side?: string; line?: number; statType?: string; priceAmerican?: number; book?: string; winPct?: number }[];
+    return legs
+      .map((l) => `${l.player} ${l.side} ${l.line} ${l.statType} (${(l.priceAmerican ?? 0) > 0 ? "+" : ""}${l.priceAmerican}, ${l.book}, ${Math.round(100 * (l.winPct ?? 0))}%)`)
+      .join(" | ")
+      .slice(0, 4000);
+  } catch {
+    return String(raw ?? "").slice(0, 4000);
+  }
 }
 
 // ---- Google Sheets push -------------------------------------------------
@@ -293,7 +309,7 @@ export async function pushToGoogleSheet(tabs?: SheetTab[]): Promise<string> {
     method: "POST",
     body: JSON.stringify({
       valueInputOption: "RAW",
-      data: withReadme.map((t) => ({ range: `${q(t.name)}!A1`, values: [t.headers, ...t.rows.map((r) => r.map((c) => (c == null ? "" : c)))] })),
+      data: withReadme.map((t) => ({ range: `${q(t.name)}!A1`, values: [t.headers, ...t.rows.map((r) => r.map((c) => (c == null ? "" : typeof c === "object" ? JSON.stringify(c) : c)))] })),
     }),
   });
   return `${withReadme.length} tabs, ${all.reduce((n, t) => n + t.rows.length, 0)} rows`;
