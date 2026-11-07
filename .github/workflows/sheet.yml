@@ -1,8 +1,8 @@
 # Seasonz → Google Sheets (1.43.0).
 # Manual run: builds every tab of the app's data. With a "cert" (a public
-# certificate) the tabs are encrypted to that certificate and saved as a
-# 1-day artifact, so only the holder of the matching private key can read
-# them (the repo and its artifacts are public). With the Google secrets set
+# certificate) the tabs are encrypted to that certificate and pushed to a
+# short-lived branch, so only the holder of the matching private key can
+# read them (the repo is public). With the Google secrets set
 # (GOOGLE_SERVICE_ACCOUNT_JSON, SEASONZ_SHEET_ID) it also refreshes the Sheet;
 # the regular sync job refreshes it automatically after each sync.
 name: Seasonz sheet export
@@ -17,7 +17,7 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   export:
@@ -45,9 +45,15 @@ jobs:
           printf '%s' "$CERT_B64" | base64 -d > cert.pem
           openssl cms -encrypt -binary -aes256 -outform DER -in sheet.json -out sheet.json.enc cert.pem
           rm -f sheet.json
-      - uses: actions/upload-artifact@v4
+      # Hand the encrypted file over on a short-lived branch (it is deleted
+      # right after it is read). Without the private key it is unreadable.
+      - name: Publish encrypted export
         if: ${{ inputs.cert != '' }}
-        with:
-          name: sheet-export
-          path: sheet.json.enc
-          retention-days: 1
+        run: |
+          mkdir -p /tmp/out && mv sheet.json.enc /tmp/out/
+          cd /tmp/out && git init -q && git checkout -q -b sheet-export-tmp
+          git -c user.name=seasonz-bot -c user.email=bot@users.noreply.github.com add sheet.json.enc
+          git -c user.name=seasonz-bot -c user.email=bot@users.noreply.github.com commit -qm "encrypted sheet export"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" sheet-export-tmp
+        env:
+          GH_TOKEN: ${{ github.token }}
