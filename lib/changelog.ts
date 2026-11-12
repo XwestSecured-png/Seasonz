@@ -33,6 +33,28 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.44.0",
+    date: "2026-11-12",
+    title: "Storage guard",
+    summary: "The database filled the free plan and stopped saving updates. It's trimmed, unlocked, and now cleans up after itself every day.",
+    changes: [
+      {
+        kind: "fixed",
+        title: "Updates are saving again",
+        whatChanged:
+          "The database passed the free plan's 500 MB limit (it reached 1.26 GB), so it was locked and syncs failed. Old sportsbook price history and raw odds were trimmed, bringing it to about 430 MB.",
+        whatItMeans: "Odds, injuries, picks and results update again.",
+      },
+      {
+        kind: "improved",
+        title: "Saves less, cleans up daily",
+        whatChanged:
+          "Price history now keeps the main line at 11 books (Pinnacle, FanDuel, DraftKings, BetMGM, Fanatics, Hard Rock, Kalshi, Novig, ProphetX, PrizePicks, Underdog) for 21 days. A daily cleanup removes older lines, raw odds after 2 days and old logs.",
+        whatItMeans: "The database stays under the free limit. The self-learning works from a shorter, leaner history.",
+      },
+    ],
+  },
+  {
     version: "1.43.0",
     date: "2026-11-07",
     title: "Long Shots",

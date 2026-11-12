@@ -597,7 +597,9 @@ export async function runSportSync(
             team: line.team,
             player: line.player,
             position: line.position,
-            stats: { ...line.stats, groups: line.groups } as unknown as Record<string, string>,
+            // Only college box scores need every stat group (1.44.0 storage guard);
+            // elsewhere the single group just repeated the top-level numbers.
+            stats: (sport === "ncaaf" || sport === "ncaab" ? { ...line.stats, groups: line.groups } : { ...line.stats }) as unknown as Record<string, string>,
           }));
           await db
             .insert(sportPlayerGameStats)

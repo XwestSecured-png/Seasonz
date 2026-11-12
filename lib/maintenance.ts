@@ -6,6 +6,7 @@ import { eq, sql } from "drizzle-orm";
 import { runAlerts } from "./alerts";
 import { runHealthChecks } from "./health-checks";
 import { refitModelWeights } from "./model-weights";
+import { pruneStorage } from "./storage-prune";
 
 /**
  * Push alerts every call; sync health checks every 4 hours; re-learn the
@@ -15,7 +16,7 @@ import { refitModelWeights } from "./model-weights";
 export async function runMaintenance(now = new Date(), force = false): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   const [row] = await db.select().from(appSettings).where(eq(appSettings.key, "maintenance"));
-  const last = (row?.value ?? {}) as { health?: string; weights?: string };
+  const last = (row?.value ?? {}) as { health?: string; weights?: string; prune?: string };
 
   try {
     out.alerts = await runAlerts(now);
@@ -40,6 +41,15 @@ export async function runMaintenance(now = new Date(), force = false): Promise<R
       next.weights = now.toISOString();
     } catch (e) {
       out.weights = `error: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  }
+  // Daily storage cleanup so the free 500 MB database never fills up (1.44.0).
+  if (force || !last.prune || now.getTime() - Date.parse(last.prune) > 20 * 3600_000) {
+    try {
+      out.storage = await pruneStorage();
+      next.prune = now.toISOString();
+    } catch (e) {
+      out.storage = `error: ${e instanceof Error ? e.message : String(e)}`;
     }
   }
   await db

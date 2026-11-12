@@ -11,6 +11,7 @@ import { STAT_EXTRACTORS } from "./sports/stat-extract";
 import type { SportKey } from "./sports/types";
 import type { PlayerWeekStats } from "./nflverse";
 import { MODEL_FAIR_BOOK } from "./football-markets";
+import { ARCHIVE_BOOKS } from "./storage-prune";
 
 export interface ArchiveProp {
   player: string;
@@ -94,8 +95,32 @@ export async function archivePropLines(
   );
   const isSkipped = (p: ArchiveProp) =>
     skip.has(`${p.player}|${p.statType}|${p.line}|${p.side}|${p.book}|*|*`) || skip.has(`${p.player}|${p.statType}|${p.line}|${p.side}|${p.book}|${p.priceAmerican}|${p.team ?? ""}`);
+  // Storage guard (1.44.0): only the main line (the one most books post) for
+  // each player/stat, and only the books the self-learning compares.
+  const booksAt = new Map<string, Map<number, Set<string>>>();
+  for (const p of props) {
+    const k = `${p.player}|${p.statType}`;
+    const byLine = booksAt.get(k) ?? new Map<number, Set<string>>();
+    const s = byLine.get(p.line) ?? new Set<string>();
+    s.add(p.book);
+    byLine.set(p.line, s);
+    booksAt.set(k, byLine);
+  }
+  const mainLine = new Map<string, number>();
+  for (const [k, byLine] of booksAt) {
+    let best: number | null = null;
+    let bestN = -1;
+    for (const [line, s] of byLine) {
+      if (s.size > bestN || (s.size === bestN && best !== null && line < best)) {
+        best = line;
+        bestN = s.size;
+      }
+    }
+    if (best !== null) mainLine.set(k, best);
+  }
   return upsert(
     props
+      .filter((p) => ARCHIVE_BOOKS.has(p.book) && mainLine.get(`${p.player}|${p.statType}`) === p.line)
       .filter((p) => !isSkipped(p))
       .filter((p) => p.book !== MODEL_FAIR_BOOK && Number.isFinite(p.priceAmerican))
       .map((p) => ({
