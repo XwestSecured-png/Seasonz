@@ -33,6 +33,20 @@ export interface Release {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.44.1",
+    date: "2026-11-14",
+    title: "Leaner odds board",
+    summary: "Stored book-comparison odds now come from the 18 main US books, keeping the database under the free limit.",
+    changes: [
+      {
+        kind: "improved",
+        title: "Fewer books stored",
+        whatChanged: "Picks still use every sportsbook's price, but only the 18 main US books' lines are saved for the comparison views.",
+        whatItMeans: "Lines from small offshore books no longer show in the book list.",
+      },
+    ],
+  },
+  {
     version: "1.44.0",
     date: "2026-11-12",
     title: "Storage guard",

@@ -1,4 +1,5 @@
 import { errorDetail } from "./sync-errors";
+import { RAW_BOOKS } from "@/lib/storage-prune";
 import { MODEL_FAIR_BOOK, fairAmerican } from "./football-markets";
 import { liveMarketLearn } from "./market-learn";
 import { db } from "@/db";
@@ -1317,6 +1318,8 @@ export async function runFullSync(season: number): Promise<SyncStageResult[]> {
           const k = `${raw.player}|${raw.statType}|${raw.line}|${raw.side}|${raw.book}`;
           if (seenRaw.has(k)) continue;
           seenRaw.add(k);
+          // Storage guard (1.44.1): only the main books' raw lines are stored.
+          if (!RAW_BOOKS.has(raw.book)) continue;
           rawRows.push({
             season,
             week,

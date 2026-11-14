@@ -22,6 +22,20 @@ export const ARCHIVE_BOOKS = new Set([
   "Underdog Fantasy",
 ]);
 
+/** Books whose raw prop lines are saved for the book-comparison views (1.44.1):
+ *  the archive books plus the other big US books. Picks are still built from
+ *  every book's price; only what's stored is limited. */
+export const RAW_BOOKS = new Set([
+  ...ARCHIVE_BOOKS,
+  "Caesars",
+  "bet365",
+  "ESPN BET",
+  "BetRivers",
+  "DraftKings Pick6",
+  "Sleeper",
+  "Dabble",
+]);
+
 /** How long each kind of row is kept. */
 export const KEEP = {
   gradedPropDays: 21, // graded prop lines (self-learning reads up to this far back)

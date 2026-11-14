@@ -8,6 +8,7 @@ import { errorDetail } from "../sync-errors";
 // own follow-up, not invented generically here. See db/schema.ts's
 // "Multi-sport tables" comment and lib/sports/espn.ts's caveat about this
 // being unverified against live ESPN data until the first real Vercel sync.
+import { RAW_BOOKS } from "@/lib/storage-prune";
 import { liveMarketLearn } from "../market-learn";
 import { db } from "@/db";
 import { buildGameDayContext } from "./game-day";
@@ -1130,6 +1131,8 @@ export async function runSportSync(
           const k = `${raw.player}|${raw.statType}|${raw.line}|${raw.side}|${raw.book}`;
           if (seenRaw.has(k)) continue;
           seenRaw.add(k);
+          // Storage guard (1.44.1): only the main books' raw lines are stored.
+          if (!RAW_BOOKS.has(raw.book)) continue;
           rawRows.push({
             sport,
             season: year,
